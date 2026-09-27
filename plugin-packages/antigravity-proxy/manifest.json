@@ -45,7 +45,7 @@
             "type": "string",
             "required": true,
             "mapping": "model",
-            "description": "模型 ID（gemini-3.8-flash-high / gemini-pro-agent）。"
+            "description": "模型 ID（gemini-3.8-flash-high / gemini-3.1-pro-low / gemini-pro-agent）。"
           },
           {
             "name": "messages",

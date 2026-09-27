@@ -1,6 +1,4 @@
 import { getNodeListLabel } from "@/lib/canvas/node-registry";
-import { producedModelLabel, producedModelSearchTerms } from "@/lib/canvas/produced-model";
-import type { AiConfig } from "@/stores/use-config-store";
 import { canvasNodeCreatedAt, canvasNodeUpdatedAt } from "@/lib/canvas/canvas-node-timestamps";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -12,10 +10,10 @@ const searchTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
     hour12: false,
 });
 
-export function searchCanvasNodes(nodes: CanvasNodeData[], query: string, limit = 80, config?: AiConfig) {
+export function searchCanvasNodes(nodes: CanvasNodeData[], query: string, limit = 80) {
     const keyword = query.trim().toLocaleLowerCase();
     return nodes
-        .filter((node) => !keyword || canvasNodeSearchTerms(node, config).some((value) => value.toLocaleLowerCase().includes(keyword)))
+        .filter((node) => !keyword || canvasNodeSearchTerms(node).some((value) => value.toLocaleLowerCase().includes(keyword)))
         .toSorted((left, right) => timestampValue(canvasNodeUpdatedAt(right)) - timestampValue(canvasNodeUpdatedAt(left)))
         .slice(0, keyword ? limit : Math.min(limit, 40));
 }
@@ -28,15 +26,14 @@ export function canvasNodeSearchContext(node: CanvasNodeData) {
     return location || node.metadata?.prompt || node.metadata?.composerContent || node.metadata?.workflowDescription || textContent || getNodeListLabel(node.type);
 }
 
-export function canvasNodeMaterialSummary(node: CanvasNodeData, config?: AiConfig) {
+export function canvasNodeMaterialSummary(node: CanvasNodeData) {
     const details = [getNodeListLabel(node.type)];
     const width = node.metadata?.naturalWidth;
     const height = node.metadata?.naturalHeight;
     if (width && height) details.push(`${width}×${height}`);
     if (node.metadata?.durationMs) details.push(formatDuration(node.metadata.durationMs));
     if (node.metadata?.bytes) details.push(formatBytes(node.metadata.bytes));
-    const producedModel = node.metadata?.producedModel;
-    if (producedModel) details.splice(1, 0, config ? producedModelLabel(config, producedModel) : producedModel);
+    if (node.metadata?.model) details.push(node.metadata.model);
     return details.slice(0, 3).join(" · ");
 }
 
@@ -51,7 +48,7 @@ export function canvasNodeSearchTimes(node: CanvasNodeData) {
     };
 }
 
-function canvasNodeSearchTerms(node: CanvasNodeData, config?: AiConfig) {
+function canvasNodeSearchTerms(node: CanvasNodeData) {
     return [
         node.title,
         node.type,
@@ -59,7 +56,6 @@ function canvasNodeSearchTerms(node: CanvasNodeData, config?: AiConfig) {
         node.metadata?.prompt,
         node.metadata?.composerContent,
         node.metadata?.model,
-        ...producedModelSearchTerms(node.metadata, config),
         node.metadata?.chapterTitle,
         node.metadata?.workflowTitle,
         node.metadata?.workflowDescription,

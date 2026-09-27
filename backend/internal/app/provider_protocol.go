@@ -889,23 +889,85 @@ func protocolResultHasOutput(mode string, result *protocol.Result) bool {
 	}
 }
 
+// protocolMediaProxyPrefix 是媒体下载的兜底通道。
+//
+// 为什么需要它：本机网络到部分生图 CDN（实测 download.xmimage2.cc.cd）在 TLS
+// 握手阶段会被概率性重置 —— Windows 报 "wsarecv: An existing connection was
+// forcibly closed"，实测 30 次里只有 1~2 次能握手成功，且与解析到哪个边缘 IP
+// 无关（两个 Cloudflare IP 都一样）。此时图其实已经生成好了，纯粹是取不回来，
+// 重试再多次也只是撞运气。公共图片代理的出口在别的网络，能稳定取到同一地址。
+//
+// 权衡：这会把媒体地址交给第三方代理，所以只在直连彻底失败后才启用，作为最后
+// 一道兜底；且仅对图片类地址生效（代理本身只处理图片）。
+const protocolMediaProxyPrefix = "https://wsrv.nl/?url="
+
+// protocolMediaProxyURL 把原始媒体地址换成图片代理地址。
+// 非 http/https、或本身已经是代理地址时返回 ok=false，兜底会被跳过。
+func protocolMediaProxyURL(reference protocol.MediaReference) (string, bool) {
+	if strings.TrimSpace(reference.DataURL) != "" {
+		return "", false
+	}
+	value := strings.TrimSpace(reference.URL)
+	if value == "" {
+		return "", false
+	}
+	target, err := url.Parse(value)
+	if err != nil || target.Host == "" {
+		return "", false
+	}
+	if target.Scheme != "http" && target.Scheme != "https" {
+		return "", false
+	}
+	// 别把代理地址再代理一遍，否则兜底失败会变成递归。
+	host := strings.ToLower(target.Hostname())
+	if host == "wsrv.nl" || strings.HasSuffix(host, ".wsrv.nl") ||
+		host == "weserv.nl" || strings.HasSuffix(host, ".weserv.nl") {
+		return "", false
+	}
+	return protocolMediaProxyPrefix + url.QueryEscape(target.String()), true
+}
+
 func protocolMediaBytes(ctx context.Context, config providerConfig, reference protocol.MediaReference) ([]byte, string, error) {
-	var data []byte
-	var mimeType string
-	var err error
+	// 直连只快速试几次。失败形态是 TLS 一上来就被重置，重试约等于撞运气，
+	// 所以不把任务预算耗在这里，真正的兜底是下面的代理通道。
+	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		data, mimeType, err = protocolMediaBytesOnce(ctx, config, reference)
+		data, mimeType, err := protocolMediaBytesOnce(ctx, config, reference)
 		if err == nil {
 			return data, mimeType, nil
 		}
-		if attempt == 2 || !retryableProtocolMediaDownload(err) {
+		lastErr = err
+		if !retryableProtocolMediaDownload(err) || attempt == 2 {
 			break
 		}
 		if waitErr := sleepContext(ctx, time.Duration(attempt+1)*time.Second); waitErr != nil {
 			return nil, "", fmt.Errorf("声明式协议媒体结果下载失败：%w", waitErr)
 		}
 	}
-	return nil, "", fmt.Errorf("声明式协议媒体结果下载失败：%w", err)
+
+	if proxyURL, ok := protocolMediaProxyURL(reference); ok {
+		for attempt := 0; attempt < 4; attempt++ {
+			data, mimeType, err := getProviderExternalBinary(
+				withProviderRequestKind(ctx, "download"), config, proxyURL)
+			if err == nil && len(data) > 0 {
+				return data, normalizedMediaMimeType(mimeType, data), nil
+			}
+			if err != nil {
+				lastErr = err
+			}
+			if attempt == 3 {
+				break
+			}
+			if waitErr := sleepContext(ctx, time.Duration(attempt+1)*time.Second); waitErr != nil {
+				break
+			}
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = errors.New("媒体下载没有取到任何内容")
+	}
+	return nil, "", fmt.Errorf("声明式协议媒体结果下载失败：%w", lastErr)
 }
 
 func protocolMediaBytesOnce(ctx context.Context, config providerConfig, reference protocol.MediaReference) ([]byte, string, error) {
@@ -930,7 +992,35 @@ func retryableProtocolMediaDownload(err error) bool {
 		return true
 	}
 	message := strings.ToLower(err.Error())
-	for _, marker := range []string{"tls handshake timeout", "connection reset", "unexpected eof", "broken pipe"} {
+	// Windows surfaces transport resets with different wording than Linux, e.g.
+	// "wsarecv: An existing connection was forcibly closed by the remote host".
+	// Without those markers the first failure is treated as fatal and the retry
+	// loop never kicks in, so transient CDN resets kill otherwise-successful
+	// image generations.
+	for _, marker := range []string{
+		"tls handshake timeout",
+		"connection reset",
+		"connection was reset",
+		"forcibly closed",
+		"wsarecv",
+		"wsasend",
+		"unexpected eof",
+		"broken pipe",
+		// DNS is resolved through the SSRF guard, which rewraps the lookup error
+		// as a plain domain error. That hides the underlying net.Error, so a
+		// transient resolver failure used to be fatal on the first try. On
+		// networks with DNS interference a name can fail and then succeed
+		// seconds later, so these must be retryable.
+		"域名解析失败",
+		"no such host",
+		"temporary failure in name resolution",
+		"server misbehaving",
+		"i/o timeout",
+		// Same reasoning: interference can make the resolver return a bogus
+		// private/loopback address for one query. The guard still refuses it, we
+		// only get another attempt.
+		"不允许访问本机、内网或链路本地地址",
+	} {
 		if strings.Contains(message, marker) {
 			return true
 		}

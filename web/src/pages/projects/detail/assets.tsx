@@ -16,8 +16,7 @@ import { CANVAS_FOLDER_THEME_OPTIONS, resolveCanvasFolderTheme } from "@/lib/can
 import { resolveProjectCanvasStyle } from "@/components/canvas/canvas-style-picker-modal";
 import { CHARACTER_VOICE_FORMAT_LABEL, CHARACTER_VOICE_UPLOAD_ACCEPT, characterVoiceFormatName, characterVoiceTitleFromFileName, isSupportedCharacterVoiceFile } from "@/lib/character-voice-formats";
 import { ASSET_CATEGORIES, defaultAssetCategoryForKind, normalizeAssetCategory } from "@/lib/asset-category";
-import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey } from "@/services/api/resources";
-import { downloadBrowserMedia } from "@/services/browser-download";
+import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import { uploadMediaFile } from "@/services/file-storage";
 import {
     bindProjectCharacterVoice,
@@ -45,9 +44,9 @@ import { saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { useAssetStore, type Asset, type AssetCategory, type AssetStatus, type EntityAsset, type ImageAsset } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasFolderStyle, type CanvasFolderTheme, type CanvasNodeData } from "@/types/canvas";
+import { saveAs } from "file-saver";
 
 import { ProjectCharacterCard } from "./project-character-card";
-import { projectCharacterCover } from "./project-character-cover";
 import { linkSelectedProjectAssets } from "./project-asset-linking";
 import { generateCharacterTurnaround } from "./project-character-media";
 import { categoryLabels, categoryLabel, mediaLabel, StatusPill, formatTime, textValue, type ProjectDetailViewProps } from "./shared";
@@ -372,28 +371,20 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
         if (folderEditor?.folder) renameFolderMutation.mutate({ id: folderEditor.folder.id, name });
         else if (folderEditor) createFolderMutation.mutate({ name, parentId: folderEditor.parentId });
     };
-    const downloadPreviewAsset = async (asset: ProjectAsset) => {
-        try {
-            const personal = personalAssets.find((item) => item.id === asset.id);
-            if (personal && (personal.kind === "image" || personal.kind === "video" || personal.kind === "audio" || personal.kind === "model")) {
-                const url = personal.kind === "image" ? personal.data.dataUrl : personal.data.url;
-                const extension = personal.kind === "model" ? personal.data.fileName.split(".").pop() || "glb" : personal.data.mimeType.split("/")[1] || "bin";
-                await downloadBrowserMedia({ storageKey: personal.data.storageKey, url, fileName: `${asset.title || "asset"}.${extension}` });
-                return;
-            }
-            const cover = projectCharacterCover(asset.character?.representations);
-            if (cover) {
-                await downloadBrowserMedia({ storageKey: resourceStorageKey(cover.resourceId), fileName: `${asset.title || "character"}.png` });
-                return;
-            }
+    const downloadPreviewAsset = (asset: ProjectAsset) => {
+        const personal = personalAssets.find((item) => item.id === asset.id);
+        if (personal && (personal.kind === "image" || personal.kind === "video" || personal.kind === "audio" || personal.kind === "model")) {
+            const url = personal.kind === "image" ? personal.data.dataUrl : personal.data.url;
+            const extension = personal.kind === "model" ? personal.data.fileName.split(".").pop() || "glb" : personal.data.mimeType.split("/")[1] || "bin";
+            saveAs(url, `${asset.title || "asset"}.${extension}`);
+            return;
+        }
+        const cover = asset.character?.representations.find((item) => item.role === "turnaround_sheet") || asset.character?.representations.find((item) => item.role === "primary") || asset.character?.representations[0];
+        if (cover) saveAs(resourceFileUrl(cover.resourceId), `${asset.title || "character"}.png`);
+        else {
             const remoteUrl = projectAssetRemoteUrl(asset);
-            if (!remoteUrl) {
-                message.warning("当前资产没有可下载的媒体文件");
-                return;
-            }
-            await downloadBrowserMedia({ storageKey: asset.storageKey, url: remoteUrl, fileName: `${asset.title || "asset"}.${projectAssetFileExtension(asset.mediaType)}` });
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "下载失败");
+            if (remoteUrl) saveAs(remoteUrl, `${asset.title || "asset"}.${projectAssetFileExtension(asset.mediaType)}`);
+            else message.warning("当前资产没有可下载的媒体文件");
         }
     };
     return (
@@ -603,7 +594,7 @@ function ProjectAssetFolderCard({ folder, folders, assets, folderCounts, persona
 
 function projectAssetCanvasPreviewNode(asset: ProjectAsset, personalAsset: Asset | undefined, index: number): CanvasNodeData {
     const type = asset.mediaType === "image" || asset.category === "character" ? CanvasNodeType.Image : asset.mediaType === "video" ? CanvasNodeType.Video : asset.mediaType === "audio" ? CanvasNodeType.Audio : CanvasNodeType.Text;
-    const characterCover = projectCharacterCover(asset.character?.representations);
+    const characterCover = asset.character?.representations.find((item) => item.role === "turnaround_sheet") || asset.character?.representations.find((item) => item.role === "primary") || asset.character?.representations[0];
     const content = characterCover
         ? resourceFileUrl(characterCover.resourceId)
         : personalAsset?.kind === "image"
@@ -713,7 +704,7 @@ function ProjectAssetMedia({ asset, personalAsset }: { asset: ProjectAsset; pers
 }
 
 function ProjectAssetPreviewModal({ asset, personalAsset, onClose, onDownload, onReplaceImage }: { asset: ProjectAsset | null; personalAsset?: Asset; onClose: () => void; onDownload: () => void; onReplaceImage: () => void }) {
-    const characterCover = projectCharacterCover(asset?.character?.representations);
+    const characterCover = asset?.character?.representations.find((item) => item.role === "turnaround_sheet") || asset?.character?.representations.find((item) => item.role === "primary") || asset?.character?.representations[0];
     const remoteUrl = asset ? projectAssetRemoteUrl(asset) : "";
     const canDownload = Boolean(personalAsset && ["image", "video", "audio", "model"].includes(personalAsset.kind)) || Boolean(characterCover) || Boolean(remoteUrl);
     const previewKind = personalAsset?.kind || asset?.mediaType;

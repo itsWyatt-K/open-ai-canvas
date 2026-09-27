@@ -34,6 +34,9 @@ docs/content/docs/overview/*
 !.env.example
 data/
 .local/
+.local-v*/
+/_backup/
+canvas-agent/agent-llm.json
 /.local/docker-compose.postgres.yml
 coverage/
 dist/
@@ -45,6 +48,10 @@ dist/
 *.sqlite3
 *.bak
 *.tmp
+# 临时工作区（含《文件管理规范》的批量删除中转目录 _work_tmp/_trash-<日期>）。
+# 此前只有 *.tmp 文件规则，目录本身未被忽略——任何人执行 git add -A 都会把整个临时目录提交进去。
+# 已确认 _work_tmp 下 0 个已跟踪文件，此改动不会取消跟踪任何内容。
+/_work_tmp/
 /*.drawio.bkp
 /prompt-preferences-*-before.png
 /prompt*-before.png
@@ -67,12 +74,20 @@ camera_language_guide.md
 # Local Playwright / browser verification artifacts.
 /output/
 /project-memory/
+# D-057B：Agent 服务令牌（本地凭据，绝不进仓库；只存 canvas-agent 本地文件，环境变量优先）
+canvas-agent/agent-server.json
 .workbuddy/
 
 # Local backend executable; never commit build output.
 backend/cmd/server/server
+
+# Go 构建产物（本地编译的后端 exe，不入库）
+backend/_build/
+
+# npm 副产物：项目用 bun.lock 管依赖（本机无 bun，npm install 仅作本地补依赖用）
+web/package-lock.json
+
 # One-off local probe scripts and their compiled output.
 backend/tmp_*
 # Keep the runtime in source control; its optional debug map is not deployed.
 /web/public/live2d/live2dcubismcore.min.js.map
-.zocde/

@@ -1,0 +1,64 @@
+[
+  {
+    "taskId": "GT-E01",
+    "title": "波普高频闪切软糖广告",
+    "tag": "ecommerce",
+    "targetSkills": ["顶级波普视觉广告导演"],
+    "sentinel": false,
+    "brief": "快消品：气泡果汁软糖 POPBANG，Z 世代波普 / Y2K 风格，12 秒高频闪切，视觉母题：糖果色爆炸、涂鸦贴纸、多巴胺配色。",
+    "constraints": { "ratio": "9:16", "durationSec": [2, 5] },
+    "expectedArtifacts": ["storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "E01-duration", "type": "duration_bounds", "minSec": 2, "maxSec": 5, "blocking": true, "points": 2 },
+      { "checkId": "E01-clips", "type": "clip_count_bounds", "min": 4, "max": 10, "scope": "clips", "points": 1 },
+      { "checkId": "E01-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "E01-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "E01-brand", "type": "required_pattern", "pattern": "POPBANG", "target": "promptsJoined", "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "E01-impact", "name": "视觉冲击力", "weight": 1, "anchors": ["高饱和撞色而非灰调", "闪切节奏与糖果爆炸同步", "品牌名出现在视觉焦点"] },
+      { "dimId": "E01-style", "name": "波普风格符合度", "weight": 1, "anchors": ["波普母题（涂鸦/贴纸/网点）在场", "Y2K 质感（金属光泽/气泡元素）"] }
+    ]
+  },
+  {
+    "taskId": "GT-E02",
+    "title": "珠宝电商全套素材（图 + 视频）",
+    "tag": "ecommerce",
+    "targetSkills": ["珠宝电商图文视频一站式"],
+    "sentinel": false,
+    "brief": "珠宝品类：18K 金祖母绿切割主石戒指，输出全套电商素材：白底主图、细节特写图、佩戴图、15 秒短视频。白底主图需商用级（纯白背景、无阴影杂质）。",
+    "constraints": { "durationSec": [4, 15] },
+    "expectedArtifacts": ["storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "E02-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "E02-prompts", "type": "clip_count_bounds", "min": 6, "max": 12, "scope": "prompts", "points": 1, "note": "全套素材提示词数量" },
+      { "checkId": "E02-subject", "type": "required_pattern", "pattern": "戒指|祖母绿", "target": "promptsJoined", "points": 1 },
+      { "checkId": "E02-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "E02-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 15, "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "E02-lux", "name": "珠宝质感", "weight": 1, "anchors": ["金属反光与宝石火彩有具体描写", "佩戴图构图符合电商规范", "白底主图无杂质干扰"] }
+    ]
+  },
+  {
+    "taskId": "GT-E03",
+    "title": "TikTok 带货：气泡水 UGC",
+    "tag": "ecommerce",
+    "targetSkills": ["TikTok 带货模板"],
+    "sentinel": false,
+    "brief": "模特 + 产品：健身博主推荐“轻燃”无糖气泡水，15-30 秒 UGC 带货视频，匹配四大经典模板之一，前 3 秒必须有钩子，结尾行动号召（CTA）。",
+    "constraints": { "ratio": "9:16", "durationSec": [4, 15], "totalDurationSec": [15, 30] },
+    "expectedArtifacts": ["scriptText", "storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "E03-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 15, "blocking": true, "points": 1 },
+      { "checkId": "E03-clips", "type": "clip_count_bounds", "min": 3, "max": 8, "scope": "clips", "points": 1 },
+      { "checkId": "E03-hook", "type": "required_pattern", "pattern": "前3秒|钩子|hook|开头", "target": "scriptText", "points": 1 },
+      { "checkId": "E03-cta", "type": "required_pattern", "pattern": "CTA|行动号召|下单|链接", "target": "scriptText", "points": 1 },
+      { "checkId": "E03-junk", "type": "junkword_free", "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "E03-hook", "name": "钩子强度", "weight": 1, "anchors": ["首镜 3 秒内有冲突/悬念/利益点", "钩子与目标人群痛点相关"] },
+      { "dimId": "E03-ugc", "name": "UGC 原生感", "weight": 1, "anchors": ["口播口语化而非广告腔", "构图非精致棚拍感"] }
+    ]
+  }
+]

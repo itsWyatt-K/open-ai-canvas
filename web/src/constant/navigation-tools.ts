@@ -1,10 +1,16 @@
-import { Blocks, CircleDollarSign, Clapperboard, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, WandSparkles } from "lucide-react";
+import { Blocks, CircleDollarSign, Clapperboard, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, Sparkles, WandSparkles } from "lucide-react";
 
 export const navigationTools = [
     {
         slug: "create",
         label: "创作",
         icon: WandSparkles,
+        section: "创作空间",
+    },
+    {
+        slug: "inspiration",
+        label: "灵感库",
+        icon: Sparkles,
         section: "创作空间",
     },
     {

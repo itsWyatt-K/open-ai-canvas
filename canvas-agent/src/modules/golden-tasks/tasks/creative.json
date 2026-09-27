@@ -1,0 +1,63 @@
+[
+  {
+    "taskId": "GT-C01",
+    "title": "系列套图：银渐层猫 12 变量延展",
+    "tag": "creative",
+    "targetSkills": ["系列套图生成"],
+    "sentinel": false,
+    "brief": "母版提示词：“复古胶片质感咖啡馆窗边的银渐层猫”。系列延展 12 张：不同天气与时段（晴/雨/雾/雪 × 晨/午/黄昏/夜），保持主体与胶片质感严格一致。",
+    "constraints": { "ratio": "1:1", "seed": 20260926, "targetModels": ["dreamina text2image"] },
+    "expectedArtifacts": ["compiledPrompts"],
+    "checks": [
+      { "checkId": "C01-count", "type": "clip_count_bounds", "min": 10, "max": 14, "scope": "prompts", "blocking": true, "points": 2, "note": "系列张数约束" },
+      { "checkId": "C01-subject", "type": "required_pattern", "pattern": "猫", "target": "promptsJoined", "points": 1 },
+      { "checkId": "C01-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "C01-words", "type": "word_count_bounds", "target": "promptsJoined", "minChars": 600, "maxChars": 4000, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "C01-consistency", "name": "系列一致性", "weight": 1, "anchors": ["主体（银渐层猫）跨图可识别为同一只", "胶片质感与色温风格统一", "天气/时段变量确实生效"] },
+      { "dimId": "C01-variety", "name": "构图多样性", "weight": 1, "anchors": ["景别与机位有变化", "无连续三张同构图"] }
+    ],
+    "notes": "固定 seed 任务：主体一致性的确定性部分可后续升级为感知哈希比对。"
+  },
+  {
+    "taskId": "GT-C02",
+    "title": "名导十五秒三段式资产引擎",
+    "tag": "creative",
+    "targetSkills": ["名导十五秒风格资产引擎"],
+    "sentinel": false,
+    "brief": "参考图：王家卫式霓虹雨夜剧照。一句话动作：“她撑伞穿过霓虹雨巷，回头看向镜头”。产出结构化视觉基因资产与十五秒三段式（起-承-合）双语提示词。",
+    "constraints": { "ratio": "2.39:1", "style": "王家卫霓虹雨夜" },
+    "expectedArtifacts": ["compiledPrompts"],
+    "checks": [
+      { "checkId": "C02-segments", "type": "clip_count_bounds", "min": 3, "max": 3, "scope": "clips", "blocking": true, "points": 2, "note": "三段式硬结构" },
+      { "checkId": "C02-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 5, "blocking": true, "points": 1, "note": "15 秒 / 3 段" },
+      { "checkId": "C02-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "C02-words", "type": "word_count_bounds", "target": "promptsJoined", "minChars": 300, "maxChars": 2000, "points": 1 },
+      { "checkId": "C02-motif", "type": "required_pattern", "pattern": "伞|霓虹", "target": "promptsJoined", "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "C02-syntax", "name": "导演句法", "weight": 1, "anchors": ["参考图基因可指认（霓虹/雨/慢镜）", "三段节奏符合起承合", "回头的时机是叙事高潮"] },
+      { "dimId": "C02-bilingual", "name": "双语质量", "weight": 1, "anchors": ["中英提示词语义一致", "英文无中式直译腔"] }
+    ]
+  },
+  {
+    "taskId": "GT-C03",
+    "title": "十五秒视觉特效：墨滴星云单镜头",
+    "tag": "creative",
+    "targetSkills": ["十五秒视觉特效"],
+    "sentinel": false,
+    "brief": "高熵单镜头：“一滴墨落入清水，炸开成星云，星云聚成一只眼睛后闭目”，15 秒单镜头视觉叙事，全程无切换，要求锚点-递进-高潮的动态矢量设计。",
+    "constraints": { "durationSec": [12, 15] },
+    "expectedArtifacts": ["compiledPrompts"],
+    "checks": [
+      { "checkId": "C03-single", "type": "clip_count_bounds", "min": 1, "max": 1, "scope": "clips", "blocking": true, "points": 2, "note": "单镜头硬约束" },
+      { "checkId": "C03-duration", "type": "duration_bounds", "minSec": 12, "maxSec": 15, "blocking": true, "points": 2 },
+      { "checkId": "C03-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "C03-words", "type": "word_count_bounds", "target": "promptsJoined", "minChars": 120, "maxChars": 900, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "C03-vector", "name": "动态矢量设计", "weight": 1, "anchors": ["锚点（墨滴入水）-递进（星云炸开）-高潮（眼睛）三拍可辨", "无切换单镜头内完成叙事", "色彩从墨黑到星云蓝紫的演化有设计感"] }
+    ]
+  }
+]

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ImgHTMLAttributes, type ReactNode } from "react";
 
-import { getResourceAccess, resolveResourceAccessURL, resourceIdFromStorageKey } from "@/services/api/resources";
+import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import { resolveImageUrl } from "@/services/image-storage";
 
 type CachedResourceImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
@@ -12,7 +12,7 @@ type CachedResourceImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">
 };
 
 /**
- * 远程资源图片统一使用 OSS/CDN 授权地址。
+ * 远程资源图片统一使用稳定的资源文件地址。
  * Blob 缓存仍可用于导出、抽帧等字节处理，但不作为媒体展示 src，避免把
  * `blob:http(s)://...` 泄露到节点、素材库和浏览器媒体链路中。
  */
@@ -59,13 +59,7 @@ export function CachedResourceImage({ storageKey, src = "", fallback = null, loa
                     cancelled = true;
                 };
             }
-            void getResourceAccess(storageKey, "display")
-                .then((access) => {
-                    if (!cancelled) setCachedSrc(resolveResourceAccessURL(access.url));
-                })
-                .catch(() => {
-                    if (!cancelled) setCacheFailed(true);
-                });
+            setCachedSrc(resourceFileUrl(resourceId));
             return () => {
                 cancelled = true;
             };

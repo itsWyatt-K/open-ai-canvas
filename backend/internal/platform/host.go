@@ -28,11 +28,10 @@ func (nopHost) ChannelConcurrencyLimit(string) (int, error) {
 }
 
 type Service struct {
-	repo               *repository.Repository
-	host               Host
-	Coordinator        *Coordinator
-	concurrencyCache   *BoundedReadCache[string, RuntimeTaskPolicy]
-	runtimePolicyCache *BoundedReadCache[string, RuntimePolicySetting]
+	repo             *repository.Repository
+	host             Host
+	Coordinator      *Coordinator
+	concurrencyCache *BoundedReadCache[string, RuntimeTaskPolicy]
 }
 
 func New(repo *repository.Repository, coordinator *Coordinator, host Host) *Service {
@@ -40,11 +39,10 @@ func New(repo *repository.Repository, coordinator *Coordinator, host Host) *Serv
 		host = nopHost{}
 	}
 	return &Service{
-		repo:               repo,
-		host:               host,
-		Coordinator:        coordinator,
-		concurrencyCache:   NewBoundedReadCache[string, RuntimeTaskPolicy](1, 1024, 1, 2*time.Second),
-		runtimePolicyCache: NewBoundedReadCache[string, RuntimePolicySetting](1, 8192, 1, 2*time.Second),
+		repo:             repo,
+		host:             host,
+		Coordinator:      coordinator,
+		concurrencyCache: NewBoundedReadCache[string, RuntimeTaskPolicy](1, 1024, 1, 2*time.Second),
 	}
 }
 

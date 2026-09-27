@@ -2,38 +2,29 @@ package app
 
 import (
 	"context"
-	"errors"
 	"mime/multipart"
 
-	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/skills"
 )
 
 const SkillPackageUploadMaxBytes = skills.SkillPackageUploadMaxBytes
 
-var ErrNotBuiltinSkill = skills.ErrNotBuiltinSkill
-
 type (
-	SkillShowcaseMedia                    = skills.SkillShowcaseMedia
-	SkillEffectiveUser                    = skills.SkillEffectiveUser
-	SkillItem                             = skills.SkillItem
-	AddedSkillReference                   = skills.AddedSkillReference
-	SkillCategory                         = skills.SkillCategory
-	SkillLibraryCategory                  = skills.SkillLibraryCategory
-	SkillLibraryCategoryList              = skills.SkillLibraryCategoryList
-	SkillLibraryCategoryMutationRequest   = skills.SkillLibraryCategoryMutationRequest
-	SkillLibraryCategoryAssignmentRequest = skills.SkillLibraryCategoryAssignmentRequest
-	SkillListRequest                      = skills.SkillListRequest
-	SkillList                             = skills.SkillList
-	SkillMutationRequest                  = skills.SkillMutationRequest
-	SkillInstallRequest                   = skills.SkillInstallRequest
-	SkillGitHubInstallRequest             = skills.SkillGitHubInstallRequest
-	SkillPackageFileItem                  = skills.SkillPackageFileItem
-	SkillPackageFileContent               = skills.SkillPackageFileContent
-	SkillPackageBundleFile                = skills.SkillPackageBundleFile
-	SkillPackageBundle                    = skills.SkillPackageBundle
-	SkillFileSearchResult                 = skills.SkillFileSearchResult
-	SkillPreset                           = skills.SkillPreset
+	SkillShowcaseMedia        = skills.SkillShowcaseMedia
+	SkillEffectiveUser        = skills.SkillEffectiveUser
+	SkillItem                 = skills.SkillItem
+	SkillCategory             = skills.SkillCategory
+	SkillListRequest          = skills.SkillListRequest
+	SkillList                 = skills.SkillList
+	SkillMutationRequest      = skills.SkillMutationRequest
+	SkillInstallRequest       = skills.SkillInstallRequest
+	SkillGitHubInstallRequest = skills.SkillGitHubInstallRequest
+	SkillPackageFileItem      = skills.SkillPackageFileItem
+	SkillPackageFileContent   = skills.SkillPackageFileContent
+	SkillPackageBundleFile    = skills.SkillPackageBundleFile
+	SkillPackageBundle        = skills.SkillPackageBundle
+	SkillFileSearchResult     = skills.SkillFileSearchResult
+	SkillPreset               = skills.SkillPreset
 )
 
 func (s *Service) skillDomain() *skills.Service {
@@ -50,24 +41,8 @@ func (s *Service) Skills(userID string, req SkillListRequest) (*SkillList, error
 	return s.skillDomain().Skills(userID, req)
 }
 
-func (s *Service) AddedSkills(userID string) ([]AddedSkillReference, error) {
+func (s *Service) AddedSkills(userID string) ([]SkillItem, error) {
 	return s.skillDomain().AddedSkills(userID)
-}
-
-func (s *Service) SkillLibraryCategories(userID string, scope string) (*SkillLibraryCategoryList, error) {
-	return s.skillDomain().SkillLibraryCategories(userID, scope)
-}
-
-func (s *Service) CreateSkillLibraryCategory(actor *model.User, req SkillLibraryCategoryMutationRequest) (*SkillLibraryCategory, error) {
-	return s.skillDomain().CreateSkillLibraryCategory(actor, req)
-}
-
-func (s *Service) DeleteSkillLibraryCategory(actor *model.User, id string) error {
-	return s.skillDomain().DeleteSkillLibraryCategory(actor, id)
-}
-
-func (s *Service) SetSkillLibraryCategory(userID string, skillID string, categoryID string) (*SkillItem, error) {
-	return s.skillDomain().SetSkillLibraryCategory(userID, skillID, categoryID)
 }
 
 // SkillPresets 返回场景预设目录（只读；数据随技能种子发布，无需用户上下文）。
@@ -91,14 +66,6 @@ func (s *Service) DeleteSkill(userID string, id string) error {
 	return s.skillDomain().DeleteSkill(userID, id)
 }
 
-func (s *Service) DeleteBuiltinSkill(actor *model.User, id string) error {
-	return s.skillDomain().DeleteBuiltinSkill(actor, id)
-}
-
-func (s *Service) IsNotBuiltinSkill(err error) bool {
-	return errors.Is(err, skills.ErrNotBuiltinSkill)
-}
-
 func (s *Service) SetSkillAdded(userID string, id string, added bool) (*SkillItem, error) {
 	return s.skillDomain().SetSkillAdded(userID, id, added)
 }
@@ -108,14 +75,7 @@ func (s *Service) SetSkillLiked(userID string, id string, liked bool) (*SkillIte
 }
 
 func (s *Service) EnsureBuiltinSkills() error {
-	if err := s.skillDomain().EnsureBuiltinSkills(); err != nil {
-		return err
-	}
-	// 在同步文件包之后校验预设，确保预设只引用当前启用的稳定技能 ID。
-	if _, err := s.SkillPresets(); err != nil {
-		return err
-	}
-	return nil
+	return s.skillDomain().EnsureBuiltinSkills()
 }
 
 func (s *Service) EnsureSkillPackages() error {

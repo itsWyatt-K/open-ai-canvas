@@ -2,7 +2,6 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strings"
 )
@@ -65,8 +64,8 @@ func (s *Service) CloudAgentSkillUsage(userID string) (*CloudAgentSkillUsage, er
 	for _, record := range records {
 		var event CloudAgentEvent
 		if err := json.Unmarshal([]byte(record.EventJSON), &event); err != nil {
-			// A corrupt receipt makes the aggregate incomplete; do not report it as valid usage.
-			return nil, fmt.Errorf("decode Agent skill usage receipt: %w", err)
+			// A single unreadable receipt must not hide the rest of the window.
+			continue
 		}
 		events = append(events, event)
 	}

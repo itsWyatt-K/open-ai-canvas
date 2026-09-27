@@ -2,7 +2,6 @@ import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { App } from "antd";
 
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
-import { producedModelCandidateForGeneration } from "@/lib/canvas/produced-model";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import { buildEmotionImageArtifacts, emotionGenerationSize, emotionProviderMask, normalizeEmotionPromptForProvider, resolveEmotionEditPlan } from "@/lib/canvas/canvas-emotion";
 import {
@@ -290,7 +289,6 @@ export function useCanvasGenerationRetry({
                                           ...item.metadata,
                                           prompt: mediaPrompt,
                                           model: generationConfig.model,
-                                          producedModelCandidate: producedModelCandidateForGeneration(generationConfig),
                                           size: generationConfig.size,
                                           seconds: generationConfig.videoSeconds,
                                           vquality: generationConfig.vquality,
@@ -390,7 +388,6 @@ export function useCanvasGenerationRetry({
                     ? {
                           generationType: savedImageMetadata.generationType,
                           model: generationConfig.model,
-                          producedModelCandidate: producedModelCandidateForGeneration(generationConfig),
                           size: generationConfig.size,
                           quality: generationConfig.quality,
                           transparentBackground: generationConfig.transparentBackground,

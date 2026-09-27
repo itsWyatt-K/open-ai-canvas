@@ -27,6 +27,8 @@ type taskTerminalCoordinator struct {
 type taskTerminalRepository interface {
 	Task(id string) (*model.Task, error)
 	UpdateTaskTerminalDiagnostic(task *model.Task, completedAt time.Time) (bool, error)
+	// W1-02 F-25：成功收口时统一回写 Shot.LatestTaskID（自研，升级后需重新应用）。
+	TouchShotLatestTask(shotID string, taskID string, now time.Time) error
 }
 
 type taskBillingLifecycle interface {
@@ -231,6 +233,15 @@ func (c *taskTerminalCoordinator) handleSuccess(task *model.Task) error {
 		completionErr = errors.Join(completionErr, fmt.Errorf("积分结算失败：%w", err))
 		if uncertainErr != nil {
 			completionErr = errors.Join(completionErr, fmt.Errorf("记录计费待核对状态失败：%w", uncertainErr))
+		}
+	}
+	// W1-02 F-25 / 自研：成功收口时回写分镜的「最近一次成功生成任务」指针，
+	// 使 Bridge / API Provider / 其他执行端共享同一 Shot 生命周期，
+	// RegenerateShot 才能克隆到最新参数。回写失败只记账不阻断成功流程
+	// （与产物登记失败同一策略，允许幂等补写）。
+	if task.ShotID != "" {
+		if err := c.repo.TouchShotLatestTask(task.ShotID, task.ID, time.Now()); err != nil {
+			_ = c.logger.log(task.UserID, task.ID, "error", "任务成功但回写分镜最新任务指针失败", err.Error())
 		}
 	}
 	_ = c.logger.log(task.UserID, task.ID, "info", "任务完成，结果已持久化", "")

@@ -117,9 +117,7 @@ func (s *Service) authDomain() *auth.Service {
 	if s.auth != nil {
 		return s.auth
 	}
-	domain := auth.New(s.repo, authHost{svc: s}, nil)
-	domain.SetSMSDelivery(s.smsDomain())
-	return domain
+	return auth.New(s.repo, authHost{svc: s}, nil)
 }
 
 func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {

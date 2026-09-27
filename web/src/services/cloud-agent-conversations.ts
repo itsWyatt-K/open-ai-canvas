@@ -8,15 +8,9 @@ export type CloudAgentConversationMessage = {
     role: "user" | "assistant" | "system" | "tool" | "error";
     title?: string;
     text: string;
-    streaming?: boolean;
-    reasoning?: boolean;
-    planItems?: Array<{ id: string; title: string; status: "pending" | "doing" | "done" }>;
-    planTerminal?: boolean;
-    question?: { question: string; options: Array<{ label: string; detail?: string }>; allowFreeform?: boolean };
     meta?: string;
     detail?: unknown;
     attachments?: Array<{ id: string; name: string; url: string }>;
-    interjection?: "sent" | "undelivered";
 };
 
 export type CloudAgentConversation = {
@@ -64,13 +58,7 @@ export async function loadCloudAgentConversations(canvasId: string): Promise<Clo
 
 export async function saveCloudAgentConversations(canvasId: string, activeId: string | null, conversations: CloudAgentConversation[]) {
     if (!canvasId) throw new Error("缺少画布 ID，无法保存 Agent 对话");
-    // 流式标记只属于内存中的观察状态。若网络在最后一个 delta 后断开，
-    // 也不能让下次恢复把思考卡片误判为仍在实时展开。
-    const persistedConversations = conversations.map((conversation) => ({
-        ...conversation,
-        messages: conversation.messages.map((message) => ({ ...message, streaming: false })),
-    }));
-    const document: CloudAgentConversationDocument = { version: 1, activeId, conversations: persistedConversations };
+    const document: CloudAgentConversationDocument = { version: 1, activeId, conversations };
     await localForageStorageForScope(getActiveUserScope()).setItem(storageKey(canvasId), JSON.stringify(document));
 }
 

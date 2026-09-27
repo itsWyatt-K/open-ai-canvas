@@ -7,29 +7,33 @@ import { applySkinTheme, DEFAULT_CLASSIC_SKIN, normalizeSkinDefinition } from "@
 export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     canvas: DEFAULT_CANVAS_APPEARANCE,
     schemaVersion: 9,
-    brandName: "影策",
-    brandSlug: "open-ai-canvas",
-    authHeroTitle: "让一个故事，\n从文字走向银幕。",
-    authHeroDescription: "",
-    logoUrl: "/logo.svg",
-    darkLogoUrl: "/logo.svg",
-    logoFrameEnabled: true,
-    authVideoUrl: "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4",
-    authVideoPosterUrl: "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg",
+    brandName: "源起",
+    brandSlug: "yuanqi-studio",
+    authHeroTitle: "让创意与灵感，\n在多智能体协同中源起。",
+    authHeroDescription: "面向多模态创作与智能体协同流水线的生产力工作台。",
+    logoUrl: "/logo.png",
+    darkLogoUrl: "/logo.png",
+    logoFrameEnabled: false,
+    // 本地化改造：默认用 web/public/ 下的压缩副本（103MB HEVC -> 6.4MB H.264，离线可用、秒开）。
+    // 管理员可在「平台外观」设置里随时换回官方原片或任意远程地址。
+    authVideoUrl: "/auth-bg.mp4",
+    authVideoPosterUrl: "/auth-poster.jpg",
+    // 上游 v1.3.0 新增字段：登录页背景视频是否自动播放。
+    // 默认 true，与下方 normalize 的 `value?.authVideoAutoplay !== false` 语义保持一致。
     authVideoAutoplay: true,
     skinId: "classic",
     activeSkin: DEFAULT_CLASSIC_SKIN,
-    seoTitle: "影策",
-    seoDescription: "影策，面向 AI 影视与短剧创作的工作台。",
-    seoKeywords: "",
-    footerCopyright: `© ${new Date().getFullYear()} 影策. All rights reserved.`,
+    seoTitle: "源起 · 智能创作工作台",
+    seoDescription: "源起 (Genesis Studio)，面向多智能体协同与多模态创作的工作台。",
+    seoKeywords: "源起,Genesis,智能创作,多模态,多智能体",
+    footerCopyright: `© ${new Date().getFullYear()} 源起. All rights reserved.`,
     icpFilingEnabled: false,
     icpFilingNumber: "",
-    logoConfigured: false,
-    darkLogoConfigured: false,
+    logoConfigured: true,
+    darkLogoConfigured: true,
     authVideoConfigured: false,
     authVideoPosterConfigured: false,
-    configured: false,
+    configured: true,
     revision: "builtin",
 };
 
@@ -158,7 +162,7 @@ export function appearanceLogoURL(appearance: PublicAppearance, theme: "light" |
 }
 
 export function brandStudioLabel(appearance: PublicAppearance) {
-    if (appearance.brandName === DEFAULT_PUBLIC_APPEARANCE.brandName && appearance.brandSlug === DEFAULT_PUBLIC_APPEARANCE.brandSlug) return "YINGCE STUDIO";
+    if (appearance.brandName === DEFAULT_PUBLIC_APPEARANCE.brandName && appearance.brandSlug === DEFAULT_PUBLIC_APPEARANCE.brandSlug) return "YUANQI STUDIO";
     return appearance.brandSlug.replace(/-+/g, " ").toLocaleUpperCase();
 }
 

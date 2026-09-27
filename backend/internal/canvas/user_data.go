@@ -293,9 +293,8 @@ func (s *Service) upsertUserCanvasProjectWithHistory(userID string, raw json.Raw
 			if errors.Is(err, repository.ErrCanvasRevisionConflict) {
 				return canvasRevisionConflict()
 			}
-			var missing *repository.CanvasHistoryResourceMissingError
-			if errors.As(err, &missing) {
-				return canvasResourcesMissingError(missing.References)
+			if errors.Is(err, repository.ErrCanvasHistoryResourceMissing) {
+				return kernel.NewAppError(http.StatusConflict, "画布引用的素材已变化，当前内容未被覆盖，请保留草稿并重新加载")
 			}
 			return err
 		}

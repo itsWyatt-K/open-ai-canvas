@@ -7,7 +7,6 @@ import { resourceFileUrl } from "@/services/api/resources";
 import type { ProjectAsset } from "@/services/api/projects";
 import { AssetLibraryCard, AssetLibraryCardMedia } from "@/components/assets/asset-library-card";
 
-import { projectCharacterCover } from "./project-character-cover";
 import { textValue } from "./shared";
 
 export function ProjectCharacterCard({ asset, folderItems, generating, removing, onOpen, onEdit, onGenerate, onBindImages, onBindVoice, onMove, onRemove }: {
@@ -24,7 +23,7 @@ export function ProjectCharacterCard({ asset, folderItems, generating, removing,
     onRemove: () => void;
 }) {
     const character = asset.character;
-    const cover = projectCharacterCover(character?.representations);
+    const cover = character?.representations.find((item) => item.role === "turnaround_sheet") || character?.representations.find((item) => item.role === "primary") || character?.representations.find((item) => item.role === "front") || character?.representations[0];
     const role = textValue(character?.definition.role) || "未填写剧情定位";
     const appearance = textValue(character?.definition.appearance) || textValue(character?.definition.consistencyPrompt) || "角色设定待完善";
     const imageStatus = character?.visualStatus === "ready" ? "图片已绑定" : character?.visualStatus === "partial" ? "图片待补全" : "图片未绑定";

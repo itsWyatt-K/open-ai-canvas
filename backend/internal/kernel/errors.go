@@ -9,7 +9,6 @@ type AppError struct {
 	Message   string
 	Retryable bool
 	Cause     error
-	Details   map[string]any
 }
 
 func (e *AppError) Error() string {

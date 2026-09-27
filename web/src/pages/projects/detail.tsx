@@ -12,6 +12,7 @@ import type { ProjectDetail } from "@/services/api/projects";
 import { WorkflowChapterNavigator } from "./detail/workflow-chapter-navigator";
 
 const ProjectAssetsView = lazy(() => import("./detail/assets"));
+const ProjectBrewView = lazy(() => import("./detail/brew"));
 const ProjectCanvasesView = lazy(() => import("./detail/canvases"));
 const ProjectChaptersView = lazy(() => import("./detail/chapters"));
 const ProjectOverviewView = lazy(() => import("./detail/overview"));
@@ -19,12 +20,13 @@ const ProjectSettingsView = lazy(() => import("./detail/settings"));
 const ProjectWorkflowView = lazy(() => import("./detail/workflow"));
 const ProjectEditorView = lazy(() => import("./detail/editor"));
 
-type DetailView = "overview" | "chapters" | "workflow" | "canvases" | "editor" | "assets" | "settings";
+type DetailView = "overview" | "chapters" | "workflow" | "brew" | "canvases" | "editor" | "assets" | "settings";
 
 const views: Array<{ key: DetailView; label: string }> = [
     { key: "overview", label: "制作概览" },
     { key: "chapters", label: "剧情章节" },
     { key: "workflow", label: "分镜制作" },
+    { key: "brew", label: "酿造工坊" },
     { key: "canvases", label: "项目画布" },
     { key: "editor", label: "剪辑成片" },
     { key: "assets", label: "角色与资产" },
@@ -144,6 +146,7 @@ export default function ProjectDetailPage() {
                                 {activeView === "assets" ? <ProjectAssetsView detail={detail} refreshProject={refreshProject} onCreateCanvas={createCanvas} /> : null}
                                 {activeView === "settings" ? <ProjectSettingsView detail={detail} refreshProject={refreshProject} onCreateCanvas={createCanvas} /> : null}
                                 {activeView === "editor" ? <ProjectEditorView detail={detail} /> : null}
+                                {activeView === "brew" ? <ProjectBrewView detail={detail} projectId={projectId} refreshProject={refreshProject} /> : null}
                             </div>
                         </Suspense>
                     </div>

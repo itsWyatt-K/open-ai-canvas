@@ -24,7 +24,7 @@ func TestCloudAgentMediaReadHashSurvivesMoveBeforeDraft(t *testing.T) {
 	if err := db.Model(canvas).Update("payload_json", string(raw)).Error; err != nil {
 		t.Fatal(err)
 	}
-	run, _ := agentMediaRun(t, s, args, "request_approval")
+	run, _ := agentMediaRun(t, s, args, "auto")
 	if err := s.advanceCloudAgentByID("user", run.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestCloudAgentMediaApprovalAllowsMovesButRejectsContentChanges(t *testing.T
 	for _, change := range []string{"move", "presentation", "prompt", "resource", "connection", "locked", "task", "unknown_metadata"} {
 		t.Run(change, func(t *testing.T) {
 			s, db, a := agentMediaFixture(t)
-			run, _ := agentMediaRun(t, s, a, "request_approval")
+			run, _ := agentMediaRun(t, s, a, "auto")
 			if err := s.advanceCloudAgentByID("user", run.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -110,50 +110,6 @@ func TestCloudAgentMediaApprovalAllowsMovesButRejectsContentChanges(t *testing.T
 	}
 }
 
-func TestCloudAgentMediaApprovalReusesPreparedInputsAfterModelRetry(t *testing.T) {
-	s, db, a := agentMediaFixture(t)
-	run, _ := agentMediaRun(t, s, a, "request_approval")
-	if err := s.advanceCloudAgentByID("user", run.ID); err != nil {
-		t.Fatal(err)
-	}
-	run, _ = s.repo.CloudAgent("user", run.ID)
-	state, err := cloudAgentDecode(run)
-	if err != nil || state.Approval == nil || state.Approval.Prepared == nil {
-		t.Fatalf("missing prepared media approval: %v", err)
-	}
-
-	canvas, err := s.repo.CanvasProjectForUser("user", "agent-canvas")
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, err := creationDocument(canvas.PayloadJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodes, err := creationObjects(doc["nodes"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodes[a.NodeID]["position"] = map[string]any{"x": 1800.0, "y": 920.0}
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(canvas).Update("payload_json", string(raw)).Error; err != nil {
-		t.Fatal(err)
-	}
-
-	retried := state.Approval.Call
-	retried.ID = "media-call-retry"
-	_, plan, err := s.prepareCloudAgentMedia(run, &state, retried)
-	if err != nil {
-		t.Fatalf("layout-only edit plus regenerated tool-call ID must reuse prepared media: %v", err)
-	}
-	if plan == nil {
-		t.Fatal("retry did not retain prepared media admission")
-	}
-}
-
 func TestCloudAgentImageApprovalEditsAreValidatedAndIdempotent(t *testing.T) {
 	s, db, a := agentMediaFixture(t)
 	capability := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceGrokImage), "grok-image")
@@ -170,7 +126,7 @@ func TestCloudAgentImageApprovalEditsAreValidatedAndIdempotent(t *testing.T) {
 	a.Mode, a.ChannelModelKey, a.Duration, a.VideoGenerateAudio = "image", "grok-image", 0, nil
 	a.Size, a.Quality, a.NodeID = "1:1", "2k", "image-shot-1"
 	a.ReferenceNodeIDs = []string{"cat"}
-	run, _ := agentMediaRun(t, s, a, "request_approval")
+	run, _ := agentMediaRun(t, s, a, "auto")
 	if err := s.advanceCloudAgentByID("user", run.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"io"
 	"net/http"
 	"time"
 
@@ -22,12 +23,34 @@ func RegisterAppearanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 	})
 
 	r.GET("/public/appearance/assets/:slot", func(c *gin.Context) {
-		delivery, err := svc.PrepareAppearanceAssetDelivery(c.Param("slot"), resourceAccessOptions(c), c.GetHeader("Range"))
+		stream, err := svc.OpenAppearanceAsset(c.Param("slot"), c.GetHeader("Range"))
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		serveResourceDelivery(c, delivery, "public, no-cache", "")
+		defer stream.Body.Close()
+		resource := stream.Resource
+		mimeType := resource.MimeType
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		if c.Query("v") != "" {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			c.Header("Cache-Control", "public, no-cache")
+		}
+		c.Header("Accept-Ranges", "bytes")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Header("X-Content-Type-Options", "nosniff")
+		if stream.ContentRange != "" {
+			c.Header("Content-Range", stream.ContentRange)
+		}
+		if seeker, available := stream.Body.(io.ReadSeeker); available {
+			c.Header("Content-Type", mimeType)
+			http.ServeContent(c.Writer, c.Request, resource.ID, resource.UpdatedAt, seeker)
+			return
+		}
+		c.DataFromReader(stream.StatusCode, stream.ContentLength, mimeType, stream.Body, nil)
 	})
 
 	r.GET("/admin/settings/appearance", func(c *gin.Context) {

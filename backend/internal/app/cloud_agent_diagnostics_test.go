@@ -148,7 +148,7 @@ func TestCloudAgentMediaAdmissionReportsTaskBinding(t *testing.T) {
 
 func TestCloudAgentCancellationRecordsSourceOnce(t *testing.T) {
 	s, _, args := agentMediaFixture(t)
-	run, _ := agentMediaRun(t, s, args, "request_approval")
+	run, _ := agentMediaRun(t, s, args, "auto")
 	if err := s.advanceCloudAgentByID("user", run.ID); err != nil {
 		t.Fatal(err)
 	}

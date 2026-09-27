@@ -45,6 +45,7 @@ function buildNav(features: FeatureAvailability, isAdmin: boolean): { groups: Wo
         {
             items: [
                 { ...toolItem("create", "/"), id: "home", title: "创作" },
+                { ...toolItem("inspiration", "/inspiration"), title: "灵感库" },
                 { ...toolItem("projects", "/projects"), title: "短剧 Agent" },
                 { ...toolItem("canvas", "/canvas"), title: "自由画布" },
             ],

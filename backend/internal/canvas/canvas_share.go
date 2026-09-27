@@ -139,41 +139,47 @@ func (s *Service) OpenSharedCanvasResource(token string, resourceID string) (*mo
 }
 
 func (s *Service) OpenSharedCanvasResourceRange(token string, resourceID string, rangeHeader string) (*assets.ResourceStream, error) {
-	userID, resource, _, err := s.sharedCanvasResource(token, resourceID)
+	userID, resource, err := s.sharedCanvasResource(token, resourceID)
 	if err != nil {
 		return nil, err
 	}
 	return s.host.OpenResourceRange(userID, resource, rangeHeader)
 }
 
-func (s *Service) PrepareSharedCanvasResourceDelivery(token string, resourceID string, options assets.AccessOptions, rangeHeader string) (*assets.ResourceDelivery, error) {
-	userID, resource, share, err := s.sharedCanvasResource(token, resourceID)
+func (s *Service) PrepareSharedCanvasResourceDelivery(token string, resourceID string, rangeHeader string) (*assets.ResourceDelivery, error) {
+	userID, resource, err := s.sharedCanvasResource(token, resourceID)
 	if err != nil {
 		return nil, err
 	}
-	if share.ExpiresAt != nil {
-		options.ExpiresAt = *share.ExpiresAt
+	delivery, err := s.host.PrepareResourceDelivery(userID, resource, assets.ResourceDeliveryOptions{})
+	if err != nil || delivery.RedirectURL != "" {
+		return delivery, err
 	}
-	return s.host.PrepareResourceDelivery(userID, resource, options, rangeHeader)
+	stream, err := s.host.OpenResourceRange(userID, resource, rangeHeader)
+	if err != nil {
+		return nil, err
+	}
+	delivery.Stream = stream
+	return delivery, nil
 }
 
-func (s *Service) sharedCanvasResource(token string, resourceID string) (string, *model.Resource, *model.CanvasShare, error) {
+func (s *Service) sharedCanvasResource(token string, resourceID string) (string, *model.Resource, error) {
 	share, project, err := s.sharedCanvasProject(token)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, err
 	}
 	_, allowedResources, err := publicCanvasProject(project, token)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, err
 	}
 	if !allowedResources[resourceID] {
-		return "", nil, nil, gorm.ErrRecordNotFound
+		return "", nil, gorm.ErrRecordNotFound
 	}
 	resource, err := s.repo.ResourceForUser(share.UserID, resourceID)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, err
 	}
-	return share.UserID, resource, share, nil
+	return share.UserID, resource, nil
 }
 
 func (s *Service) sharedCanvasProject(token string) (*model.CanvasShare, *model.CanvasProject, error) {

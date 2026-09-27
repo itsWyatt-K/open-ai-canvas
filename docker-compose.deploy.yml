@@ -27,9 +27,8 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: ${CANVAS_BACKEND_IMAGE:?请先配置 CANVAS_BACKEND_IMAGE（必须包含镜像 digest）}
-    entrypoint: ["migrate-schema"]
-    command: ["up"]
+    image: ghcr.io/ddcat-ai/open-ai-canvas-backend:${CANVAS_IMAGE_TAG:-latest}
+    command: ["migrate-schema", "up"]
     environment:
       CANVAS_BACKEND_DATA_DIR: /data
       CANVAS_DATABASE_DRIVER: postgres
@@ -39,7 +38,7 @@ services:
         condition: service_healthy
 
   backend:
-    image: ${CANVAS_BACKEND_IMAGE:?请先配置 CANVAS_BACKEND_IMAGE（必须包含镜像 digest）}
+    image: ghcr.io/ddcat-ai/open-ai-canvas-backend:${CANVAS_IMAGE_TAG:-latest}
     environment:
       CANVAS_BACKEND_ADDR: ":8080"
       CANVAS_BACKEND_DATA_DIR: /data
@@ -72,12 +71,9 @@ services:
     stop_grace_period: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
 
   web:
-    image: ${CANVAS_WEB_IMAGE:?请先配置 CANVAS_WEB_IMAGE（必须包含镜像 digest）}
+    image: ghcr.io/ddcat-ai/open-ai-canvas-web:${CANVAS_IMAGE_TAG:-latest}
     ports:
       - "${CANVAS_HTTP_PORT:-3000}:3000"
-    volumes:
-      # Keep hashed chunks from the current and previous web releases for old tabs.
-      - ${CANVAS_WEB_DATA_PATH:-web-data}:/usr/share/nginx/html
     depends_on:
       backend:
         condition: service_healthy
@@ -87,4 +83,3 @@ volumes:
   backend-data:
   postgres-data:
   redis-data:
-  web-data:

@@ -1,8 +1,7 @@
-import { Button, Form, Input } from "antd";
+import { Button, Form, Input, Select } from "antd";
 import { Plus, Trash2 } from "lucide-react";
 import { ModelTags } from "@/components/model-tags";
 import { modelTagColors, type ModelTag } from "@/lib/model-tags";
-import { Select } from "@/components/ui/base/select";
 
 export function ChannelModelTagsEditor() {
     const form = Form.useFormInstance();

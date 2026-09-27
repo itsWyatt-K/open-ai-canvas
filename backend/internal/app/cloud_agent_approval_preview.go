@@ -324,27 +324,7 @@ func cloudAgentApprovalNodeTitle(node map[string]any, typeLabel string) string {
 }
 
 func cloudAgentApprovalCallHash(call cloudAgentCall) string {
-	// Tool-call IDs are transport metadata and may be regenerated when the
-	// model retries the same approved operation. Hash only the operation
-	// payload so approval survives a retry with a different call ID. A media
-	// snapshot hash is also a concurrency hint, not generation input: the
-	// server revalidates the prepared dependency hash below, which deliberately
-	// ignores layout-only edits such as moving a node.
-	arguments := call.Function.Arguments
-	if call.Function.Name == "generate_media" || call.Function.Name == "image_layer_split" {
-		var object map[string]any
-		if err := json.Unmarshal([]byte(arguments), &object); err == nil {
-			delete(object, "snapshotHash")
-			if raw, err := json.Marshal(object); err == nil {
-				arguments = string(raw)
-			}
-		}
-	}
-	payload := struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	}{Name: call.Function.Name, Arguments: arguments}
-	raw, _ := json.Marshal(payload)
+	raw, _ := json.Marshal(call)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }

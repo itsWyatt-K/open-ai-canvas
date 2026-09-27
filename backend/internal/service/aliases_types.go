@@ -6,7 +6,6 @@ type (
 	PaymentOrderQuery                      = app.PaymentOrderQuery
 	PaymentReconciliationQuery             = app.PaymentReconciliationQuery
 	CloudAgentRequest                      = app.CloudAgentRequest
-	CloudAgentRunViewOptions               = app.CloudAgentRunViewOptions
 	CloudAgentMediaSettings                = app.CloudAgentMediaSettings
 	CloudAgentCapabilitySet                = app.CloudAgentCapabilitySet
 	AgentProfileRequest                    = app.AgentProfileRequest
@@ -254,9 +253,7 @@ type (
 	ResolveBillingBatchResult              = app.ResolveBillingBatchResult
 	ResolveBillingRequest                  = app.ResolveBillingRequest
 	ResourceDelivery                       = app.ResourceDelivery
-	ResourceAccessOptions                  = app.ResourceAccessOptions
-	ResourceAccessRequest                  = app.ResourceAccessRequest
-	ResourceAccess                         = app.ResourceAccess
+	ResourceDeliveryOptions                = app.ResourceDeliveryOptions
 	ResourceStream                         = app.ResourceStream
 	ResponseInterceptionRule               = app.ResponseInterceptionRule
 	ResponseInterceptionSetting            = app.ResponseInterceptionSetting
@@ -272,10 +269,6 @@ type (
 	Service                                = app.Service
 	ShotRevisionInput                      = app.ShotRevisionInput
 	SkillCategory                          = app.SkillCategory
-	SkillLibraryCategory                   = app.SkillLibraryCategory
-	SkillLibraryCategoryList               = app.SkillLibraryCategoryList
-	SkillLibraryCategoryMutationRequest    = app.SkillLibraryCategoryMutationRequest
-	SkillLibraryCategoryAssignmentRequest  = app.SkillLibraryCategoryAssignmentRequest
 	SkillEffectiveUser                     = app.SkillEffectiveUser
 	SkillFileSearchResult                  = app.SkillFileSearchResult
 	SkillGitHubInstallRequest              = app.SkillGitHubInstallRequest
@@ -288,7 +281,6 @@ type (
 	SkillPackageBundleFile                 = app.SkillPackageBundleFile
 	SkillPackageFileContent                = app.SkillPackageFileContent
 	SkillPackageFileItem                   = app.SkillPackageFileItem
-	SkillPreset                            = app.SkillPreset
 	SkillShowcaseMedia                     = app.SkillShowcaseMedia
 	StorageMigrationSummary                = app.StorageMigrationSummary
 	StyleProfileFavoriteRequest            = app.StyleProfileFavoriteRequest
@@ -347,6 +339,11 @@ type (
 	VoiceProfileSummary                    = app.VoiceProfileSummary
 	WalletSummary                          = app.WalletSummary
 	WorkflowField                          = app.WorkflowField
+	// W1 任务链（自研，随 service → app 重构补的别名）
+	ReviewShotRequest                      = app.ReviewShotRequest
+	ShotReviewResult                       = app.ShotReviewResult
+	TaskChainDetail                        = app.TaskChainDetail
+	ShotTimelineEntry                      = app.ShotTimelineEntry
 )
 
 func CloudAgentCapabilitySetInfo() CloudAgentCapabilitySet {

@@ -1,0 +1,21 @@
+[
+  {
+    "taskId": "GT-O01",
+    "title": "二维动画线稿批量上色（吉卜力参考）",
+    "tag": "others",
+    "targetSkills": ["二维动画线稿批量上色"],
+    "sentinel": false,
+    "brief": "输入：12 张二维动画线稿（角色奔跑循环关键帧）+ 1 张吉卜力风格色彩参考图。批量统一上色：色板遵循参考图，轮廓线保持清晰。",
+    "constraints": { "ratio": "16:9" },
+    "expectedArtifacts": ["compiledPrompts"],
+    "checks": [
+      { "checkId": "O01-count", "type": "clip_count_bounds", "min": 12, "max": 12, "scope": "prompts", "blocking": true, "points": 2, "note": "批量张数须与线稿数一致" },
+      { "checkId": "O01-color", "type": "required_pattern", "pattern": "参考|上色|色彩", "target": "promptsJoined", "points": 1 },
+      { "checkId": "O01-junk", "type": "junkword_free", "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "O01-palette", "name": "色彩一致性", "weight": 1, "anchors": ["色板与参考图对应（可指认主色/辅色）", "循环帧间色彩无跳变"] },
+      { "dimId": "O01-line", "name": "线稿保真", "weight": 1, "anchors": ["提示词明确保护轮廓线", "未描述破坏线稿的风格化操作"] }
+    ]
+  }
+]

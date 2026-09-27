@@ -1,0 +1,87 @@
+[
+  {
+    "taskId": "GT-D01",
+    "title": "森海风格叙事短片分镜（柜台轴线场景）",
+    "tag": "drama",
+    "targetSkills": ["叙事短片导演分镜"],
+    "sentinel": false,
+    "brief": "雨夜当铺：典当行老板与神秘少女隔柜台对峙，少女要典当一枚会发光的怀表，老板认出怀表属于自己失踪多年的女儿。60 秒剧情短片，哥特怪诞卡通 + 暗黑童话 + 高审美电影感（森海风格）。",
+    "constraints": { "ratio": "16:9", "durationSec": [4, 15], "style": "森海暗黑童话" },
+    "expectedArtifacts": ["storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "D01-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "D01-axis", "type": "axis_guard", "blocking": true, "points": 2, "note": "柜台两侧对峙为标准轴线场景，全场机位须同侧" },
+      { "checkId": "D01-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 15, "blocking": true, "points": 2 },
+      { "checkId": "D01-clips", "type": "clip_count_bounds", "min": 4, "max": 12, "scope": "clips", "points": 1 },
+      { "checkId": "D01-purpose", "type": "field_present", "path": "shots.0.narrativePurpose", "points": 1, "note": "九列分镜的叙事目的列须结构化保留" },
+      { "checkId": "D01-junk", "type": "junkword_free", "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "D01-narrative", "name": "叙事清晰度", "weight": 1, "anchors": ["每镜叙事目的可辨识（不开无功能镜头）", "怀表悬念逐镜递进或转折", "首尾画面形成呼应或对照"] },
+      { "dimId": "D01-visual", "name": "视觉语言质量", "weight": 1, "anchors": ["主光方向可辨识，暗部不死黑", "景别有节奏变化而非单调切换", "森海风格要素（哥特/暗黑童话）在场可辨"] }
+    ],
+    "notes": "轴线主场景：与 P0 轴线校验器天然联动，是金标集中门禁覆盖度最高的任务。"
+  },
+  {
+    "taskId": "GT-D02",
+    "title": "三幕式短剧第一集（BS2 节拍卡点）",
+    "tag": "drama",
+    "targetSkills": ["三幕式短剧工厂"],
+    "sentinel": false,
+    "brief": "一句话剧情：外卖骑手暴雨夜给顶楼客户送最后一单，发现收件人是十年未联系的初恋。类型：都市温情。产出 24 集 × 60 秒短剧的第一集完整节拍表与分镜。",
+    "constraints": { "ratio": "9:16", "durationSec": [4, 15] },
+    "expectedArtifacts": ["scriptText", "beatSheet", "storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "D02-bstory", "type": "beat_percentage", "beat": "b[_ -]?story|B故事", "minPct": 8, "maxPct": 18, "points": 1 },
+      { "checkId": "D02-midpoint", "type": "beat_percentage", "beat": "midpoint|中点", "minPct": 45, "maxPct": 55, "points": 1 },
+      { "checkId": "D02-alllost", "type": "beat_percentage", "beat": "all[_ -]?is[_ -]?lost|一无所有", "minPct": 68, "maxPct": 80, "points": 1 },
+      { "checkId": "D02-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "D02-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "D02-script", "type": "required_pattern", "pattern": "内景|外景|INT\\.|EXT\\.", "target": "scriptText", "points": 1, "note": "剧本须带场景标头" }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "D02-emotion", "name": "情绪落点", "weight": 1, "anchors": ["初恋重逢的揭示有铺垫而非直给", "结尾留钩子（短剧第一集标准）", "节拍表内容与一句话剧情自洽"] }
+    ],
+    "notes": "节拍表须结构化输出（totalUnits + beats.atUnit），百分比由检查引擎计算。"
+  },
+  {
+    "taskId": "GT-D03",
+    "title": "软文转剧本资产一条龙",
+    "tag": "drama",
+    "targetSkills": ["剧本资产视频一条龙创作"],
+    "sentinel": false,
+    "brief": "原始文本：一篇 300 字的手工黄铜台灯匠人故事软文（工匠三代传承、失蜡法铸造、暖光氛围）。转换为标准剧本，提取视觉资产清单，最终成片 45 秒广告。",
+    "constraints": { "ratio": "16:9", "durationSec": [4, 15] },
+    "expectedArtifacts": ["scriptText", "assetList", "storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "D03-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "D03-subject", "type": "required_pattern", "pattern": "台灯", "target": "promptsJoined", "points": 1 },
+      { "checkId": "D03-prompts", "type": "clip_count_bounds", "min": 4, "max": 10, "scope": "prompts", "points": 1, "note": "资产/镜头提示词数量" },
+      { "checkId": "D03-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "D03-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 15, "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "D03-craft", "name": "匠人质感传达", "weight": 1, "anchors": ["工艺细节（失蜡法/锻打/抛光）可视化落地", "暖光氛围与金属反光的材质描写", "资产清单与分镜一一对应"] }
+    ]
+  },
+  {
+    "taskId": "GT-D04",
+    "title": "一图成片：赛博雨夜手表 TVC",
+    "tag": "drama",
+    "targetSkills": ["一图成片-电影广告全能导演"],
+    "sentinel": false,
+    "brief": "上传图片：赛博朋克城市雨夜街景实拍图（霓虹招牌、湿地反光）。生成 12 秒高端手表品牌 CHRONOS 电视广告，电影质感，图生视频链路。",
+    "constraints": { "ratio": "16:9", "durationSec": [4, 12], "style": "电影感 TVC" },
+    "expectedArtifacts": ["storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "D04-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "D04-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 12, "blocking": true, "points": 2 },
+      { "checkId": "D04-clips", "type": "clip_count_bounds", "min": 1, "max": 3, "scope": "clips", "points": 1, "note": "12 秒 TVC 单镜或三段式" },
+      { "checkId": "D04-brand", "type": "required_pattern", "pattern": "CHRONOS", "target": "promptsJoined", "points": 1 },
+      { "checkId": "D04-junk", "type": "junkword_free", "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "D04-brandfit", "name": "品牌调性", "weight": 1, "anchors": ["高端手表与赛博雨夜的质感自洽", "产品出现时机服务于品牌记忆点"] }
+    ]
+  }
+]

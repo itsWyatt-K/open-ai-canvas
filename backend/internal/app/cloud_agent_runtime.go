@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"gorm.io/gorm"
-	"infinite-canvas/backend/internal/agentcontext"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/prompts"
@@ -37,43 +36,6 @@ type cloudAgentCall struct {
 		Arguments string `json:"arguments"`
 	} `json:"function"`
 }
-
-type cloudAgentCachedToolResult struct {
-	Result        json.RawMessage `json:"result,omitempty"`
-	Error         string          `json:"error,omitempty"`
-	ArgumentError bool            `json:"argumentError,omitempty"`
-	// ReplayCount is diagnostic only. Replaying a cached read is harmless and
-	// must not fail the run; the per-run real-read budget limits cache misses.
-	ReplayCount int `json:"replayCount,omitempty"`
-}
-
-type cloudAgentReadLoopError struct {
-	ToolName   string
-	Count      int
-	Budget     bool
-	ReasonCode string
-}
-
-func (e *cloudAgentReadLoopError) reasonCode() string {
-	if e == nil || e.ReasonCode == "" {
-		if e != nil && e.Budget {
-			return "read_budget_exceeded"
-		}
-		return "repeated_read_guard"
-	}
-	return e.ReasonCode
-}
-
-func (e *cloudAgentReadLoopError) Error() string {
-	if e == nil {
-		return "Agent 重复读取护栏已触发"
-	}
-	if e.Budget {
-		return fmt.Sprintf("Agent 本轮只读工具调用已达到安全上限（%d 次），本轮已停止以避免继续消耗模型调用；请使用已有结果继续，不要继续读取", e.Count)
-	}
-	return fmt.Sprintf("Agent 连续重复读取同一份%s结果，本轮已停止以避免继续消耗模型调用；请使用已有结果继续，不要再次读取", e.ToolName)
-}
-
 type cloudAgentApproval struct {
 	Prepared  *cloudAgentPreparedMedia  `json:"prepared,omitempty"`
 	ModelName string                    `json:"modelName,omitempty"`
@@ -85,51 +47,41 @@ type cloudAgentApproval struct {
 	Reason    string                    `json:"reason,omitempty"`
 }
 type cloudAgentRuntime struct {
-	RuntimeRunID       string                                `json:"-"`
-	Request            CloudAgentRequest                     `json:"request"`
-	Policy             cloudAgentPolicySnapshot              `json:"policy"`
-	ParentID           string                                `json:"parentId,omitempty"`
-	Fingerprint        string                                `json:"fingerprint,omitempty"`
-	CreativeAnchor     cloudAgentCreativeAnchor              `json:"creativeAnchor,omitempty"`
-	TextHistory        []providerTextMessage                 `json:"textHistory,omitempty"`
-	Skills             []cloudAgentSkill                     `json:"skills"`
-	Profile            cloudAgentProfileSnapshot             `json:"profile"`
-	ProfileReads       map[string]bool                       `json:"profileReads,omitempty"`
-	ToolReadResults    map[string]cloudAgentCachedToolResult `json:"toolReadResults,omitempty"`
-	ToolReadReplays    map[string]int                        `json:"toolReadReplays,omitempty"`
-	readCacheExecution bool                                  `json:"-"`
-	Canonical          canonicalAgentRequest                 `json:"canonical"`
-	ActiveTaskID       string                                `json:"activeTaskId"`
-	ActiveTextDraft    string                                `json:"activeTextDraft,omitempty"`
-	MediaTaskID        string                                `json:"mediaTaskId,omitempty"`
-	TaskIDs            []string                              `json:"taskIds"`
-	Step               int                                   `json:"step"`
-	Generations        int                                   `json:"generations"`
-	VideoSeconds       int                                   `json:"videoSeconds"`
-	Calls              []cloudAgentCall                      `json:"calls"`
-	CallIndex          int                                   `json:"callIndex"`
-	ToolRepairs        map[string]cloudAgentToolRepair       `json:"toolRepairs,omitempty"`
-	Approval           *cloudAgentApproval                   `json:"approval,omitempty"`
-	// AutoPreparedMedia is the durable admission checkpoint for permissionMode=auto.
-	// It prevents a worker restart between dry admission and billed submission from
-	// re-running admission or creating the draft node a second time.
-	AutoPreparedMedia              *cloudAgentPreparedMedia                `json:"autoPreparedMedia,omitempty"`
-	AutoPreparedCallHash           string                                  `json:"autoPreparedCallHash,omitempty"`
-	Decisions                      map[string]string                       `json:"decisions"`
-	DecisionSettings               map[string]string                       `json:"decisionSettings,omitempty"`
-	DecisionPreparedHashes         map[string]string                       `json:"decisionPreparedHashes,omitempty"`
-	ActionNudged                   bool                                    `json:"actionNudged,omitempty"`
-	EmptyOutputNudged              int                                     `json:"emptyOutputNudged,omitempty"`
-	StepSnapshotHash               string                                  `json:"stepSnapshotHash,omitempty"`
-	StoryboardTaskID               string                                  `json:"storyboardTaskId,omitempty"`
-	Plan                           []cloudAgentPlanItem                    `json:"plan,omitempty"`
-	ConfirmationRounds             int                                     `json:"confirmationRounds,omitempty"`
-	ConfirmationFingerprints       []string                                `json:"confirmationFingerprints,omitempty"`
-	PendingConfirmationFingerprint string                                  `json:"pendingConfirmationFingerprint,omitempty"`
-	PendingInterjections           []cloudAgentInterjection                `json:"pendingInterjections,omitempty"`
-	TransientReferences            map[string]cloudAgentTransientReference `json:"transientReferences,omitempty"`
-	InterjectionIDs                []string                                `json:"interjectionIds,omitempty"`
-	Events                         []CloudAgentEvent                       `json:"events"`
+	RuntimeRunID           string                                  `json:"-"`
+	Request                CloudAgentRequest                       `json:"request"`
+	Policy                 cloudAgentPolicySnapshot                `json:"policy"`
+	ParentID               string                                  `json:"parentId,omitempty"`
+	Fingerprint            string                                  `json:"fingerprint,omitempty"`
+	CreativeAnchor         cloudAgentCreativeAnchor                `json:"creativeAnchor,omitempty"`
+	TextHistory            []providerTextMessage                   `json:"textHistory,omitempty"`
+	Skills                 []cloudAgentSkill                       `json:"skills"`
+	SkillReads             map[string]bool                         `json:"skillReads,omitempty"`
+	Profile                cloudAgentProfileSnapshot               `json:"profile"`
+	ProfileReads           map[string]bool                         `json:"profileReads,omitempty"`
+	Canonical              canonicalAgentRequest                   `json:"canonical"`
+	ActiveTaskID           string                                  `json:"activeTaskId"`
+	ActiveTextDraft        string                                  `json:"activeTextDraft,omitempty"`
+	MediaTaskID            string                                  `json:"mediaTaskId,omitempty"`
+	TaskIDs                []string                                `json:"taskIds"`
+	Step                   int                                     `json:"step"`
+	Generations            int                                     `json:"generations"`
+	VideoSeconds           int                                     `json:"videoSeconds"`
+	Calls                  []cloudAgentCall                        `json:"calls"`
+	CallIndex              int                                     `json:"callIndex"`
+	ToolRepairs            map[string]cloudAgentToolRepair         `json:"toolRepairs,omitempty"`
+	Approval               *cloudAgentApproval                     `json:"approval,omitempty"`
+	Decisions              map[string]string                       `json:"decisions"`
+	DecisionSettings       map[string]string                       `json:"decisionSettings,omitempty"`
+	DecisionPreparedHashes map[string]string                       `json:"decisionPreparedHashes,omitempty"`
+	ActionNudged           bool                                    `json:"actionNudged,omitempty"`
+	EmptyOutputNudged      int                                     `json:"emptyOutputNudged,omitempty"`
+	StepSnapshotHash       string                                  `json:"stepSnapshotHash,omitempty"`
+	StoryboardTaskID       string                                  `json:"storyboardTaskId,omitempty"`
+	Plan                   []cloudAgentPlanItem                    `json:"plan,omitempty"`
+	PendingInterjections   []cloudAgentInterjection                `json:"pendingInterjections,omitempty"`
+	TransientReferences    map[string]cloudAgentTransientReference `json:"transientReferences,omitempty"`
+	InterjectionIDs        []string                                `json:"interjectionIds,omitempty"`
+	Events                 []CloudAgentEvent                       `json:"events"`
 	// EmptyOutputEscalated 记录"空输出已经升级重试过几次"（关思考 + 放大输出预算）。
 	EmptyOutputEscalated int `json:"emptyOutputEscalated,omitempty"`
 	// StepTimeoutEscalated 记录"单步墙钟到点后已经关思考重试过几次"。
@@ -144,15 +96,6 @@ type cloudAgentRuntime struct {
 	StepLimits cloudAgentStepLimits `json:"-"`
 	// ImageInspectCounts 记录本轮内每张图被查看的次数，用于"同一张图不要反复看"的护栏。
 	ImageInspectCounts map[string]int `json:"imageInspectCounts,omitempty"`
-	// ImageInspectionReads 以“节点 + 资源 + 画布 revision”为 key，避免同一张图在
-	// 同一版本的画布里反复触发视觉输入。画布内容变化后 key 自然变化，允许重新识别。
-	ImageInspectionReads map[string]int `json:"imageInspectionReads,omitempty"`
-	// ImageInspectCalls 记录本轮所有图片识别工具调用次数（包括只回执文字的重复调用）。
-	// 它与 ImageInspectCounts 一起进检查点，防止模型通过 refresh 或切换节点绕过总预算。
-	ImageInspectCalls int `json:"imageInspectCalls,omitempty"`
-	// ReadToolCalls 记录本轮会读取运行时只读快照的工具调用次数。除了同参缓存护栏，
-	// 还需要一个跨参数的总上限，防止模型通过不断变化 offset/nodeIds 绕过重复读取保护。
-	ReadToolCalls int `json:"readToolCalls,omitempty"`
 	// PendingImageInspections 暂存"本批还有工具结果没入历史"的看图结果，等整批 tool
 	// 结果都入历史后合并成一条 user 图片消息（见 cloudAgentFlushPendingImages）。
 	//
@@ -161,38 +104,6 @@ type cloudAgentRuntime struct {
 	// 从 StateJSON 重新解码（cloudAgentDecode）。进程内字段在下一个调用到来时必然为空，
 	// 缓冲就白缓冲了。载荷只有回执与签名链接，几十字节级。
 	PendingImageInspections []cloudAgentImageInspection `json:"pendingImageInspections,omitempty"`
-	// 以下三个字段属于"超预算时压缩成检查点后继续本轮"（见 cloud_agent_context_compaction.go）。
-	// ContextCompactionCount 是本轮已经压过几次：压完仍然超阈值时不能无限暂停。
-	ContextCompactionCount int `json:"contextCompactionCount,omitempty"`
-	// ContextCheckpoint 是最近一次落盘的结构化检查点；ContextCompaction 是"正在压缩"的状态面
-	// （requested 已请求 / running 压缩任务已发出），Resume 表示压完继续本轮而不是收尾结束。
-	ContextCheckpoint *agentcontext.Checkpoint     `json:"contextCheckpoint,omitempty"`
-	ContextCompaction *cloudAgentContextCompaction `json:"contextCompaction,omitempty"`
-	// HistoryIncludesCurrent 说明 TextHistory 是压缩瞬间的 canonical 快照：
-	// 续轮只补快照之后的新插话与最终回复，不能重复已压缩的用户要求。
-	HistoryIncludesCurrent bool `json:"historyIncludesCurrent,omitempty"`
-	// EventSeqBase 是本次载入的事件窗口之前已入库的条数，不变量是
-	// events[i].Seq == EventSeqBase + i + 1。事件全量在 cloud_agent_event_records，
-	// 内存只保留最近一窗（repository.CloudAgentJournalWindow），因此它是"窗口在整条
-	// 日志里的偏移"，而不是累计条数。只在内存里有效，不进检查点（检查点里的事件为空）。
-	EventSeqBase int `json:"-"`
-	// LastStep* 记下"最近一次已发出的模型调用"的本地计价，与上游回填的实测用量
-	// 配成锚点用。估算与实测指向同一份 canonical：估算取自任务 input 里实际发出的那份，
-	// 因此"信封一致"是构造保证，不需要额外比对。
-	LastStepTaskID       string `json:"lastStepTaskId,omitempty"`
-	LastStepOperation    string `json:"lastStepOperation,omitempty"`
-	LastStepEstimate     int    `json:"lastStepEstimate,omitempty"`
-	LastStepSourceBytes  int    `json:"lastStepSourceBytes,omitempty"`
-	LastStepSignature    string `json:"lastStepSignature,omitempty"`
-	LastStepModel        string `json:"lastStepModel,omitempty"`
-	LastStepChannelID    string `json:"lastStepChannelId,omitempty"`
-	LastStepWindowTokens int    `json:"lastStepWindowTokens,omitempty"`
-	// TokenAnchor 是上一步上游上报的用量（模型自己的分词器计数），上下文压力的权威锚点。
-	TokenAnchor *cloudAgentTokenAnchor `json:"tokenAnchor,omitempty"`
-	// ContextWindowKnown 记录本轮是否已经看到过"模型窗口已确认"的读数：从"未确认"变为
-	// "已确认"时要落一条 context_transition，消费方据此标"模型窗口已识别"，
-	// 而不是把口径切换画成上下文骤降。
-	ContextWindowKnown bool `json:"contextWindowKnown,omitempty"`
 }
 
 type cloudAgentTransientReference struct {
@@ -206,7 +117,6 @@ type cloudAgentTransientReference struct {
 func (s *Service) ensureCloudAgentExecution(task *model.Task, initial cloudAgentState) error {
 	var input struct {
 		TextHistory []providerTextMessage `json:"textHistory"`
-		Config      map[string]any        `json:"config"`
 		Requests    struct {
 			Canonical canonicalAgentRequest `json:"canonical"`
 		} `json:"agentRequests"`
@@ -221,7 +131,7 @@ func (s *Service) ensureCloudAgentExecution(task *model.Task, initial cloudAgent
 	if err != nil {
 		return err
 	}
-	state := cloudAgentRuntime{Request: initial.Request, Policy: initial.Policy, ParentID: initial.ParentID, Fingerprint: initial.Fingerprint, CreativeAnchor: initial.CreativeAnchor, TextHistory: input.TextHistory, Skills: initial.Skills, Profile: initial.Profile, Canonical: canonical, ActiveTaskID: task.ID, TaskIDs: []string{task.ID}, Step: 1, Decisions: map[string]string{}, Plan: initial.Plan, ConfirmationRounds: initial.ConfirmationRounds, ConfirmationFingerprints: append([]string(nil), initial.ConfirmationFingerprints...), PendingConfirmationFingerprint: "", Events: []CloudAgentEvent{}, StepLimits: limits}
+	state := cloudAgentRuntime{Request: initial.Request, Policy: initial.Policy, ParentID: initial.ParentID, Fingerprint: initial.Fingerprint, CreativeAnchor: initial.CreativeAnchor, TextHistory: input.TextHistory, Skills: initial.Skills, Profile: initial.Profile, Canonical: canonical, ActiveTaskID: task.ID, TaskIDs: []string{task.ID}, Step: 1, Decisions: map[string]string{}, Plan: initial.Plan, Events: []CloudAgentEvent{}, StepLimits: limits}
 	if len(initial.Skills) > 0 {
 		// skillIds makes the enablement auditable: usage telemetry can attribute a
 		// run to the skills it actually loaded instead of only counting the total.
@@ -231,27 +141,6 @@ func (s *Service) ensureCloudAgentExecution(task *model.Task, initial cloudAgent
 		}
 		state.event(task.ID, "tool_completed", map[string]any{"toolName": "skills_load", "skillIds": skillIDs, "text": fmt.Sprintf("已启用 %d 个技能，正文将按需读取", len(initial.Skills))})
 	}
-	pressure := s.cloudAgentContextPressure(input.Requests.Canonical, initial.Request.Prompt, initial.Request)
-	// 第一步的模型调用就是根任务本身（不经过 enqueueCloudAgentTask）：在这里登记任务 id
-	// 与本次请求的本地计价，它回来时才能与上游实测配成锚点。根任务的操作名是
-	// cloud_agent，但它就是第一步的模型调用，按"步骤"口径登记，否则回来配锚点时会被
-	// 操作名守卫挡掉。
-	state.LastStepTaskID = task.ID
-	state.LastStepOperation = cloudAgentStepOperation
-	state.LastStepEstimate = pressure.EstimatedInputTokens
-	state.LastStepSourceBytes = pressure.SourceBytes
-	state.LastStepModel = stringValue(input.Config["model"])
-	state.LastStepChannelID = stringValue(input.Config["channelId"])
-	state.LastStepSignature = cloudAgentRequestSignature(&state, input.Requests.Canonical, state.LastStepChannelID, state.LastStepModel)
-	if pressure.ModelLimitConfigured {
-		state.LastStepWindowTokens = pressure.ContextWindowTokens
-	}
-	// 第一步的窗口是"起始状态"而不是"刚刚识别"：只播种标记，不落 window_resolved，
-	// 否则每轮开头都会报一次"模型窗口已识别"。
-	state.ContextWindowKnown = pressure.ModelLimitConfigured
-	firstPressure := cloudAgentContextPressurePayload(pressure, &state, input.Requests.Canonical)
-	firstPressure["requestId"] = task.ID
-	state.event(task.ID, "context_pressure", firstPressure)
 	run := &model.CloudAgentExecution{ID: task.ID, UserID: task.UserID, Status: "running", Revision: 1, CreatedAt: task.CreatedAt, UpdatedAt: time.Now()}
 	if err := cloudAgentSave(run, &state); err != nil {
 		return err
@@ -259,8 +148,7 @@ func (s *Service) ensureCloudAgentExecution(task *model.Task, initial cloudAgent
 	return s.repo.EnsureCloudAgent(run)
 }
 func (state *cloudAgentRuntime) event(id, kind string, payload map[string]any) {
-	// 序号接在"已载入窗口 + 窗口之前已入库条数"之后，与 EventSeqBase 的不变量一致。
-	seq := state.EventSeqBase + len(state.Events) + 1
+	seq := len(state.Events) + 1
 	state.Events = append(state.Events, CloudAgentEvent{EventID: fmt.Sprintf("%s:%d", id, seq), RunID: id, Seq: seq, Type: kind, Payload: payload, CreatedAt: time.Now()})
 }
 func cloudAgentDecode(run *model.CloudAgentExecution) (cloudAgentRuntime, error) {
@@ -273,25 +161,13 @@ func cloudAgentDecode(run *model.CloudAgentExecution) (cloudAgentRuntime, error)
 	}
 	state.RuntimeRunID = run.ID
 	if run.CheckpointVersion >= 2 {
-		if len(run.Transcript) != run.MessageCount {
-			return state, errors.New("Agent execution transcript is incomplete")
-		}
-		// 事件只载入最近一窗（repository.CloudAgentJournalWindow），所以这里校验的是
-		// "窗口与水位自洽"而不是全量条数：
-		//   - 窗口必须正好结束在水位上（最后一条 seq == EventCount），否则说明有行没读到；
-		//   - 窗口为空时水位只能是 0，否则同样说明行缺失（不能把"一行都没有"当成空日志）；
-		//   - EventSeqBase = 水位 - 窗口条数，即窗口之前已入库的条数。
-		if len(run.Journal) == 0 && run.EventCount != 0 {
+		if len(run.Journal) != run.EventCount || len(run.Transcript) != run.MessageCount {
 			return state, errors.New("Agent execution journal is incomplete")
-		}
-		state.EventSeqBase = run.EventCount - len(run.Journal)
-		if state.EventSeqBase < 0 {
-			return state, errors.New("Agent execution journal watermark is invalid")
 		}
 		state.Events = make([]CloudAgentEvent, 0, len(run.Journal))
 		state.Canonical.Messages, state.TextHistory = nil, nil
 		for _, record := range run.Journal {
-			expected := state.EventSeqBase + len(state.Events) + 1
+			expected := len(state.Events) + 1
 			if record.Sequence != expected {
 				return state, errors.New("Agent event sequence is incomplete")
 			}
@@ -303,9 +179,6 @@ func cloudAgentDecode(run *model.CloudAgentExecution) (cloudAgentRuntime, error)
 				return state, errors.New("Agent event identity is invalid")
 			}
 			state.Events = append(state.Events, event)
-		}
-		if len(state.Events) > 0 && state.Events[len(state.Events)-1].Seq != run.EventCount {
-			return state, errors.New("Agent execution journal is incomplete")
 		}
 		for _, record := range run.Transcript {
 			switch record.Kind {
@@ -386,51 +259,6 @@ func validateCloudAgentRuntime(run *model.CloudAgentExecution, state *cloudAgent
 	if state.Step < 0 || state.Generations < 0 || state.VideoSeconds < 0 {
 		return errors.New("Agent runtime budget or step is invalid")
 	}
-	if state.ConfirmationRounds < 0 || state.ConfirmationRounds > cloudAgentMaxConfirmationRounds {
-		return errors.New("Agent runtime confirmation round is invalid")
-	}
-	if len(state.ConfirmationFingerprints) > cloudAgentMaxConfirmationRounds {
-		return errors.New("Agent runtime confirmation fingerprint history is invalid")
-	}
-	seenConfirmationPoints := make(map[string]struct{}, len(state.ConfirmationFingerprints))
-	for _, fingerprint := range state.ConfirmationFingerprints {
-		if !cloudAgentSHA256(fingerprint) {
-			return errors.New("Agent runtime confirmation fingerprint is invalid")
-		}
-		if _, exists := seenConfirmationPoints[fingerprint]; exists {
-			return errors.New("Agent runtime confirmation fingerprint history contains duplicates")
-		}
-		seenConfirmationPoints[fingerprint] = struct{}{}
-	}
-	if state.PendingConfirmationFingerprint != "" {
-		if !cloudAgentSHA256(state.PendingConfirmationFingerprint) {
-			return errors.New("Agent runtime pending confirmation fingerprint is invalid")
-		}
-		if _, exists := seenConfirmationPoints[state.PendingConfirmationFingerprint]; !exists {
-			return errors.New("Agent runtime pending confirmation fingerprint is not recorded")
-		}
-	}
-	if state.ImageInspectCalls < 0 {
-		return errors.New("Agent runtime image inspection budget is invalid")
-	}
-	if state.ReadToolCalls < 0 {
-		return errors.New("Agent runtime read tool budget is invalid")
-	}
-	for nodeID, count := range state.ImageInspectCounts {
-		if strings.TrimSpace(nodeID) == "" || count < 0 {
-			return errors.New("Agent runtime image inspection counts are invalid")
-		}
-	}
-	for key, count := range state.ImageInspectionReads {
-		if strings.TrimSpace(key) == "" || count < 0 {
-			return errors.New("Agent runtime image inspection read history is invalid")
-		}
-	}
-	for key, count := range state.ToolReadReplays {
-		if strings.TrimSpace(key) == "" || count < 0 {
-			return errors.New("Agent runtime read replay history is invalid")
-		}
-	}
 	if (state.Request.Budget.MaxGenerationTasks > 0 && state.Generations > state.Request.Budget.MaxGenerationTasks) || (state.Request.Budget.MaxVideoSeconds > 0 && state.VideoSeconds > state.Request.Budget.MaxVideoSeconds) {
 		return errors.New("Agent runtime generation budget is invalid")
 	}
@@ -447,9 +275,6 @@ func validateCloudAgentRuntime(run *model.CloudAgentExecution, state *cloudAgent
 	}
 	if state.ActiveTaskID != "" && state.MediaTaskID != "" {
 		return errors.New("Agent runtime has multiple active tasks")
-	}
-	if state.HistoryIncludesCurrent && len(state.Canonical.Messages) < len(state.TextHistory) {
-		return errors.New("Agent compacted history exceeds canonical transcript")
 	}
 	if len(state.TaskIDs) == 0 {
 		return errors.New("Agent runtime task history is invalid")
@@ -468,35 +293,15 @@ func validateCloudAgentRuntime(run *model.CloudAgentExecution, state *cloudAgent
 		return errors.New("Agent runtime active task is not in task history")
 	}
 	if state.MediaTaskID != "" {
-		if !cloudAgentContainsString(state.TaskIDs, state.MediaTaskID) || state.CallIndex >= len(state.Calls) || (state.Calls[state.CallIndex].Function.Name != "generate_media" && state.Calls[state.CallIndex].Function.Name != "image_layer_split") {
+		if !cloudAgentContainsString(state.TaskIDs, state.MediaTaskID) || state.CallIndex >= len(state.Calls) || state.Calls[state.CallIndex].Function.Name != "generate_media" {
 			return errors.New("Agent runtime media task is not attached to current call")
-		}
-	}
-	if state.AutoPreparedMedia != nil {
-		if state.AutoPreparedCallHash == "" || state.CallIndex < 0 || state.CallIndex >= len(state.Calls) {
-			return errors.New("Agent runtime auto media preparation is invalid")
-		}
-		current := state.Calls[state.CallIndex]
-		if current.Function.Name != "generate_media" && current.Function.Name != "image_layer_split" {
-			return errors.New("Agent runtime auto media preparation is not attached to a media call")
-		}
-		if state.AutoPreparedCallHash != cloudAgentApprovalCallHash(current) {
-			return errors.New("Agent runtime auto media preparation does not match current call")
 		}
 	}
 	if state.Decisions == nil || state.Events == nil {
 		return errors.New("Agent runtime maps are missing")
 	}
-	if state.EventSeqBase < 0 {
-		return errors.New("Agent runtime event watermark is invalid")
-	}
-	// 内存里只有"最近一窗 + 本次转移新产生的部分"，超过健全上限说明窗口没有按
-	// CloudAgentJournalWindow 载入（或序号基准算错），此时不能继续推进。
-	if len(state.Events) > cloudAgentEventWindowSanityLimit {
-		return errors.New("Agent runtime event window is too large")
-	}
 	for index, event := range state.Events {
-		if event.RunID != run.ID || event.Seq != state.EventSeqBase+index+1 || event.EventID == "" || event.Type == "" || event.Payload == nil || event.CreatedAt.IsZero() {
+		if event.RunID != run.ID || event.Seq != index+1 || event.EventID == "" || event.Type == "" || event.Payload == nil || event.CreatedAt.IsZero() {
 			return errors.New("Agent runtime event history is invalid")
 		}
 		if err := validateCloudAgentID(event.EventID, "事件 ID", 240); err != nil {
@@ -642,7 +447,7 @@ func cloudAgentSave(run *model.CloudAgentExecution, state *cloudAgentRuntime) er
 			return fmt.Errorf("%w: %v", errCloudAgentCheckpoint, err)
 		}
 		for index, event := range state.Events {
-			sequence := state.EventSeqBase + index + 1
+			sequence := index + 1
 			if event.Seq != sequence || event.RunID != run.ID || event.EventID != fmt.Sprintf("%s:%d", run.ID, sequence) {
 				return fmt.Errorf("%w: Agent event sequence or identity is invalid", errCloudAgentCheckpoint)
 			}
@@ -664,9 +469,6 @@ func cloudAgentSave(run *model.CloudAgentExecution, state *cloudAgentRuntime) er
 	if run.Title == "" {
 		run.Title = truncateRunes(state.Request.Prompt, 80)
 	}
-	// 事件按"窗口 + 水位"落库：run.Journal 只是内存窗口的映射（窗口之外的历史仍在
-	// 事件表里），写入侧（repository.MutateCloudAgent）只追加 seq > 旧水位的行，
-	// 因此窗口左移不会丢历史。
 	run.Journal = make([]model.CloudAgentEventRecord, 0, len(state.Events))
 	for _, event := range state.Events {
 		body, err := json.Marshal(event)
@@ -690,13 +492,11 @@ func cloudAgentSave(run *model.CloudAgentExecution, state *cloudAgentRuntime) er
 		}
 		run.Transcript = append(run.Transcript, model.CloudAgentMessageRecord{RunID: run.ID, UserID: run.UserID, Kind: "history", Sequence: index + 1, MessageJSON: string(body)})
 	}
-	// 水位 = 窗口之前已入库的条数 + 本次载入/新增的窗口条数，必须与事件表里的
-	// 最大 seq 一致，否则下一次载入的窗口与水位会对不上。
-	run.CheckpointVersion, run.EventCount, run.MessageCount = 2, state.EventSeqBase+len(state.Events), len(run.Transcript)
+	run.CheckpointVersion, run.EventCount, run.MessageCount = 2, len(run.Journal), len(run.Transcript)
 	run.StateJSON = string(raw)
 	return nil
 }
-func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgentState, options ...CloudAgentRunViewOptions) (*CloudAgentRun, error) {
+func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgentState) (*CloudAgentRun, error) {
 	run, err := s.repo.CloudAgent(task.UserID, task.ID)
 	if err != nil {
 		return nil, err
@@ -712,27 +512,7 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 	out.Status = run.Status
 	out.Revision, out.CleanupPending, out.FailureMessage = run.Revision, run.CleanupPending, run.FailureMessage
 	out.UpdatedAt = run.UpdatedAt
-	view := CloudAgentRunViewOptions{}
-	if len(options) > 0 {
-		view = options[0]
-	}
-	// 事件已全量落库，运行详情只返回一页：默认是尾部窗口，sinceSeq 只取增量。
-	// 四个位置字段与 events 一起返回，客户端据此判断"是否还有更早的记录"。
-	out.Events = s.cloudAgentRunEventsForView(task.UserID, run, &state, view.SinceSeq, view.EventLimit)
-	// EventSeqBase 必须与真正返回的这一页对齐（eventLimit 把它收窄时也一样），
-	// 不变量 events[i].seq == eventSeqBase + i + 1 才成立。页为空时退回窗口水位：
-	// 那时没有"首条事件"，但仍然要能说明窗口在整条日志里的位置。
-	out.EventSeqBase = state.EventSeqBase
-	if len(out.Events) > 0 {
-		out.EventSeqBase = out.Events[0].Seq - 1
-	}
-	out.EventCount = s.cloudAgentRunEventCount(task.UserID, run, &state)
-	if len(out.Events) > 0 {
-		out.LatestSeq = out.Events[len(out.Events)-1].Seq
-	}
-	if view.SinceSeq == 0 && len(out.Events) < out.EventCount {
-		out.EventsTruncated = true
-	}
+	out.Events = state.Events
 	out.Approval = state.Approval
 	if cloudAgentRunTerminal(run.Status) {
 		out.Approval = nil
@@ -758,14 +538,7 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 		return nil, err
 	}
 	for _, order := range orders {
-		// AmountMicrocredits is the reservation/quote, not necessarily the amount
-		// finally charged. A run can reserve 100000 microcredits and settle at
-		// 100000 microcredits (= 0.1 credits), or be refunded altogether. Never
-		// expose the reservation as spend, otherwise the Agent claims a charge
-		// that did not happen and budget/usage copy diverges from billing.
-		if order.Status == model.BillingStatusSettled {
-			out.SpentCredits += float64(order.ActualAmountMicrocredits) / float64(CreditScale)
-		}
+		out.SpentCredits += float64(order.AmountMicrocredits) / float64(CreditScale)
 	}
 	return out, nil
 }
@@ -842,19 +615,6 @@ func (s *Service) advanceCloudAgents() {
 	}
 }
 
-// wakeCloudAgentScheduler lets a completed model step resume its Agent without
-// waiting for the periodic recovery scan. The ticker remains authoritative for
-// other workers and missed in-process notifications.
-func (s *Service) wakeCloudAgentScheduler() {
-	if s == nil || s.agentSchedulerWake == nil {
-		return
-	}
-	select {
-	case s.agentSchedulerWake <- struct{}{}:
-	default:
-	}
-}
-
 func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) {
 	defer func() {
 		if errors.Is(err, errCloudAgentCheckpoint) {
@@ -887,11 +647,6 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 		}
 		if err != nil {
 			return err // Transient database failures must not terminate a live task.
-		}
-		// 停在压缩上时，这个在跑的任务就是压缩调用：它的结果只用来生成检查点，
-		// 不走"正文/工具调用"那套解析，也不会计入步数。
-		if state.ContextCompaction != nil {
-			return s.advanceCloudAgentContextCompaction(run, &state, task)
 		}
 		if task.Status == model.TaskStatusQueued || task.Status == model.TaskStatusRunning {
 			// 将已持久化的模型增量转成 Agent 事件；不拆分完整答案伪装成流式。
@@ -1006,9 +761,6 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 		})
 	}
 	if state.CallIndex < len(state.Calls) {
-		if handled, err := s.advanceCloudAgentReadBatch(run, &state); handled {
-			return err
-		}
 		return s.advanceCloudAgentTool(run, &state)
 	}
 	// 兜底 flush：本批调用都执行完了（无论最后一个调用是不是看图、有没有被中断），
@@ -1016,22 +768,16 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 	// "看图不是最后一个调用"的批次会把图片永久丢掉，而对应的 tool 回执已经在历史里。
 	// 幂等：正常路径（最后一个调用就是看图）已经在 cloudAgentRecordToolResult 里 flush 过。
 	cloudAgentFlushPendingImages(&state)
-	// 已经请求过压缩：这次推进只负责把压缩调用发出去（它不计入步数，见 enqueueCloudAgentTask）。
-	if state.ContextCompaction != nil && state.ContextCompaction.Status == "requested" {
-		return s.enqueueCloudAgentContextCompaction(run, &state)
-	}
 	contextBudget := s.cloudAgentContextBudgetForRequest(state.Request)
 	if compactCloudAgentContext(&state.Canonical, contextBudget) {
 		// Evicted read bodies must be obtainable again after compaction.
+		state.SkillReads = nil
 		state.ProfileReads = nil
 	}
 	if stepLimit := cloudAgentStepLimit(state.Request); stepLimit > 0 && state.Step >= stepLimit {
 		return s.failCloudAgent(run, &state, fmt.Sprintf("达到 %d 次模型调用上限，本轮已停止", stepLimit))
 	}
 	cloudAgentDrainInterjections(run.ID, &state)
-	// 上一步的模型调用已经回来，先用它的上游实测用量更新压力锚点，再发下一步：
-	// 下一步的读数与后面的正文裁剪判定都要用到这份锚点。
-	s.recordCloudAgentTokenAnchor(run.UserID, &state)
 	// 轮内唯一裁剪 = 图片：超出保留轮次的看图结果换成文字回执（正文一律保留）。
 	// 它必须在压缩判定之前跑：图片是最贵的一类内容，先移出再评估 token 压力才有意义。
 	if changed, pruned := cloudAgentPruneInspectedImages(&state.Canonical, nil); changed {
@@ -1042,13 +788,6 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 	}
 	canonical, contextErr := s.cloudAgentModelContext(run, &state, contextBudget)
 	if contextErr != nil {
-		// 真实任务帧与用户要求有时在下一步建模时就超过输入预算；
-		// 它会先于下方常规 token 判据失败，仍需给语义压缩一次机会。
-		if errors.Is(contextErr, errCloudAgentContextOverBudget) {
-			if requested, err := s.cloudAgentRequestCompaction(run, &state, contextBudget, contextBudget.CompactAtTokens); err != nil || requested {
-				return err
-			}
-		}
 		var appErr *AppError
 		if errors.As(contextErr, &appErr) {
 			return s.failCloudAgent(run, &state, appErr.Message)
@@ -1071,14 +810,6 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 	tokens, tokenErr := cloudAgentRequestEstimatedTokens(&canonical)
 	if tokenErr != nil {
 		return s.failCloudAgent(run, &state, "模型上下文估算失败，请稍后重试")
-	}
-	// 超预算不再直接判死：先暂停步进、把历史压成结构化检查点，压完用压缩后的上下文继续本轮。
-	// 次数上限（cloudAgentMaxCompactionsPerRun）用完仍超预算时，才回到下面的判死路径。
-	// 分工：这是轮内的**语义压缩**（触发者是 token 线，或没配窗口时的字节/条数兜底）；
-	// compactCloudAgentContext 是轮内可重读正文的**就地卸载**，跨轮 textHistory 由
-	// trimCloudAgentTextHistory 兜底——三者对象不同、不会互相打架。
-	if requested, err := s.cloudAgentRequestCompaction(run, &state, contextBudget, tokens); err != nil || requested {
-		return err
 	}
 	if tokens > contextBudget.InputBudgetTokens {
 		return s.failCloudAgent(run, &state, cloudAgentContextBudgetMessage(contextBudget))
@@ -1228,10 +959,6 @@ func cloudAgentModelFailure(task *model.Task) (string, string) {
 func cloudAgentSafeToolError(err error) string {
 	if err == nil {
 		return ""
-	}
-	var readLoopErr *cloudAgentReadLoopError
-	if errors.As(err, &readLoopErr) {
-		return readLoopErr.Error()
 	}
 	var appErr *AppError
 	if errors.As(err, &appErr) && appErr != nil {
@@ -1412,152 +1139,7 @@ func cloudAgentToolResult(runID string, state *cloudAgentRuntime, call cloudAgen
 	state.Approval = nil
 	return exhausted
 }
-
-// cloudAgentReadResultInContext reports whether the full cached result is still
-// present in the canonical transcript. Context compaction deliberately removes old
-// tool bodies, so a replay must restore the body once instead of returning a receipt
-// that refers to history the model can no longer see.
-func cloudAgentReadResultInContext(state *cloudAgentRuntime, result json.RawMessage) bool {
-	if state == nil || len(result) == 0 {
-		return false
-	}
-	// Unit-level callers may exercise the cache helper without constructing a
-	// transcript. The real runtime always has the first tool message here.
-	if len(state.Canonical.Messages) == 0 {
-		return true
-	}
-	want := string(result)
-	for _, message := range state.Canonical.Messages {
-		if stringValue(message["role"]) == "tool" && stringValue(message["content"]) == want {
-			return true
-		}
-	}
-	return false
-}
-
-// cloudAgentBatchableReadTool identifies read calls that are independent of
-// each other and safe to execute from one model tool-call response. Keeping
-// this list limited to the cacheable read contract is important: mutations,
-// approvals, user questions, media and vision calls remain ordered state
-// transitions and must each retain their existing semantics.
-func cloudAgentBatchableReadTool(name string) bool {
-	return cloudAgentReadToolReadOnly(name)
-}
-
-func cloudAgentInvalidateReadCache(state *cloudAgentRuntime) {
-	if state == nil {
-		return
-	}
-	// Canvas writes invalidate only canvas projections. Skill documents,
-	// profile preferences, and the model catalog do not change when a canvas is
-	// edited, so retaining them avoids re-reading large unrelated tool results.
-	for key := range state.ToolReadResults {
-		if strings.HasPrefix(key, "canvas_get_state:") || strings.HasPrefix(key, "canvas_read_storyboard:") {
-			delete(state.ToolReadResults, key)
-			delete(state.ToolReadReplays, key)
-		}
-	}
-}
-
-// advanceCloudAgentReadBatch executes consecutive independent reads from the
-// same model response before returning to the scheduler. The previous path
-// checkpointed after every read, which turned one parallel tool-call response
-// into N scheduler/database transitions. Results still get one tool message
-// per call, in the original order, so every provider contract remains valid.
-func (s *Service) advanceCloudAgentReadBatch(run *model.CloudAgentExecution, state *cloudAgentRuntime) (bool, error) {
-	if run == nil || state == nil || (run.Status != "running" && run.Status != "queued") {
-		return true, nil
-	}
-	if state.CallIndex < 0 || state.CallIndex >= len(state.Calls) {
-		return false, nil
-	}
-	type outcome struct {
-		call   cloudAgentCall
-		result any
-		err    error
-	}
-	outcomes := make([]outcome, 0, len(state.Calls)-state.CallIndex)
-	// Reads are collected before one checkpoint write. During collection, their
-	// successful receipts are not in Canonical.Messages yet, so the regular cache
-	// layer cannot see that an earlier call in this same batch already returned
-	// the full body. Track those keys here to avoid appending the same large result
-	// repeatedly when a model emits duplicate parallel reads.
-	batchReadResults := make(map[string]bool, len(state.Calls)-state.CallIndex)
-	for index := state.CallIndex; index < len(state.Calls); index++ {
-		call := state.Calls[index]
-		if !cloudAgentBatchableReadTool(call.Function.Name) || !cloudAgentToolAllowed(state.Request, call.Function.Name) {
-			break
-		}
-		call = s.cloudAgentRefreshStepSnapshotHash(run, state, call)
-		state.Calls[index] = call
-		if call.Function.Name == "skill_read_file" || call.Function.Name == "model_list" {
-			state.RuntimeRunID = run.ID
-		}
-		result, err := cloudAgentReadToolCached(s.repo, run.UserID, state, call, s)
-		if err == nil {
-			cacheKey := cloudAgentReadCacheKeyForState(s.repo, run.UserID, state, call)
-			if batchReadResults[cacheKey] {
-				// The first receipt will be appended before this one in the same
-				// checkpoint transaction, so this acknowledgement is truthful even
-				// though the canonical transcript has not been updated yet.
-				result = map[string]any{
-					"cacheReplay": true,
-					"replayCount": state.ToolReadReplays[cacheKey],
-					"message":     "该只读结果已在本批工具调用的前序结果中，请直接使用已有结果，不要再次读取",
-				}
-			} else {
-				batchReadResults[cacheKey] = true
-			}
-		}
-		outcomes = append(outcomes, outcome{call: call, result: result, err: err})
-		var loopErr *cloudAgentReadLoopError
-		if errors.As(err, &loopErr) {
-			break
-		}
-	}
-	if len(outcomes) == 0 {
-		return false, nil
-	}
-
-	s.storageMu.Lock()
-	defer s.storageMu.Unlock()
-	err := s.repo.MutateCloudAgent(run.UserID, run.ID, run.Revision, func(current *model.CloudAgentExecution, _ *repository.Repository) error {
-		for _, item := range outcomes {
-			var readLoopErr *cloudAgentReadLoopError
-			if errors.As(item.err, &readLoopErr) {
-				// A provider tool-call turn is atomic from the transcript's point of
-				// view: every declared tool_call_id needs a tool message, even when a
-				// read guard terminates the run. Record the triggering error and then
-				// explicit skipped receipts before appending run_failed, otherwise a
-				// later resume/replay produces an invalid provider transcript.
-				cloudAgentToolResult(current.ID, state, item.call, item.result, item.err)
-				for state.CallIndex < len(state.Calls) {
-					pending := state.Calls[state.CallIndex]
-					cloudAgentToolResult(current.ID, state, pending,
-						map[string]any{"skipped": true, "reason": readLoopErr.reasonCode()},
-						nil)
-				}
-				current.Status = "failed"
-				current.FailureMessage = truncateRunes(readLoopErr.Error(), 1000)
-				cloudAgentDropInterjections(run.ID, "本轮已结束："+truncateRunes(current.FailureMessage, 120), state)
-				reason := readLoopErr.reasonCode()
-				state.event(run.ID, "run_failed", map[string]any{
-					"text": current.FailureMessage, "reason": reason,
-					"toolName": item.call.Function.Name, "readCount": readLoopErr.Count,
-				})
-				break
-			}
-			cloudAgentRecordToolResult(current, state, item.call, item.result, item.err)
-		}
-		return cloudAgentSave(current, state)
-	})
-	return true, err
-}
-
 func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *cloudAgentRuntime) error {
-	if run == nil || state == nil || (run.Status != "running" && run.Status != "queued") {
-		return nil
-	}
 	if state.CallIndex < 0 || state.CallIndex >= len(state.Calls) {
 		return s.failCloudAgent(run, state, "Agent 工具调用状态无效，本轮已停止")
 	}
@@ -1571,8 +1153,7 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 		return s.terminateCloudAgent(run, "审批内容与待执行操作不一致，本轮已停止")
 	}
 	allowed := cloudAgentToolAllowed(state.Request, call.Function.Name)
-	mediaTool := call.Function.Name == "generate_media" || call.Function.Name == "image_layer_split"
-	if allowed && cloudAgentWrite(call.Function.Name) && (state.Request.PermissionMode == "request_approval" || mediaTool) && state.Approval == nil {
+	if allowed && cloudAgentWrite(call.Function.Name) && (state.Request.PermissionMode == "request_approval" || call.Function.Name == "generate_media" || call.Function.Name == "image_layer_split") && state.Approval == nil {
 		var plan *cloudAgentMediaPlan
 		var modelName string
 		var mediaRequest CreateTaskRequest
@@ -1588,98 +1169,19 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 			if err != nil {
 				return s.cloudAgentMediaError(run, state, "admission", false, false, err)
 			}
-			mediaRequest, plan = req, prepared
-			// A durable auto checkpoint already contains the exact admitted input and
-			// quote. Reusing it avoids a second dry admission after a worker restart.
-			if plan.Prepared == nil {
-				// Dry admission validates the selected model and prompt limits without a task or charge.
-				mediaPreparation = &creationTaskPreparation{}
-				req.creationPrepare = mediaPreparation
-				preparedTask, err = s.CreateTask(run.UserID, req)
-				if err != nil {
-					return s.cloudAgentMediaError(run, state, "admission", false, false, err)
-				}
-				// Resolve model-owned defaults once during the dry admission. Both the
-				// eventual task and the canvas draft must use this exact resolved input;
-				// otherwise auto mode reports a false tool failure for omitted size or
-				// duration and makes the model spend another turn repairing its own call.
-				if err := applyCloudAgentResolvedMediaDefaults(&req, prepared, preparedTask); err != nil {
-					return s.cloudAgentMediaError(run, state, "admission", false, false, err)
-				}
-				mediaRequest, plan = req, prepared
+			// Dry admission validates the selected model and prompt limits without a task or charge.
+			mediaPreparation = &creationTaskPreparation{}
+			req.creationPrepare = mediaPreparation
+			preparedTask, err = s.CreateTask(run.UserID, req)
+			if err != nil {
+				return s.cloudAgentMediaError(run, state, "admission", false, false, err)
 			}
+			mediaRequest = req
+			plan = prepared
 			modelName, err = s.cloudAgentMediaModelName(plan.Args)
 			if err != nil {
 				return s.cloudAgentMediaError(run, state, "admission", false, false, err)
 			}
-		}
-		if plan != nil && state.Request.PermissionMode == "auto" {
-			if plan.Prepared != nil {
-				// The draft and quote were already checkpointed. Reuse them after a
-				// worker restart instead of dry-admitting and mutating the canvas again.
-				latest, err := s.repo.CloudAgent(run.UserID, run.ID)
-				if err != nil {
-					return err
-				}
-				fresh, err := cloudAgentDecode(latest)
-				if err != nil {
-					return err
-				}
-				return s.enqueueCloudAgentTask(latest, &fresh, mediaRequest, plan)
-			}
-			// Auto media is a direct, server-admitted write. Prepare the draft and
-			// its immutable quote in one checkpoint transaction, then release the
-			// lock before enqueueCloudAgentTask performs the billed submission.
-			s.storageMu.Lock()
-			err := s.repo.MutateCloudAgent(run.UserID, run.ID, run.Revision, func(current *model.CloudAgentExecution, repo *repository.Repository) error {
-				if err := createCloudAgentMediaNode(repo, run.UserID, state.Request.CanvasID, plan, nil, policy, cloudAgentCanvasEventRecorder(run.ID, state)); err != nil {
-					return err
-				}
-				canvas, err := repo.CanvasProjectForUser(run.UserID, state.Request.CanvasID)
-				if err != nil {
-					return err
-				}
-				doc, err := creationDocument(canvas.PayloadJSON)
-				if err != nil {
-					return err
-				}
-				plan.Args.SnapshotHash = cloudAgentMediaContentHash(doc)
-				raw, err := json.Marshal(plan.Args)
-				if err != nil {
-					return err
-				}
-				call.Function.Arguments = string(raw)
-				state.Calls[state.CallIndex] = call
-				preparedMedia, err := prepareCloudAgentMediaApproval(repo, run.UserID, doc, plan, mediaRequest, preparedTask, mediaPreparation.Order)
-				if err != nil {
-					return err
-				}
-				plan.Prepared = preparedMedia
-				state.AutoPreparedMedia = preparedMedia
-				state.AutoPreparedCallHash = cloudAgentApprovalCallHash(call)
-				return cloudAgentSave(current, state)
-			})
-			s.storageMu.Unlock()
-			if err != nil {
-				latest, readErr := s.repo.CloudAgent(run.UserID, run.ID)
-				if readErr != nil || latest.Revision != run.Revision {
-					return err
-				}
-				fresh, decodeErr := cloudAgentDecode(latest)
-				if decodeErr != nil {
-					return decodeErr
-				}
-				return s.cloudAgentMediaError(latest, &fresh, "admission", false, false, err)
-			}
-			latest, err := s.repo.CloudAgent(run.UserID, run.ID)
-			if err != nil {
-				return err
-			}
-			fresh, err := cloudAgentDecode(latest)
-			if err != nil {
-				return err
-			}
-			return s.enqueueCloudAgentTask(latest, &fresh, mediaRequest, plan)
 		}
 		s.storageMu.Lock()
 		defer s.storageMu.Unlock()
@@ -1786,29 +1288,28 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 	if err != nil {
 		return s.terminateCloudAgent(run, "Agent 运行策略不可用，本轮已停止")
 	}
+	var modelList any
+	var modelListErr error
+	if allowed && call.Function.Name == "model_list" {
+		intent, e := s.cloudAgentModelIntent(run.UserID, state.Request.CanvasID, call.Function.Arguments)
+		modelListErr = e
+		if e == nil {
+			modelList, modelListErr = s.cloudAgentModelList(intent)
+		}
+	}
 	// 看图的资源与能力校验在写事务外完成；真实图片只在模型任务执行时读取。
 	var inspectionResult any
 	var inspectionErr error
 	if allowed && call.Function.Name == "canvas_inspect_image" && state.Request.VisionEnabled {
 		inspectionResult, inspectionErr = s.prepareCloudAgentImageInspection(run.UserID, state.Request.CanvasID, state, call)
-		if errors.Is(inspectionErr, errCloudAgentImageInspectionBudget) {
-			return s.failCloudAgent(run, state, cloudAgentImageInspectionBudgetMessage)
-		}
 	}
 	// Skill reads use the domain repository and filesystem, not the checkpoint
 	// transaction's connection. Read first to avoid nesting DB reads on SQLite.
 	var skillResult any
 	var skillErr error
-	if allowed && (call.Function.Name == "skill_read_file" || call.Function.Name == "model_list" || call.Function.Name == "image_annotation_render") {
+	if allowed && (call.Function.Name == "skill_read_file" || call.Function.Name == "image_annotation_render") {
 		state.RuntimeRunID = run.ID
-		if call.Function.Name == "image_annotation_render" {
-			skillResult, skillErr = cloudAgentReadTool(s.repo, run.UserID, state, call, s)
-		} else {
-			// 技能文件和模型目录都是稳定的只读结果。统一走检查点缓存，
-			// 使重复调用不会再次访问文件系统/数据库，也不会把大结果重复
-			// 写入后续模型上下文。
-			skillResult, skillErr = cloudAgentReadToolCached(s.repo, run.UserID, state, call, s)
-		}
+		skillResult, skillErr = cloudAgentReadTool(s.repo, run.UserID, state, call, s)
 	}
 	s.storageMu.Lock()
 	defer s.storageMu.Unlock()
@@ -1832,57 +1333,29 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 			result, toolErr = applyCloudAgentStoryboardMutation(repo, run.UserID, state.Request.CanvasID, call, policy, cloudAgentCanvasEventRecorder(run.ID, state))
 		case call.Function.Name == "canvas_edit_batch_table":
 			result, toolErr = applyCloudAgentBatchTableMutation(repo, run.UserID, state.Request.CanvasID, call, policy, cloudAgentCanvasEventRecorder(run.ID, state))
+		case call.Function.Name == "model_list":
+			result, toolErr = modelList, modelListErr
 		case call.Function.Name == "canvas_inspect_image":
 			result, toolErr = inspectionResult, inspectionErr
 			if toolErr == nil && inspectionResult != nil {
 				if inspection, ok := inspectionResult.(cloudAgentImageInspection); ok {
-					state.markCanvasImageInspection(stringValue(inspection.Receipt["nodeId"]), strings.TrimSpace(inspection.ImageURL) != "")
-					if inspection.CacheKey != "" {
-						if state.ImageInspectionReads == nil {
-							state.ImageInspectionReads = map[string]int{}
-						}
-						state.ImageInspectionReads[inspection.CacheKey]++
-					}
+					state.markCanvasImageAttached(stringValue(inspection.Receipt["nodeId"]))
 				}
 			}
-		case call.Function.Name == "skill_read_file", call.Function.Name == "model_list", call.Function.Name == "image_annotation_render":
+		case call.Function.Name == "skill_read_file", call.Function.Name == "image_annotation_render":
 			result, toolErr = skillResult, skillErr
 		default:
-			result, toolErr = cloudAgentReadToolCached(repo, run.UserID, state, call)
-		}
-		if toolErr == nil && cloudAgentWrite(call.Function.Name) {
-			// A successful canvas mutation changes the read model. Do not replay a
-			// pre-mutation canvas snapshot later in the same Agent run.
-			cloudAgentInvalidateReadCache(state)
-		}
-		var readLoopErr *cloudAgentReadLoopError
-		if errors.As(toolErr, &readLoopErr) {
-			cloudAgentRecordToolResult(current, state, call, result, toolErr)
-			current.Status = "failed"
-			current.FailureMessage = truncateRunes(readLoopErr.Error(), 1000)
-			cloudAgentDropInterjections(run.ID, "本轮已结束："+truncateRunes(current.FailureMessage, 120), state)
-			reason := readLoopErr.reasonCode()
-			state.event(run.ID, "run_failed", map[string]any{
-				"text": current.FailureMessage, "reason": reason,
-				"toolName": call.Function.Name, "readCount": readLoopErr.Count,
-			})
-			return cloudAgentSave(current, state)
+			result, toolErr = cloudAgentReadTool(repo, run.UserID, state, call)
 		}
 		if call.Function.Name == "plan_update" && toolErr == nil {
 			state.event(run.ID, "plan_updated", map[string]any{"items": state.Plan, "pendingTitles": cloudAgentPendingPlanItems(state.Plan)})
 		}
 		if call.Function.Name == "ask_user" && toolErr == nil {
 			payload, _ := result.(map[string]any)
-			if payload["phase"] == "question" {
-				state.event(run.ID, "user_question", payload)
-				cloudAgentRecordToolResult(current, state, call, result, nil)
-				skipRemainingCloudAgentCalls(run.ID, state)
-				current.Status = "completed"
-				return cloudAgentSave(current, state)
-			}
-			// The server-side round limit turns further questions into a normal
-			// tool result so the model must continue with safe defaults.
+			state.event(run.ID, "user_question", payload)
 			cloudAgentRecordToolResult(current, state, call, result, nil)
+			skipRemainingCloudAgentCalls(run.ID, state)
+			current.Status = "completed"
 			return cloudAgentSave(current, state)
 		}
 		cloudAgentRecordToolResult(current, state, call, result, toolErr)
@@ -1922,17 +1395,11 @@ func (s *Service) enqueueCloudAgentTask(run *model.CloudAgentExecution, state *c
 	var prepared *cloudAgentPreparedMedia
 	approvalID, generationID := "", ""
 	if media != nil {
-		prepared = media.Prepared
-		if prepared == nil && state.Approval != nil {
-			prepared = state.Approval.Prepared
-			if state.Approval != nil {
-				approvalID = state.Approval.ID
-			}
-		}
-		if prepared == nil {
+		if state.Approval == nil || state.Approval.Prepared == nil {
 			return s.cloudAgentMediaError(run, state, "admission", false, false, creationConflict("缺少已批准的生成准备态，请重新申请审批；未提交任务"))
 		}
-		generationID = prepared.GenerationID
+		prepared = state.Approval.Prepared
+		approvalID, generationID = state.Approval.ID, prepared.GenerationID
 		refs, refErr := cloudAgentPreparedReferences(s.repo, run.UserID, prepared)
 		if refErr != nil {
 			return s.cloudAgentMediaError(run, state, "admission", false, false, refErr)
@@ -1985,21 +1452,6 @@ func (s *Service) enqueueCloudAgentTask(run *model.CloudAgentExecution, state *c
 		return err
 	}
 	task.InputJSON = string(raw)
-	// 压力读数只对"模型调用"这一步有意义：媒体任务发的是另一份请求（另一套信封），
-	// 把读数挂到那份信封上会误导消费方。
-	var contextPressure *cloudAgentContextPressure
-	var requestCanonical canonicalAgentRequest
-	if media == nil {
-		if req.Operation != cloudAgentContextCompactionOperation {
-			canonical, ok := canonicalAgentRequestFromInput(input)
-			if !ok {
-				return fmt.Errorf("Agent 模型任务缺少可计量的请求信封")
-			}
-			requestCanonical = canonical
-			value := s.cloudAgentContextPressure(canonical, state.Request.Prompt, state.Request)
-			contextPressure = &value
-		}
-	}
 	if prepare.Order != nil {
 		task.BillingOrderID = prepare.Order.ID
 	}
@@ -2033,66 +1485,19 @@ func (s *Service) enqueueCloudAgentTask(run *model.CloudAgentExecution, state *c
 			return err
 		}
 		if media != nil && prepared != nil {
-			if approvalID != "" {
-				if err := repo.TransferCloudAgentResourceLeases(run.UserID, approvalID, "task:"+task.ID, task.ID, prepared.Quote.ExpiresAt); err != nil {
-					return err
-				}
-			} else {
-				// Auto execution has no approval owner to transfer from. Attach the
-				// resource lease directly to the billed task before it can run.
-				ids := make([]string, 0, len(prepared.ResourceSignatures))
-				for id := range prepared.ResourceSignatures {
-					ids = append(ids, id)
-				}
-				if err := repo.UpsertCloudAgentResourceLeases(run.UserID, run.ID, "task:"+task.ID, ids, prepared.Quote.ExpiresAt); err != nil {
-					return err
-				}
+			if err := repo.TransferCloudAgentResourceLeases(run.UserID, approvalID, "task:"+task.ID, task.ID, prepared.Quote.ExpiresAt); err != nil {
+				return err
 			}
-		}
-		if media != nil {
-			// The prepared auto admission is single-use. Once the billed task and
-			// draft node are committed, a later retry must observe the task state,
-			// not reuse the old quote or create a second task.
-			state.AutoPreparedMedia = nil
-			state.AutoPreparedCallHash = ""
 		}
 		state.TaskIDs = append(state.TaskIDs, task.ID)
 		if media != nil {
 			state.MediaTaskID = task.ID
 			state.Generations++
 			state.VideoSeconds += media.Args.Duration
-			toolName := "generate_media"
-			if state.CallIndex >= 0 && state.CallIndex < len(state.Calls) && state.Calls[state.CallIndex].Function.Name != "" {
-				toolName = state.Calls[state.CallIndex].Function.Name
-			}
-			state.event(run.ID, "generation_task_created", map[string]any{"toolName": toolName, "taskId": task.ID, "nodeId": media.Args.NodeID, "title": media.Args.Title, "mode": media.Args.Mode, "canvasId": state.Request.CanvasID, "referenceNodeIds": media.Args.ReferenceNodeIDs, "text": "媒体节点与引用连线已创建，生成任务已提交"})
+			state.event(run.ID, "generation_task_created", map[string]any{"toolName": "generate_media", "taskId": task.ID, "nodeId": media.Args.NodeID, "title": media.Args.Title, "mode": media.Args.Mode, "canvasId": state.Request.CanvasID, "referenceNodeIds": media.Args.ReferenceNodeIDs, "text": "媒体节点与引用连线已创建，生成任务已提交"})
 		} else {
 			state.ActiveTaskID = task.ID
-			// 压缩调用不是本轮的一步：压完还要用压缩后的上下文继续步进，步数不该被它占掉。
-			if state.ContextCompaction != nil && req.Operation == cloudAgentContextCompactionOperation {
-				state.ContextCompaction.Status = "running"
-			} else {
-				if contextPressure != nil {
-					config, _ := input["config"].(map[string]any)
-					model, channelID := stringValue(config["model"]), stringValue(config["channelId"])
-					signature := cloudAgentRequestSignature(state, requestCanonical, channelID, model)
-					cloudAgentExpireTokenAnchorForRequest(run.ID, state, contextPressure.ContextWindowTokens, signature, model, channelID)
-					cloudAgentRecordMemorySegment(&state.Policy, requestCanonical.SystemPrompt)
-					payload := cloudAgentContextPressurePayload(*contextPressure, state, requestCanonical)
-					payload["requestId"] = task.ID
-					cloudAgentNoteContextWindowResolved(run.ID, state, *contextPressure)
-					state.event(run.ID, "context_pressure", payload)
-					state.LastStepTaskID = task.ID
-					state.LastStepOperation = req.Operation
-					state.LastStepEstimate = contextPressure.EstimatedInputTokens
-					state.LastStepSourceBytes = contextPressure.SourceBytes
-					state.LastStepSignature = signature
-					state.LastStepModel = model
-					state.LastStepChannelID = channelID
-					state.LastStepWindowTokens = contextPressure.ContextWindowTokens
-				}
-				state.Step++
-			}
+			state.Step++
 		}
 		return cloudAgentSave(current, state)
 	})
@@ -2119,42 +1524,13 @@ func (s *Service) cloudAgentMediaError(run *model.CloudAgentExecution, state *cl
 			state.event(run.ID, "run_failed", map[string]any{"text": "Agent 媒体调用状态无效，本轮已停止"})
 			return cloudAgentSave(current, state)
 		}
-		if phase == "admission" && !submitted {
-			err = cloudAgentWrapMediaAdmissionError(err)
-		}
-		toolName := state.Calls[state.CallIndex].Function.Name
 		cloudAgentRecordToolResult(current, state, state.Calls[state.CallIndex], map[string]any{"phase": phase, "taskSubmitted": submitted}, err)
-		// Any admission failure advances the call into the repair path. Do not let
-		// a prepared quote from the failed attempt leak into the corrected call.
-		state.AutoPreparedMedia = nil
-		state.AutoPreparedCallHash = ""
 		if submitted {
 			state.MediaTaskID = ""
 		}
-		// Only explicitly typed argument errors and a stale canvas snapshot may
-		// continue into another model turn. Every other pre-submission media
-		// failure is a real admission boundary failure; continuing would invite
-		// the model to submit unverified variants of a billed write.
-		continueAfterAdmissionError := false
-		if phase == "admission" && !submitted {
-			var argumentErr *cloudAgentArgumentError
-			continueAfterAdmissionError = errors.As(err, &argumentErr)
-			var admissionErr *cloudAgentMediaAdmissionError
-			if errors.As(err, &admissionErr) && admissionErr.Reason == "snapshot_conflict" {
-				continueAfterAdmissionError = true
-			}
-		}
-		if terminal || (phase == "admission" && !submitted && !continueAfterAdmissionError) {
+		if terminal {
 			current.Status = "failed"
-			message := "媒体生成准入失败，本轮已停止；请检查模型、能力和预算后由用户明确重试"
-			reason := "tool_admission_failed"
-			if terminal {
-				message = "媒体任务已提交，但结果处理失败；任务不会自动重试"
-				reason = "media_task_failed"
-			}
-			current.FailureMessage = truncateRunes(message, 1000)
-			cloudAgentDropInterjections(run.ID, "本轮已结束："+truncateRunes(message, 120), state)
-			state.event(run.ID, "run_failed", map[string]any{"text": message, "reason": reason, "toolName": toolName})
+			state.event(run.ID, "run_failed", map[string]any{"text": "媒体任务已提交，但结果处理失败；任务不会自动重试"})
 		}
 		return cloudAgentSave(current, state)
 	})
@@ -2232,9 +1608,6 @@ func (s *Service) advanceCloudAgentMedia(run *model.CloudAgentExecution, state *
 				result["summary"] = "画布回写未完成；任务记录保留在任务中心"
 			}
 			if task.Status == model.TaskStatusSucceeded && writeErr == nil {
-				// Completion writes the generated asset into the canvas. Invalidate
-				// the same-run snapshot cache just like ordinary canvas writes.
-				cloudAgentInvalidateReadCache(state)
 				result["summary"] = "生成结果已回写画布节点"
 			}
 			if writeErr != nil {

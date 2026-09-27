@@ -31,10 +31,10 @@ func newResourceFallbackTestService(t *testing.T) (*Service, *gorm.DB) {
 	return &Service{repo: repository.New(db), dataDir: t.TempDir()}, db
 }
 
-// TestStoreResourceFailsWhenOSSUnavailable ensures an enabled object-storage
-// configuration does not silently change the resource to local storage.
-func TestStoreResourceFailsWhenOSSUnavailable(t *testing.T) {
-	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+// TestStoreResourceDegradesToLocalWhenOSSUnavailable 覆盖对象存储不可用时的降级：
+// 配置了 OSS（enabled=1、endpoint 不可达）时上传应回退本地存储成功，
+// 而不是把上传标记为失败——本地媒体导入不应因外部存储故障整体失败。
+func TestStoreResourceDegradesToLocalWhenOSSUnavailable(t *testing.T) {
 	service, db := newResourceFallbackTestService(t)
 	seedOSSEnabled(t, db, "user-1", "http://127.0.0.1:1")
 
@@ -42,28 +42,28 @@ func TestStoreResourceFailsWhenOSSUnavailable(t *testing.T) {
 		"user-1", "video", "intro.mp4", "video/mp4", 1024,
 		1920, 1080, 0, bytes.NewReader([]byte("fake-mp4-bytes")), nil, false,
 	)
-	if err == nil {
-		t.Fatal("storeResource() error = nil, want OSS upload error")
+	if err != nil {
+		t.Fatalf("storeResource: %v", err)
 	}
 	if !created {
-		t.Fatal("storeResource returned created=false, want true for persisted failed resource")
+		t.Fatal("storeResource returned created=false, want true")
 	}
-	if resource != nil {
-		t.Fatalf("storeResource returned resource = %#v, want nil on failed upload", resource)
+	if resource.Status != model.ResourceStatusReady {
+		t.Fatalf("resource.Status = %q, want %q", resource.Status, model.ResourceStatusReady)
 	}
-
-	var stored model.Resource
-	if err := db.First(&stored).Error; err != nil {
-		t.Fatalf("failed resource was not persisted: %v", err)
+	if resource.Provider != "local" {
+		t.Fatalf("resource.Provider = %q, want local (degraded from OSS)", resource.Provider)
 	}
-	if stored.Status != model.ResourceStatusFailed {
-		t.Fatalf("resource.Status = %q, want %q", stored.Status, model.ResourceStatusFailed)
+	if resource.Endpoint != "" || resource.Bucket != "" || resource.StorageSettingID != "" {
+		t.Fatalf("resource storage binding not cleared after degrade: endpoint=%q bucket=%q setting=%q",
+			resource.Endpoint, resource.Bucket, resource.StorageSettingID)
 	}
-	if stored.Provider != "aliyun" || stored.Endpoint != "http://127.0.0.1:1" || stored.Bucket != "test-bucket" || stored.StorageSettingID == "" {
-		t.Fatalf("resource OSS binding changed after failed upload: provider=%q endpoint=%q bucket=%q setting=%q", stored.Provider, stored.Endpoint, stored.Bucket, stored.StorageSettingID)
+	payload, err := os.ReadFile(filepath.Join(service.dataDir, "resources", filepath.FromSlash(resource.ObjectKey)))
+	if err != nil {
+		t.Fatalf("local object not written: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(service.dataDir, "resources")); !os.IsNotExist(err) {
-		t.Fatalf("local resources directory exists after failed OSS upload: err=%v", err)
+	if string(payload) != "fake-mp4-bytes" {
+		t.Fatalf("local object content = %q, want fake-mp4-bytes", payload)
 	}
 }
 
@@ -97,7 +97,6 @@ func TestStoreResourceLocalPathUnaffectedByOSS(t *testing.T) {
 func seedOSSEnabled(t *testing.T, db *gorm.DB, userID string, endpoint string) {
 	t.Helper()
 	setting := model.UserOSSSetting{
-		ID:        newID(),
 		UserID:    userID,
 		Enabled:   true,
 		ValueJSON: `{"provider":"aliyun","endpoint":"` + endpoint + `","bucket":"test-bucket","accessKeyId":"ak-test","accessKeySecret":"sk-plaintext","region":"cn-shenzhen"}`,

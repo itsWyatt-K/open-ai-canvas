@@ -19,7 +19,6 @@ import (
 	"infinite-canvas/backend/internal/prompts"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/skills"
-	"infinite-canvas/backend/internal/sms"
 	"infinite-canvas/backend/internal/tools"
 )
 
@@ -34,9 +33,6 @@ type Service struct {
 	storageTestMu            sync.Mutex
 	workerRuntimeMu          sync.Mutex
 	agentSchedulerMu         sync.Mutex
-	agentSchedulerWake       chan struct{}
-	taskDispatcherWake       chan struct{}
-	geminiCacheLockMu        sync.Mutex
 	agentSchedulerCursor     string
 	agentConflictStreak      map[string]int
 	activeStorageTests       map[string]bool
@@ -69,14 +65,12 @@ type Service struct {
 	concurrencyReadCache     *platform.BoundedReadCache[string, platform.RuntimeTaskPolicy]
 	textReplayReadCache      *platform.BoundedReadCache[textReplayCacheKey, *TextReplayResult]
 	routeVersionReadCache    *platform.BoundedReadCache[string, int64]
-	geminiCacheLocks         map[string]*geminiCacheKeyLock
 	routeCatalogRetryAt      time.Time
 	routeCatalogRefreshError error
 	skills                   *skills.Service
 	tools                    *tools.Service
 	prompts                  *prompts.Service
 	auth                     *auth.Service
-	sms                      *sms.Service
 	canvas                   *canvas.Service
 }
 
@@ -102,6 +96,11 @@ type TaskListOptions struct {
 	Limit      int
 	ProjectID  string
 	ActiveOnly bool
+	// W1-01 #52：影策 2.0 需要按分镜 / 画布节点 / 工作流步骤 / 状态过滤
+	ShotID       string
+	CanvasNodeID string
+	WorkflowStep string
+	Status       string
 }
 
 func New(repo *repository.Repository, dataDir string) *Service {
@@ -117,7 +116,7 @@ func newService(repo *repository.Repository, dataDir string) *Service {
 			paymentRegistry = dynamic
 		}
 	}
-	service := &Service{repo: repo, dataDir: dataDir, activeStorageTests: make(map[string]bool), activeCancels: make(map[string]context.CancelFunc), agentConflictStreak: make(map[string]int), agentSchedulerWake: make(chan struct{}, 1), taskDispatcherWake: make(chan struct{}, 1), coordinator: coordinator, runtimeErr: err, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, paymentRegistry: paymentRegistry, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute, routeHealthBlocked: make(map[string]time.Time), geminiCacheLocks: make(map[string]*geminiCacheKeyLock)}
+	service := &Service{repo: repo, dataDir: dataDir, activeStorageTests: make(map[string]bool), activeCancels: make(map[string]context.CancelFunc), agentConflictStreak: make(map[string]int), coordinator: coordinator, runtimeErr: err, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, paymentRegistry: paymentRegistry, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute, routeHealthBlocked: make(map[string]time.Time)}
 	service.taskBillingCoordinator = newTaskBillingCoordinator(service.repo)
 	service.taskTerminalCoordinator = newTaskTerminalCoordinator(service)
 	service.taskRouteExecutor = newTaskRouteExecutor(service)
@@ -127,8 +126,6 @@ func newService(repo *repository.Repository, dataDir string) *Service {
 	service.tools = tools.New(service.repo)
 	service.prompts = prompts.New(service.repo, promptAdminGate{svc: service})
 	service.auth = auth.New(service.repo, authHost{svc: service}, nil)
-	service.sms = service.newSMSDomain()
-	service.auth.SetSMSDelivery(service.sms)
 	service.canvas = canvas.New(service.repo, canvasHost{svc: service})
 	service.platform = platform.New(service.repo, coordinator, platformHost{svc: service})
 	return service
@@ -190,35 +187,21 @@ func (s *Service) Tasks(userID string, limit int) ([]TaskSummary, error) {
 }
 
 func (s *Service) TasksWithOptions(userID string, options TaskListOptions) ([]TaskSummary, error) {
-	tasks, err := s.repo.Tasks(userID, options.Limit, options.ProjectID, options.ActiveOnly)
+	tasks, err := s.repo.Tasks(userID, repository.TaskQuery{
+		Limit:        options.Limit,
+		ProjectID:    options.ProjectID,
+		ShotID:       options.ShotID,
+		CanvasNodeID: options.CanvasNodeID,
+		WorkflowStep: options.WorkflowStep,
+		Status:       options.Status,
+		ActiveOnly:   options.ActiveOnly,
+	})
 	if err != nil {
 		return nil, err
 	}
 	orders, err := s.repo.BillingOrdersByTaskIDs(userID, taskBillingTaskIDs(tasks))
 	if err != nil {
 		return nil, err
-	}
-	// Active task lists are the primary source for the canvas cancel affordance.
-	// The worker may have already logged an upstream request while the task row
-	// is waiting for its next lease update, so hydrate the list read model from
-	// the API log in one query instead of briefly exposing a stale cancel button.
-	taskIDs := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		taskIDs = append(taskIDs, task.ID)
-	}
-	providerRequestIDs, err := s.repo.LatestProviderRequestIDsForTasks(taskIDs)
-	if err != nil {
-		return nil, err
-	}
-	for index := range tasks {
-		if strings.TrimSpace(tasks[index].ProviderRequestID) != "" {
-			continue
-		}
-		if order, ok := orders[tasks[index].ID]; ok && strings.TrimSpace(order.ProviderRequestID) != "" {
-			tasks[index].ProviderRequestID = strings.TrimSpace(order.ProviderRequestID)
-			continue
-		}
-		tasks[index].ProviderRequestID = providerRequestIDs[tasks[index].ID]
 	}
 	return taskSummariesForOutputWithBilling(tasks, orders), nil
 }

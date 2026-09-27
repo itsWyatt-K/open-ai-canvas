@@ -194,7 +194,6 @@ export function useCanvasUpload({
                 metadata: {
                     ...currentNode.metadata, ...metadata,
                     fileUpload: undefined, fileUploadProgress: undefined, errorDetails: undefined,
-                    producedModel: undefined, producedModelCandidate: undefined,
                     ...(replaceId ? {
                         assetId: undefined, taskId: undefined, freeResize: false,
                         isBatchRoot: undefined, batchRootId: undefined, batchChildIds: undefined,

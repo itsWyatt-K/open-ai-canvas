@@ -1,7 +1,6 @@
 import { CanvasWorkspacePanel } from "@/components/canvas/canvas-workspace-panel";
 import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
 import { createCanvasStateWriter } from "@/lib/canvas/canvas-editor-state";
-import { canCancelGenerationTask } from "@/lib/generation-task-display";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,7 +11,7 @@ import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadMediaFile } from "@/services/file-storage";
 import { createCanvasGenerationLiveProjectAdapter, registerCanvasGenerationLiveProject } from "@/services/canvas-generation-consumer";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
+import { resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
 import { uploadImage } from "@/services/image-storage";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { isCanvasImageSourceNode } from "@/lib/canvas/canvas-image-source";
@@ -189,11 +188,6 @@ async function copyImageToSystemClipboard(source: string, storageKey?: string) {
         let sourceBlob: Blob | null = null;
         if (storageKey) {
             sourceBlob = await getCachedResourceBlob(storageKey).catch(() => null);
-            // A resource-backed image must be read through the resource access
-            // contract. Do not fall back to fetch(source) here: local/proxy
-            // deliveries may require the session cookie and a separate API
-            // origin, while CDN deliveries must omit that cookie.
-            if (!sourceBlob) throw new Error("图片资源读取失败");
         }
         if (!sourceBlob) {
             const response = await fetch(source);
@@ -468,11 +462,6 @@ function InfiniteCanvasPage() {
         const ids = nodeId ? [nodeId] : Array.from(selectedNodeIdsRef.current);
         const references = ids.map((id) => agentMentionReferences.find((reference) => reference.nodeId === id)).filter((reference): reference is CanvasResourceReference => Boolean(reference));
         if (!references.length) return;
-        if (nodeId && !selectedNodeIdsRef.current.has(nodeId)) {
-            const selection = new Set([nodeId]);
-            selectedNodeIdsRef.current = selection;
-            setSelectedNodeIds(selection);
-        }
         setAgentPrefillPrompt(`${references.map(canvasResourceMentionToken).join(" ")} `);
         openAgent();
         setContextMenu(null);
@@ -576,10 +565,6 @@ function InfiniteCanvasPage() {
 
     const cancelCanvasTask = useCallback(
         (task: import("@/services/api/task-center").GenerationTask) => {
-            if (!canCancelGenerationTask(task)) {
-                message.info("第三方请求已提交，任务将继续创作，不能取消");
-                return;
-            }
             modal.confirm({
                 title: "取消生成任务？",
                 content: "任务会立即停止本地执行；如果已经提交到上游，系统会继续核对取消结果和积分状态。",
@@ -587,11 +572,6 @@ function InfiniteCanvasPage() {
                 okButtonProps: { danger: true },
                 cancelText: "继续等待",
                 onOk: async () => {
-                    const latestTask = taskDetail?.id === task.id ? taskDetail : task;
-                    if (!canCancelGenerationTask(latestTask)) {
-                        message.info("第三方请求已提交，任务将继续创作，不能取消");
-                        return;
-                    }
                     try {
                         const next = await cancelGenerationTask(task.id);
                         const node = nodesRef.current.find((item) => item.metadata?.taskId === task.id);
@@ -605,7 +585,7 @@ function InfiniteCanvasPage() {
                 },
             });
         },
-        [bindGenerationTask, message, modal, nodesRef, projectId, queryClient, setTaskDetail, taskDetail],
+        [bindGenerationTask, message, modal, nodesRef, projectId, queryClient, setTaskDetail],
     );
 
     useEffect(() => {
@@ -1346,13 +1326,6 @@ function InfiniteCanvasPage() {
             const characterCover = asset.character?.representations.find((item) => item.role === "turnaround_sheet") || asset.character?.representations.find((item) => item.role === "primary") || asset.character?.representations[0];
             const type = asset.category === "character" || asset.mediaType === "image" ? CanvasNodeType.Image : asset.mediaType === "video" ? CanvasNodeType.Video : asset.mediaType === "audio" ? CanvasNodeType.Audio : CanvasNodeType.Text;
             const remoteResourceId = resourceIdFromStorageKey(asset.storageKey);
-            const storageKey = characterCover
-                ? `resource:${characterCover.resourceId}`
-                : local?.kind === "image" || local?.kind === "video" || local?.kind === "audio"
-                  ? local.data.storageKey
-                  : remoteResourceId
-                    ? asset.storageKey
-                    : undefined;
             const content = characterCover
                 ? resourceFileUrl(characterCover.resourceId)
                 : local?.kind === "image"
@@ -1364,7 +1337,7 @@ function InfiniteCanvasPage() {
                       : remoteResourceId
                         ? resourceFileUrl(remoteResourceId)
                         : asset.previewText || "";
-            const preview: CanvasNodeData = { id: asset.id, type, title: asset.title, position: { x: 0, y: 0 }, width: 240, height: 160, metadata: { assetId: asset.id, content, storageKey } };
+            const preview: CanvasNodeData = { id: asset.id, type, title: asset.title, position: { x: 0, y: 0 }, width: 240, height: 160, metadata: { assetId: asset.id, content } };
             const current = result.get(asset.folderId) || [];
             current.push(preview);
             result.set(asset.folderId, current);
@@ -1414,7 +1387,6 @@ function InfiniteCanvasPage() {
         imageEditNode,
         mentionReferencesByNodeId,
         nodeById,
-        nodeRenderLODById,
         previewNode,
         reduceMediaEffects,
         relatedHighlight,
@@ -1770,22 +1742,16 @@ function InfiniteCanvasPage() {
             if (copyingNodeContentRef.current) return;
             copyingNodeContentRef.current = true;
             releaseCopiedNodesPastePriority();
-            if (!node) {
+            const content = node?.metadata?.content?.trim();
+            const resourceId = resourceIdFromStorageKey(node?.metadata?.storageKey);
+            const copySource = content || (node?.type === CanvasNodeType.Image && resourceId ? resourceFileUrl(resourceId) : "");
+            if (!node || !copySource) {
                 copyingNodeContentRef.current = false;
                 message.warning("没有可复制的内容");
                 return;
             }
 
             try {
-                const content = node.metadata?.content?.trim();
-                const resourceId = resourceIdFromStorageKey(node.metadata?.storageKey);
-                // Resource-backed media must use the central access contract. This keeps
-                // copy operations on the configured CDN/OSS URL instead of copying the
-                // platform file endpoint or a stale URL persisted in canvas metadata.
-                const copySource = resourceId
-                    ? resolveResourceAccessURL((await getResourceAccess(`resource:${resourceId}`, "copy")).url)
-                    : content || "";
-                if (!copySource) throw new Error("没有可复制的内容");
                 if (node.type === CanvasNodeType.Image) {
                     try {
                         await copyImageToSystemClipboard(copySource, node.metadata?.storageKey);
@@ -1825,10 +1791,8 @@ function InfiniteCanvasPage() {
                 const storageKey = node?.metadata?.storageKey;
                 const content = node?.metadata?.content?.trim();
                 const resourceId = resourceIdFromStorageKey(storageKey);
-                const mediaPath = content && !content.startsWith("data:") && !content.startsWith("blob:") ? content : "";
-                const mediaURL = resourceId
-                    ? resolveResourceAccessURL((await getResourceAccess(`resource:${resourceId}`, "copy")).url)
-                    : mediaPath ? new URL(mediaPath, window.location.href).toString() : "";
+                const mediaPath = content && !content.startsWith("data:") && !content.startsWith("blob:") ? content : resourceId ? resourceFileUrl(resourceId) : "";
+                const mediaURL = mediaPath ? new URL(mediaPath, window.location.href).toString() : "";
                 if (!mediaURL) throw new Error("当前媒体只有本地内容，没有可复制的地址");
                 if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(mediaURL);
                 else if (!(await copyToClipboard(mediaURL))) throw new Error("当前浏览器不支持写入剪贴板");
@@ -2555,7 +2519,7 @@ function InfiniteCanvasPage() {
             >
                 跳转到画布主内容
             </a>
-            <main id="canvas-main" tabIndex={-1} className={`relative flex h-full min-h-0 overflow-hidden outline-none ${!focusMode && !versions.preview ? `canvas-main-with-workspace ${workspaceOpen ? "canvas-workspace-expanded" : ""}` : ""}`} style={{ background: resolvedCanvasAppearance.background, color: theme.node.text }}>
+            <main id="canvas-main" tabIndex={-1} className="flex h-full min-h-0 overflow-hidden outline-none" style={{ background: resolvedCanvasAppearance.background, color: theme.node.text }}>
                 {!focusMode && !versions.preview ? <CanvasWorkspacePanel key={projectId} open={workspaceOpen} onOpen={() => setWorkspaceOpen(true)} onInsertAssets={handleProjectAssetsInsert} projectId={projectId} nodes={nodes} selectedNodeIds={selectedNodeIds} onClose={() => setWorkspaceOpen(false)} onAssets={() => openCanvasAssetLibrary()} onProjectAssets={currentProject?.projectId ? () => openProjectAssets() : undefined} onCancelTask={cancelCanvasTask} onFocus={nodeId => {
                     const target = nodeById.get(nodeId);
                     const parent = target?.parentId ? nodeById.get(target.parentId) : null;
@@ -2698,7 +2662,6 @@ function InfiniteCanvasPage() {
                                                 connectionTargetNodeId={connectionTargetNodeId}
                                                 nodeById={nodeById}
                                                 visibleNodes={visibleNodes}
-                                                nodeRenderLODById={nodeRenderLODById}
                                                 nodeStackOrder={nodeStackOrder}
                                                 frameChildrenById={frameChildrenById}
                                                 linkedFolderPreviewNodesById={linkedFolderPreviewNodesById}
@@ -2827,18 +2790,8 @@ function InfiniteCanvasPage() {
                             </div>
 
                             <div className={versions.open ? "hidden" : "contents"}>
-                            <CanvasCloudAgentPanel canvasId={projectId} domainProjectId={currentProject?.projectId} nodeCount={nodes.length} selectedNodeIds={Array.from(selectedNodeIds)} references={agentMentionReferences} prefillPrompt={agentPrefillPrompt} open={assistantOpen} onOpen={openAgent} onCollapse={closeAgent} onFocusNode={(nodeId) => {
-                                const currentNodes = nodesRef.current;
-                                const target = currentNodes.find((node) => node.id === nodeId);
-                                if (!target) { message.info("该节点已删除或尚未同步到画布"); return; }
-
-                                const parent = target.parentId ? currentNodes.find((node) => node.id === target.parentId) : null;
-                                if (parent?.metadata?.frame?.collapsed) toggleFrameCollapsed(parent.id);
-
-                                const batchRootId = target.metadata?.batchRootId;
-                                const batchRoot = batchRootId ? currentNodes.find((node) => node.id === batchRootId) : null;
-                                if (batchRoot && isHiddenBatchChild(target, currentNodes) && !batchRoot.metadata?.imageBatchExpanded) toggleBatchExpanded(batchRoot.id);
-
+                            <CanvasCloudAgentPanel canvasId={projectId} domainProjectId={currentProject?.projectId} nodeCount={nodes.length} references={agentMentionReferences} prefillPrompt={agentPrefillPrompt} open={assistantOpen} onOpen={openAgent} onCollapse={closeAgent} onFocusNode={(nodeId) => {
+                                if (!nodesRef.current.some((node) => node.id === nodeId)) { message.info("该节点已删除或尚未同步到画布"); return; }
                                 focusCanvasNode(nodeId);
                             }} />
                             </div>
@@ -3034,7 +2987,7 @@ function InfiniteCanvasPage() {
                             <CanvasOverlayLayerContainer
                                 overlayId="asset-tray"
                                 fallbackZIndex="var(--z-panel)"
-                                className="canvas-workspace-zoom-controls absolute bottom-[calc(var(--canvas-inset-y)+var(--space-16))] left-[var(--canvas-inset-x)] flex items-end gap-2 lg:bottom-[var(--canvas-inset-y)]"
+                                className="absolute bottom-[calc(var(--canvas-inset-y)+var(--space-16))] left-[var(--canvas-inset-x)] flex items-end gap-2 lg:bottom-[var(--canvas-inset-y)]"
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onPointerDown={(event) => event.stopPropagation()}
                                 onWheel={(event) => event.stopPropagation()}

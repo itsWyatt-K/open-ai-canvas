@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"infinite-canvas/backend/internal/kernel"
-	"infinite-canvas/backend/internal/repository"
 	"log"
 	"net/mail"
 	"regexp"
@@ -32,9 +31,6 @@ type RegisterRequest struct {
 	Username      string `json:"username"`
 	Email         string `json:"email"`
 	EmailCode     string `json:"emailCode"`
-	Phone         string `json:"phone"`
-	SMSCode       string `json:"smsCode"`
-	Ticket        string `json:"ticket"`
 	DisplayName   string `json:"displayName"`
 	Password      string `json:"password"`
 	AcceptedTerms bool   `json:"acceptedTerms"`
@@ -46,16 +42,11 @@ type LoginRequest struct {
 }
 
 type PublicAuthSettings struct {
-	VerificationPolicy
-	SMSBindingAvailable   bool   `json:"smsBindingAvailable"`
-	EmailBindingAvailable bool   `json:"emailBindingAvailable"`
-	FirstUser             bool   `json:"firstUser"`
-	RegistrationEnabled   bool   `json:"registrationEnabled"`
-	LinuxDOEnabled        bool   `json:"linuxdoEnabled"`
-	EmailEnabled          bool   `json:"emailEnabled"`
-	EmailCodeRequired     bool   `json:"emailCodeRequired"`
-	AgreementTitle        string `json:"agreementTitle,omitempty"`
-	AgreementContent      string `json:"agreementContent,omitempty"`
+	FirstUser           bool `json:"firstUser"`
+	RegistrationEnabled bool `json:"registrationEnabled"`
+	LinuxDOEnabled      bool `json:"linuxdoEnabled"`
+	EmailEnabled        bool `json:"emailEnabled"`
+	EmailCodeRequired   bool `json:"emailCodeRequired"`
 }
 
 type AuthSessionResult struct {
@@ -78,9 +69,7 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 		return nil, err
 	}
 	if count == 0 {
-		// 首个管理员同样要看到服务协议，不能因为跳过注册校验就丢失协议字段。
-		agreementTitle, agreementContent := s.RegistrationAgreement()
-		return &PublicAuthSettings{FirstUser: true, RegistrationEnabled: true, LinuxDOEnabled: false, AgreementTitle: agreementTitle, AgreementContent: agreementContent}, nil
+		return &PublicAuthSettings{FirstUser: true, RegistrationEnabled: true, LinuxDOEnabled: false}, nil
 	}
 	registrationEnabled, err := s.RegistrationEnabled()
 	if err != nil {
@@ -90,45 +79,12 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 	if err != nil {
 		return nil, err
 	}
-	p, err := s.verificationPolicy()
-	if err != nil {
-		return nil, err
-	}
-	smsLogin, err := s.smsAvailable("login")
-	if err != nil {
-		return nil, err
-	}
-	smsRegister, err := s.smsAvailable("register")
-	if err != nil {
-		return nil, err
-	}
-	smsBind, err := s.smsAvailable("bind")
-	if err != nil {
-		return nil, err
-	}
-	p.SMSLogin = p.SMSLogin && smsLogin
-	p.EmailLogin = p.EmailLogin && emailEnabled
-	p.SMSRegistration = p.SMSRegistration && smsRegister
-	p.EmailRegistration = p.EmailRegistration && emailEnabled
-	p.SMSAndEmailRegistration = p.SMSAndEmailRegistration && smsRegister && emailEnabled
-	agreementTitle, agreementContent := s.RegistrationAgreement()
-	return &PublicAuthSettings{
-		VerificationPolicy:    p,
-		SMSBindingAvailable:   smsBind,
-		EmailBindingAvailable: emailEnabled,
-		FirstUser:             false,
-		RegistrationEnabled:   registrationEnabled,
-		LinuxDOEnabled:        s.LinuxDOEnabled(),
-		EmailEnabled:          emailEnabled,
-		EmailCodeRequired:     p.EmailRegistration || p.SMSAndEmailRegistration,
-		AgreementTitle:        agreementTitle,
-		AgreementContent:      agreementContent,
-	}, nil
+	return &PublicAuthSettings{FirstUser: false, RegistrationEnabled: registrationEnabled, LinuxDOEnabled: s.LinuxDOEnabled(), EmailEnabled: emailEnabled, EmailCodeRequired: true}, nil
 }
 
 func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 	if !req.AcceptedTerms {
-		return nil, kernel.BadAuthRequest("请先同意" + s.AgreementTitleForMessage())
+		return nil, kernel.BadAuthRequest("请先同意影策服务协议")
 	}
 	username := NormalizeUsername(req.Username)
 	email := NormalizeEmail(req.Email)
@@ -151,8 +107,6 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 		return nil, err
 	}
 	var verifiedCode *model.EmailVerificationCode
-	var verification *model.AuthVerification
-	phone := ""
 	if count > 0 {
 		registrationEnabled, err := s.RegistrationEnabled()
 		if err != nil {
@@ -161,36 +115,18 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 		if !registrationEnabled {
 			return nil, kernel.Forbidden("管理员未开放新用户注册")
 		}
-		if req.Ticket != "" {
-			verification, err = s.verifyTicket("register", VerificationConfirm{Ticket: req.Ticket, EmailCode: req.EmailCode, SMSCode: req.SMSCode})
-			if err != nil {
-				return nil, err
-			}
-			if verification.Email != email || (verification.Phone != "" && strings.TrimSpace(req.Phone) != verification.Phone && "+86"+strings.TrimSpace(req.Phone) != verification.Phone) || (verification.Phone == "" && req.Phone != "") {
-				return nil, invalidVerification()
-			}
-			phone = verification.Phone
-			if err := s.contactAvailable(email, phone, ""); err != nil {
-				return nil, err
-			}
-		} else {
-			p, err := s.verificationPolicy()
-			if err != nil {
-				return nil, err
-			}
-			if !p.allows("register", "email") || req.Phone != "" {
-				return nil, kernel.BadAuthRequest("请先获取本次注册验证码")
-			}
-			if email == "" {
-				return nil, kernel.BadAuthRequest("请输入邮箱")
-			}
-			if err := s.validateRegistrationEmailDomain(email); err != nil {
-				return nil, err
-			}
-			verifiedCode, err = s.VerifyRegistrationEmailCode(email, req.EmailCode)
-			if err != nil {
-				return nil, err
-			}
+		if email == "" {
+			return nil, kernel.BadAuthRequest("请输入邮箱")
+		}
+		if err := s.validateRegistrationEmailDomain(email); err != nil {
+			return nil, err
+		}
+		if err := s.validateRegistrationEmailDomain(email); err != nil {
+			return nil, err
+		}
+		verifiedCode, err = s.VerifyRegistrationEmailCode(email, req.EmailCode)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if _, err := s.repo.UserByUsername(username); err == nil {
@@ -214,7 +150,6 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 		ID:           kernel.NewID(),
 		Username:     username,
 		Email:        email,
-		Phone:        phone,
 		DisplayName:  displayName,
 		Role:         model.UserRoleUser,
 		Status:       model.UserStatusActive,
@@ -225,21 +160,7 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 	if count == 0 {
 		user.Role = model.UserRoleAdmin
 	}
-	if verification != nil {
-		if email != "" {
-			user.EmailVerifiedAt = &now
-		}
-		if phone != "" {
-			user.PhoneVerifiedAt = &now
-		}
-		if err := s.repo.CreateUserWithVerification(&user, verification.ID); err != nil {
-			if errors.Is(err, repository.ErrVerificationInvalid) {
-				return nil, invalidVerification()
-			}
-			return nil, err
-		}
-	} else if verifiedCode != nil {
-		user.EmailVerifiedAt = &now
+	if verifiedCode != nil {
 		if err := s.repo.CreateUserWithEmailVerification(&user, verifiedCode.ID, time.Now()); err != nil {
 			return nil, err
 		}

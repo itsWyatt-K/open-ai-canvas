@@ -58,11 +58,7 @@ func (s *Service) SkillPresets() ([]SkillPreset, error) {
 		return nil, fmt.Errorf("场景预设不能为空")
 	}
 	seeded := make(map[string]struct{}, 128)
-	seedIDs, err := builtinSeedSkillIDs()
-	if err != nil {
-		return nil, fmt.Errorf("校验场景预设引用失败: %w", err)
-	}
-	for _, definition := range seedIDs {
+	for _, definition := range builtinSeedSkillIDs() {
 		seeded[definition] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(file.Presets))
@@ -106,4 +102,19 @@ func (s *Service) SkillPresets() ([]SkillPreset, error) {
 		}
 	}
 	return file.Presets, nil
+}
+
+// builtinSeedSkillIDs 从内置种子清单提取全部 skillId，供预设引用对账。
+func builtinSeedSkillIDs() []string {
+	var definitions []builtinSkillDefinition
+	if err := json.Unmarshal(builtinSkillsJSON, &definitions); err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		if id := strings.TrimSpace(definition.SkillID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }

@@ -70,15 +70,25 @@ func RegisterAdminStorageRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		delivery, err := svc.PrepareResourceDeliveryAsAdmin(user, c.Param("id"), resourceAccessOptions(c), c.GetHeader("Range"))
+		stream, err := svc.OpenResourceRangeAsAdmin(user, c.Param("id"), c.GetHeader("Range"))
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		disposition := ""
-		if c.Query("download") == "1" {
-			disposition = "attachment"
+		defer stream.Body.Close()
+		mimeType := stream.Resource.MimeType
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
 		}
-		serveResourceDelivery(c, delivery, "private, no-cache", disposition)
+		c.Header("Cache-Control", "private, no-cache")
+		c.Header("Accept-Ranges", stream.AcceptRanges)
+		c.Header("X-Content-Type-Options", "nosniff")
+		if stream.ContentRange != "" {
+			c.Header("Content-Range", stream.ContentRange)
+		}
+		if c.Query("download") == "1" {
+			c.Header("Content-Disposition", "attachment")
+		}
+		c.DataFromReader(stream.StatusCode, stream.ContentLength, mimeType, stream.Body, nil)
 	})
 }

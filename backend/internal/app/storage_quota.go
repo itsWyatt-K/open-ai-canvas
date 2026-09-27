@@ -92,14 +92,8 @@ func validateStructuredReplacementQuotaWithPolicy(usage repository.UserStorageUs
 
 func (s *Service) createTaskWithinStorageQuota(task *model.Task, billingOrder *model.BillingOrder, policy RuntimePolicySetting) error {
 	s.storageMu.Lock()
-	err := func() error {
-		defer s.storageMu.Unlock()
-		return createTaskWithStorageQuotaRepository(s.repo, task, billingOrder, policy)
-	}()
-	if err == nil {
-		s.wakeTaskDispatcher()
-	}
-	return err
+	defer s.storageMu.Unlock()
+	return createTaskWithStorageQuotaRepository(s.repo, task, billingOrder, policy)
 }
 
 func createTaskWithStorageQuotaRepository(repo *repository.Repository, task *model.Task, billingOrder *model.BillingOrder, policy RuntimePolicySetting) error {

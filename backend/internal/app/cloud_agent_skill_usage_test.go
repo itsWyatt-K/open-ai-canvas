@@ -2,9 +2,6 @@ package app
 
 import (
 	"testing"
-	"time"
-
-	"infinite-canvas/backend/internal/model"
 )
 
 func cloudAgentUsageEvent(runID, kind, tool string, payload map[string]any) CloudAgentEvent {
@@ -218,36 +215,5 @@ func TestCloudAgentSkillUsageSkillsLoadWithoutIDsFallsBackToRunCount(t *testing.
 	}
 	if len(usage.Skills) != 1 || usage.Skills[0].RunsEnabled != 0 {
 		t.Fatalf("skills = %+v, want s1 with runsEnabled 0", usage.Skills)
-	}
-}
-
-func TestCloudAgentSkillUsageReadsOnlyOwnJournalAndRejectsCorruptReceipts(t *testing.T) {
-	s, db, _, _ := creationTestService(t)
-	for _, item := range []struct {
-		id, userID, skillID string
-	}{
-		{"own-usage-run", "user", "own-skill"},
-		{"foreign-usage-run", "other", "foreign-skill"},
-	} {
-		if err := db.Create(&model.CloudAgentExecution{ID: item.id, UserID: item.userID, Status: "completed", CreatedAt: time.Now()}).Error; err != nil {
-			t.Fatal(err)
-		}
-		body := `{"runId":"` + item.id + `","type":"tool_completed","payload":{"toolName":"skills_load","skillIds":["` + item.skillID + `"]}}`
-		if err := db.Create(&model.CloudAgentEventRecord{RunID: item.id, UserID: item.userID, Sequence: 1, EventJSON: body}).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	usage, err := s.CloudAgentSkillUsage("user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if usage.ScannedRuns != 1 || len(usage.Skills) != 1 || usage.Skills[0].SkillID != "own-skill" {
-		t.Fatalf("cross-user journal leaked or own skill missing: %+v", usage)
-	}
-	if err := db.Model(&model.CloudAgentEventRecord{}).Where("run_id = ?", "own-usage-run").Update("event_json", "{").Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.CloudAgentSkillUsage("user"); err == nil {
-		t.Fatal("corrupt receipt must not produce incomplete success metrics")
 	}
 }

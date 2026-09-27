@@ -10,7 +10,6 @@ export type DiagnosticExportInput = {
     runtime: {
         appVersion?: string;
         buildCommit?: string;
-        buildTime?: string;
         browser?: string;
         os?: string;
         timezone?: string;

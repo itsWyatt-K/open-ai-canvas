@@ -1,10 +1,8 @@
-import { Button, Checkbox as AntCheckbox, Segmented, Switch as AntSwitch, Tooltip as AntTooltip } from "antd";
+import { Button, Checkbox as AntCheckbox, Segmented, Select as AntSelect, Switch as AntSwitch, Tooltip as AntTooltip } from "antd";
 import type { CheckboxChangeEvent } from "antd/es/checkbox";
 import type { ButtonProps } from "antd";
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, InputHTMLAttributes, ReactNode } from "react";
-
-import { Select as UnifiedSelect } from "@/components/ui/base/select";
 
 import { cn } from "@/lib/utils";
 
@@ -48,7 +46,7 @@ export function AdminSelect<V extends string = string>({
     ariaLabel?: string;
     className?: string;
 }) {
-    return <UnifiedSelect {...props} size={size === "sm" ? "small" : "middle"} className={cn("admin-select", className)} aria-label={ariaLabel} onChange={(value) => onChange?.(value as V)} />;
+    return <AntSelect {...props} size={size === "sm" ? "small" : "middle"} className={cn("admin-select", className)} aria-label={ariaLabel} onChange={(value) => onChange?.(value as V)} />;
 }
 
 export function Select<V extends string = string>(props: Parameters<typeof AdminSelect<V>>[0]) {

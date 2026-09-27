@@ -302,7 +302,7 @@ func TestMediaRecoveryTerminalStagesLimitsAndPublicList(t *testing.T) {
 			if !strings.Contains(saved.Error, "作品已生成") {
 				t.Fatalf("wrong user message: %s", saved.Error)
 			}
-			listed, err := s.repo.Tasks(task.UserID, 100, "", false)
+			listed, err := s.repo.Tasks(task.UserID, repository.TaskQuery{Limit: 100})
 			if err != nil {
 				t.Fatal(err)
 			}
