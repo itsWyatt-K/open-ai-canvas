@@ -4,14 +4,13 @@ import type { GenerationTask, TaskStatus } from "@/services/api/task-center";
 import type { CanvasDrawingEngineSetting } from "@/lib/canvas/canvas-drawing-engine";
 import type { FeatureAvailability } from "@/stores/use-user-store";
 import { http, apiBaseURL } from "@/services/api/request";
-import type { PublicLogicalModel } from "@/services/api/logical-models";
 import type { OSSConnectionTestInput, OSSConnectionTestResult, OSSProvider, S3Preset } from "@/lib/oss-settings";
-
+import type { VerificationPolicy } from "./verification";
 
 let authSessionRequest: Promise<AuthSessionPayload> | null = null;
 let authSessionCache: { payload: AuthSessionPayload; expiresAt: number } | null = null;
 
-function invalidateAuthSessionCache() {
+export function invalidateAuthSessionCache() {
     authSessionCache = null;
 }
 
@@ -19,6 +18,9 @@ export type LocalUser = {
     id: string;
     username: string;
     email?: string;
+    phone?: string;
+    emailVerifiedAt?: string;
+    phoneVerifiedAt?: string;
     displayName: string;
     avatarUrl?: string;
     identityProvider?: string;
@@ -38,7 +40,6 @@ export type AdminUser = LocalUser & {
 
 export type AuthSessionPayload = {
     user: LocalUser | null;
-    logicalModels?: PublicLogicalModel[];
     runtimeLimits?: RuntimeLimits;
     drawingEngine?: CanvasDrawingEngineSetting;
     features?: FeatureAvailability;
@@ -279,6 +280,9 @@ export type AdminOSSSetting = {
     region: string;
     endpoint: string;
     cdnBaseUrl: string;
+    cdnAuthMode: "" | "public" | "qiniu" | string;
+    requireCDN: boolean;
+    allowPrivateProxy: boolean;
     bucket: string;
     accessKeyId: string;
     accessKeySecret?: string;
@@ -324,6 +328,14 @@ export type RuntimeResourcePolicy = {
     recycleBinRetentionDays?: number;
 };
 
+export type RuntimeStoragePolicy = {
+    transferTimeoutSeconds: number;
+    accessURLTTLSeconds: number;
+    providerAccessURLTTLSeconds: number;
+    nonSeekableBufferMB: number;
+    errorBodyKB: number;
+};
+
 export type RuntimeTaskPolicy = {
     workerConcurrency: number;
     channelConcurrency: number;
@@ -364,6 +376,7 @@ export type RuntimeRequestPolicy = {
 
 export type RuntimePolicySetting = {
     resource: RuntimeResourcePolicy;
+    storage: RuntimeStoragePolicy;
     task: RuntimeTaskPolicy;
     request: RuntimeRequestPolicy;
     configured?: boolean;
@@ -373,7 +386,19 @@ export type RuntimePolicySetting = {
 };
 
 export function getAuthSettings() {
-    return http.get<{ firstUser: boolean; registrationEnabled: boolean; linuxdoEnabled: boolean; emailEnabled: boolean; emailCodeRequired: boolean }>("/auth/settings");
+    return http.get<
+        VerificationPolicy & {
+            firstUser: boolean;
+            registrationEnabled: boolean;
+            linuxdoEnabled: boolean;
+            emailEnabled: boolean;
+            emailCodeRequired: boolean;
+            smsBindingAvailable: boolean;
+            emailBindingAvailable: boolean;
+            agreementTitle?: string;
+            agreementContent?: string;
+        }
+    >("/auth/settings");
 }
 
 export function linuxDOLoginURL(next: string, acceptedTerms?: boolean) {
@@ -386,23 +411,11 @@ export function getAuthSession() {
     const now = Date.now();
     if (authSessionCache && authSessionCache.expiresAt > now) return Promise.resolve(authSessionCache.payload);
     if (authSessionRequest) return authSessionRequest;
-    authSessionRequest = http.get<AuthSessionPayload>("/auth/session")
+    authSessionRequest = http
+        .get<AuthSessionPayload>("/auth/session")
         .then((payload) => {
             authSessionCache = { payload, expiresAt: Date.now() + 5_000 };
             return payload;
-        })
-        // 401 / "请先登录" 业务码视为未登录；这对 hydrate 链路至关重要：
-        // 若不在此处吞掉，未捕获的 Promise reject 会进 React 任务队列之后冒到 console 并打断 UI 恢复，
-        // 表现就是 FullScreenLoader 永远不消。
-        .catch((error: unknown) => {
-            const status = (error as { status?: number; response?: { status?: number } } | null)?.status
-                ?? (error as { response?: { status?: number } } | null)?.response?.status;
-            if (status === 401 || status === 403) {
-                const payload: AuthSessionPayload = { user: null };
-                authSessionCache = { payload, expiresAt: Date.now() + 5_000 };
-                return payload;
-            }
-            throw error;
         })
         .finally(() => {
             authSessionRequest = null;
@@ -422,7 +435,9 @@ export function getAdminFeatureAvailability() {
     return http.get<{ features: FeatureAvailability }>("/admin/settings/features");
 }
 
-export function updateAdminFeatureAvailability(features: Partial<Pick<FeatureAvailability, "welcomeEnabled" | "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers">>) {
+export function updateAdminFeatureAvailability(
+    features: Partial<Pick<FeatureAvailability, "welcomeEnabled" | "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers">>,
+) {
     return http.patch<{ features: FeatureAvailability }>("/admin/settings/features", features);
 }
 
@@ -445,8 +460,10 @@ export function resetPassword(input: { email: string; emailCode: string; passwor
     return http.post<{ reset: boolean }>("/auth/password-reset", input);
 }
 
-export function register(input: { username: string; email?: string; emailCode?: string; displayName?: string; password: string; acceptedTerms: boolean }) {
-    return http.post<{ user: LocalUser }>("/auth/register", input);
+export async function register(input: { username: string; email?: string; emailCode?: string; phone?: string; smsCode?: string; ticket?: string; displayName?: string; password: string; acceptedTerms: boolean }) {
+    const result = await http.post<{ user: LocalUser }>("/auth/register", input);
+    invalidateAuthSessionCache();
+    return result;
 }
 
 export async function logout() {
@@ -573,7 +590,7 @@ export function getAdminSelfUseRuntimePolicy() {
     return http.get<{ setting: RuntimePolicySetting }>("/admin/settings/runtime-policy/self-use");
 }
 
-export function updateAdminRuntimePolicySetting(input: Pick<RuntimePolicySetting, "resource" | "task" | "request">) {
+export function updateAdminRuntimePolicySetting(input: Pick<RuntimePolicySetting, "resource" | "storage" | "task" | "request">) {
     return http.put<{ setting: RuntimePolicySetting }>("/admin/settings/runtime-policy", input);
 }
 

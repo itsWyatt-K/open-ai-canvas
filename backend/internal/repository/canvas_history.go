@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var ErrCanvasHistoryResourceMissing = errors.New("canvas history resource missing")
-var ErrCanvasHistoryResourceReferenced = errors.New("resource referenced by canvas history")
+var ErrCanvasHistoryResourceMissing = errors.New("画布历史引用的资源不存在")
+var ErrCanvasHistoryResourceReferenced = errors.New("资源仍被画布历史引用，无法删除")
 
 const canvasSnapshotSummaryColumns = "id, canvas_id, user_id, revision, title, node_count, connection_count, payload_bytes, reason, content_updated_at, created_at"
 
