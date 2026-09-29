@@ -1,0 +1,22 @@
+{
+  "name": "yingce-canvas-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "影策 canvas-agent 本地模块：出口门禁（P0 Guardrails）+ 金标任务集（Golden Tasks）+ 影策渠道适配",
+  "scripts": {
+    "test": "tsx --test --test-concurrency=1 test/exit-gates/junkword-filter.test.ts test/exit-gates/axis-guard.test.ts test/exit-gates/exit-gate.test.ts test/exit-gates/yingce-gate-hooks.test.ts test/exit-gates/safety-judge.test.ts test/golden-tasks/golden-tasks.test.ts test/golden-tasks/promotion.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
