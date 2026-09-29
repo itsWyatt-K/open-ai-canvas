@@ -10,7 +10,17 @@
 // 零依赖纯函数。
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type JunkwordAction = "strip" | "reject" | "warn";
+export type JunkwordAction = "strip" | "reject" | "warn" | "flag";
+
+/**
+ * 规则域分离（B2 / 智谱回执 ○Q7）：
+ * - quality   质量域：质量咒语词/分辨率残留/画幅冲突。确定性剥离是 P0 原设计。
+ * - safety    安全域：涉政涉黄词表仅作廉价初筛（高召回、宁误报勿漏报），
+ *             命中只产"候选"（flag），判定走 SafetyJudge（模型级），
+ *             处置路由人工复核，**不得静默硬拦**。
+ * - competitor 竞品域：竞品名提示。降级为软警告（不阻断、不剥离）。
+ */
+export type JunkwordDomain = "quality" | "safety" | "competitor";
 
 export interface JunkwordRule {
     ruleId: string;
@@ -18,6 +28,8 @@ export interface JunkwordRule {
     pattern: RegExp;
     action: JunkwordAction;
     severity: "hard" | "soft";
+    /** 规则域（缺省 quality，保持旧规则零改动兼容） */
+    domain?: JunkwordDomain;
     /** 审计说明（中文，直接进入报告与 ask_user 消息） */
     reason: string;
     /** 修复建议：只进报告，不自动改写 */
@@ -28,6 +40,7 @@ export interface JunkwordRule {
 
 export interface JunkwordHit {
     ruleId: string;
+    domain: JunkwordDomain;
     matchedText: string;
     /** 命中位置：按该规则处理时的文本状态计算（逐规则顺序处理） */
     index: number;
@@ -43,7 +56,11 @@ export interface JunkwordFilterResult {
     rejected: boolean;
     rejectReasons: string[];
     changed: boolean;
-    stats: { totalHits: number; stripped: number; warned: number; rejected: number };
+    stats: { totalHits: number; stripped: number; warned: number; rejected: number; flagged: number };
+    /** 安全域词表初筛候选（flag 命中）：送 SafetyJudge 判定的输入，不进 cleanedPrompt 流程 */
+    safetyCandidates: JunkwordHit[];
+    /** 按域分列的命中统计（审计报告按域分列的依据） */
+    byDomain: Record<JunkwordDomain, number>;
 }
 
 /**
@@ -91,6 +108,82 @@ export const defaultJunkwordRules: ReadonlyArray<JunkwordRule> = [
     },
 ];
 
+/**
+ * 安全域词表（B2 三层架构之第 1 层：廉价高召回初筛）。
+ *
+ * 铁律：本词表只产"候选"（action=flag），**绝不静默硬拦、绝不改写文本**。
+ * 阈值偏召回——漏报代价远大于误报代价，宁误报勿漏报。
+ * 误报由第 2 层 SafetyJudge 语义复判（处理谐音/拆字/变体逃逸）与第 3 层人工复核吸收。
+ *
+ * 此处仅内置中性、可公开审计的泛类词（涉黄/违禁品/博彩/血腥暴力）。
+ * 涉政等需合规维护的专项词表不入库，走 `loadSafetyWordlist()` 从
+ * `rules/safety-wordlist.json`（不随仓库分发）外部挂载，避免词表与代码耦合。
+ */
+export const defaultSafetyWordlist: ReadonlyArray<JunkwordRule> = [
+    {
+        ruleId: "safety-porn-generic",
+        pattern: /色情|情色|成人内容|成人影片|裸露|全裸|性暗示|擦边|露骨|艳照/gi,
+        action: "flag",
+        severity: "hard",
+        domain: "safety",
+        reason: "安全域初筛：疑似涉黄泛词。仅为候选，需 SafetyJudge 语义复判 + 人工复核，禁止静默硬拦。",
+        suggestion: "正当艺术/医学语境由人工复核放行；否则改写措辞或撤稿。",
+    },
+    {
+        ruleId: "safety-illegal-goods",
+        pattern: /毒品|吸毒|贩毒|制毒|枪支|弹药|爆炸物|管制刀具/g,
+        action: "flag",
+        severity: "hard",
+        domain: "safety",
+        reason: "安全域初筛：疑似违禁品词。仅为候选，需复判 + 人工复核。",
+        suggestion: "确认是否为反诈/普法/影视道具语境；否则移除。",
+    },
+    {
+        ruleId: "safety-gambling",
+        pattern: /赌博|博彩|赌场|下注|押注|开奖/g,
+        action: "flag",
+        severity: "soft",
+        domain: "safety",
+        reason: "安全域初筛：疑似博彩词。仅为候选，需复判 + 人工复核。",
+        suggestion: "非博彩语义（如\"赌一把\"口语）由人工复核放行。",
+    },
+    {
+        ruleId: "safety-violence-gore",
+        pattern: /血腥|虐杀|残肢|肢解|尸体特写/g,
+        action: "flag",
+        severity: "soft",
+        domain: "safety",
+        reason: "安全域初筛：疑似血腥暴力词。仅为候选，需复判 + 人工复核。",
+        suggestion: "刑侦/医学/历史叙事语境由人工复核放行。",
+    },
+];
+
+/**
+ * 竞品域词表（B2：降级为软警告——不阻断、不剥离、不改写一个字）。
+ * 目的只是"让主人看见"，处置权完全在人。
+ */
+export const defaultCompetitorWordlist: ReadonlyArray<JunkwordRule> = [
+    {
+        ruleId: "competitor-vendor-name",
+        pattern: /\b(midjourney|stable ?diffusion|dall[·\-]?e|sora|runway(?:ml)?|pika|luma|ideogram|flux)\b/gi,
+        action: "warn",
+        severity: "soft",
+        domain: "competitor",
+        reason: "提示词中出现竞品/第三方模型名，可能是风格借代，也可能是串台残留。仅提示，不阻断。",
+        suggestion: "若确为风格借代可保留；若为模板串台请改为本产线的风格描述。",
+    },
+];
+
+/**
+ * 出口门禁默认全量规则集 = 质量域（确定性剥离）+ 安全域（初筛候选）+ 竞品域（软警告）。
+ * 单独调用 filterJunkWords 时仍默认仅质量域（保持既有调用点与测试零改动）。
+ */
+export const defaultExitGateRules: ReadonlyArray<JunkwordRule> = [
+    ...defaultJunkwordRules,
+    ...defaultSafetyWordlist,
+    ...defaultCompetitorWordlist,
+];
+
 /** 剥离后的标点与空白清理：保守处理，只修复删除残留，不改写内容。 */
 function cleanupAfterStrip(text: string): string {
     return text
@@ -129,16 +222,27 @@ export function filterJunkWords(
         if (!rule.pattern.global) {
             throw new Error(`规则 ${rule.ruleId} 的正则必须携带 g 标志，否则只能命中第一处。`);
         }
+        const domain: JunkwordDomain = rule.domain ?? "quality";
         const matches: Array<{ text: string; index: number }> = [];
         for (const match of working.matchAll(rule.pattern)) {
             matches.push({ text: match[0], index: match.index ?? 0 });
         }
         if (matches.length === 0) continue;
 
-        if (rule.action === "strip") {
+        // 安全域：词表初筛只产候选，绝不静默硬拦（判定走 SafetyJudge）
+        if (domain === "safety" && rule.action !== "flag") {
+            throw new Error(`安全域规则 ${rule.ruleId} 的 action 必须为 flag（初筛不判定、不阻断）。`);
+        }
+
+        // 竞品域：强制降级为 warn（B2：软警告，不阻断不剥离）
+        const effectiveAction: JunkwordAction =
+            domain === "competitor" && rule.action !== "warn" ? "warn" : rule.action;
+
+        if (effectiveAction === "strip") {
             for (const item of matches) {
                 hits.push({
                     ruleId: rule.ruleId,
+                    domain,
                     matchedText: item.text,
                     index: item.index,
                     action: "strip",
@@ -156,13 +260,31 @@ export function filterJunkWords(
             continue;
         }
 
-        if (rule.action === "reject") {
+        // 安全域初筛：只记录候选，不改写文本、不阻断、不进 rejectReasons
+        if (effectiveAction === "flag") {
+            for (const item of matches) {
+                hits.push({
+                    ruleId: rule.ruleId,
+                    domain,
+                    matchedText: item.text,
+                    index: item.index,
+                    action: "flag",
+                    severity: rule.severity,
+                    reason: rule.reason,
+                    suggestion: rule.suggestion,
+                });
+            }
+            continue;
+        }
+
+        if (effectiveAction === "reject") {
             const distinct = [...new Set(matches.map((item) => normalizeRatio(item.text)))];
             const triggered = rule.rejectOn === "distinct" ? distinct.length >= 2 : matches.length >= 1;
             if (triggered) {
                 for (const item of matches) {
                     hits.push({
                         ruleId: rule.ruleId,
+                        domain,
                         matchedText: item.text,
                         index: item.index,
                         action: "reject",
@@ -178,6 +300,7 @@ export function filterJunkWords(
                 for (const item of matches) {
                     hits.push({
                         ruleId: rule.ruleId,
+                        domain,
                         matchedText: item.text,
                         index: item.index,
                         action: "warn",
@@ -193,6 +316,7 @@ export function filterJunkWords(
         for (const item of matches) {
             hits.push({
                 ruleId: rule.ruleId,
+                domain,
                 matchedText: item.text,
                 index: item.index,
                 action: "warn",
@@ -204,6 +328,7 @@ export function filterJunkWords(
     }
 
     const cleaned = cleanupAfterStrip(working);
+    const safetyCandidates = hits.filter((hit) => hit.action === "flag");
     return {
         cleanedPrompt: cleaned,
         hits,
@@ -215,6 +340,13 @@ export function filterJunkWords(
             stripped: hits.filter((hit) => hit.action === "strip").length,
             warned: hits.filter((hit) => hit.action === "warn").length,
             rejected: hits.filter((hit) => hit.action === "reject").length,
+            flagged: safetyCandidates.length,
+        },
+        safetyCandidates,
+        byDomain: {
+            quality: hits.filter((hit) => hit.domain === "quality").length,
+            safety: hits.filter((hit) => hit.domain === "safety").length,
+            competitor: hits.filter((hit) => hit.domain === "competitor").length,
         },
     };
 }

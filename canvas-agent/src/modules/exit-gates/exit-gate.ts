@@ -1,5 +1,17 @@
 import { validateStoryboardAxis, type AxisGuardOptions, type AxisGuardResult } from "./axis-guard.js";
-import { filterJunkWords, type JunkwordFilterResult, type JunkwordRule } from "./junkword-filter.js";
+import {
+    defaultExitGateRules,
+    filterJunkWords,
+    type JunkwordFilterResult,
+    type JunkwordRule,
+} from "./junkword-filter.js";
+import {
+    createReviewOnlySafetyJudge,
+    summarizeSafetyVerdicts,
+    type SafetyJudge,
+    type SafetySummary,
+    type SafetyVerdict,
+} from "./safety-judge.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exit Gate 编排层：S4 / S5 出口门禁统一入口 + ask_user 载荷生成
@@ -19,6 +31,11 @@ export interface ExitGateInput {
     prompt?: string;
     junkwordRules?: ReadonlyArray<JunkwordRule>;
     axisOptions?: AxisGuardOptions;
+    /**
+     * 安全域判定器（第 2 层）。缺省 = reviewOnly：候选全部原样转人工。
+     * 仅在 runExitGateAsync 中生效（同步版 runExitGate 不碰模型）。
+     */
+    safetyJudge?: SafetyJudge;
 }
 
 export interface GateProposal {
@@ -32,10 +49,13 @@ export interface GateProposal {
 
 export interface ExitGateReport {
     stages: ExitGateStage[];
-    /** true = 无 hard 违规，可放行 */
+    /** true = 无 hard 违规、且无待人工处置的安全候选，可放行 */
     passed: boolean;
     axis?: AxisGuardResult;
     junkword?: JunkwordFilterResult;
+    /** 安全域第 2 层判定汇总（仅 runExitGateAsync 产出） */
+    safety?: SafetySummary;
+    safetyVerdicts?: SafetyVerdict[];
     blockers: string[];
     warnings: string[];
     autofixProposals: GateProposal[];
@@ -107,6 +127,56 @@ export function runExitGate(input: ExitGateInput): ExitGateReport {
     };
 }
 
+/**
+ * 全量异步门禁（B2 三层完整版）：
+ * 确定性层（质量域剥离 / 画幅冲突 / 竞品软警告 / 安全域初筛）
+ *   → 第 2 层 SafetyJudge 语义判定
+ *   → 第 3 层：block/review 一律进入人工处置队列，**不静默放行也不静默硬拦**。
+ *
+ * 与同步版差异：默认规则集为三域全量（defaultExitGateRules），且会产生安全判定结果。
+ */
+export async function runExitGateAsync(input: ExitGateInput): Promise<ExitGateReport> {
+    const base = runExitGate({
+        ...input,
+        junkwordRules: input.junkwordRules ?? defaultExitGateRules,
+    });
+
+    const candidates = base.junkword?.safetyCandidates ?? [];
+    if (candidates.length === 0) return base;
+
+    const judge = input.safetyJudge ?? createReviewOnlySafetyJudge();
+    const verdicts = await judge.judge(candidates, { prompt: input.prompt ?? "" });
+    const summary = summarizeSafetyVerdicts(verdicts);
+
+    const blockers = [...base.blockers];
+    if (summary.humanQueue.length > 0) {
+        blockers.push(
+            `[safety-review] 安全域待人工处置 ${summary.humanQueue.length} 项` +
+                `（已定 ${summary.blocked} 项判定违规 / ${summary.review} 项证据不足，` +
+                `判定器 ${summary.judgeIds.join(",")}${summary.degraded ? "，含降级结果" : ""}）`,
+        );
+    }
+    for (const verdict of summary.humanQueue) {
+        if (verdict.judgement === "block") {
+            blockers.push(
+                `[safety-block] 「${verdict.candidate.matchedText}」：${verdict.rationale}（判定器 ${verdict.judgeId}，置信度 ${verdict.confidence.toFixed(2)}）`,
+            );
+        } else {
+            base.warnings.push(
+                `[safety-review] 「${verdict.candidate.matchedText}」：${verdict.rationale}（判定器 ${verdict.judgeId}）`,
+            );
+        }
+    }
+
+    return {
+        ...base,
+        passed: blockers.length === 0,
+        safety: summary,
+        safetyVerdicts: verdicts,
+        blockers,
+    };
+}
+
 function truncate(text: string, maxLines: number): string {
     const lines = text.split("\n");
     if (lines.length <= maxLines) return text;
@@ -147,6 +217,29 @@ export function formatAskUserMessage(report: ExitGateReport, promptPreviewLines 
             }
         });
     }
+    const hasHumanOption = report.safety !== undefined || report.warnings.length > 0;
+
+    // 安全域必须显式列出每一条候选：让人一眼看到"为什么被拦 + 谁判的 + 依据"。
+    if (report.safety && report.safety.humanQueue.length > 0) {
+        lines.push("");
+        lines.push(`安全域待人工处置 ${report.safety.humanQueue.length} 项（词表初筛仅候选，处置权在你）：`);
+        report.safety.humanQueue.forEach((verdict, index) => {
+            const tag = verdict.judgement === "block" ? "判定违规" : "证据不足";
+            lines.push(
+                `${index + 1}. [${tag}] 「${verdict.candidate.matchedText}」（规则 ${verdict.candidate.ruleId}）`,
+            );
+            lines.push(
+                `   ${verdict.rationale}${verdict.modelJudged ? `｜置信度 ${verdict.confidence.toFixed(2)}` : "｜未走模型，保守转人工"}`,
+            );
+            if (verdict.candidate.suggestion) {
+                lines.push(`   建议：${verdict.candidate.suggestion}`);
+            }
+        });
+        if (report.safety.degraded) {
+            lines.push("");
+            lines.push("注意：本轮含未走模型的降级判定，结果不可作为安全策略有效性证据，仅作线索。");
+        }
+    }
     if (report.warnings.length > 0) {
         lines.push("");
         lines.push(`软警告 ${report.warnings.length} 项：`);
@@ -158,8 +251,8 @@ export function formatAskUserMessage(report: ExitGateReport, promptPreviewLines 
     lines.push("请选择处置方式（回复序号）：");
     lines.push("[1] 应用全部自动修复并重跑门禁");
     lines.push("[2] 人工修改后重新提交");
-    if (report.warnings.length > 0) {
-        lines.push("[3] 忽略软警告放行（硬违规不可忽略）");
+    if (hasHumanOption) {
+        lines.push("[3] 确认无风险，人工放行（软警告与安全候选一并放行，硬违规不可忽略）");
     }
     return lines.join("\n");
 }
