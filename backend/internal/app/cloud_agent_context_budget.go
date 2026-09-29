@@ -43,14 +43,12 @@ func cloudAgentContextBudgetFor(contextWindow, maxOutput int, source string) clo
 	if inputBudget < 1_024 {
 		inputBudget = max(1_024, contextWindow/2)
 	}
-	compactAt := min(contextWindow*80/100, inputBudget)
-	compactAt = max(1_024, compactAt)
 	return cloudAgentContextBudget{
 		ContextWindowTokens: contextWindow,
 		MaxOutputTokens:     maxOutput,
 		OverheadTokens:      overhead,
 		InputBudgetTokens:   inputBudget,
-		CompactAtTokens:     compactAt,
+		CompactAtTokens:     max(1_024, inputBudget*85/100),
 		Source:              source,
 	}
 }

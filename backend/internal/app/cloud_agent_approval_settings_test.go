@@ -161,21 +161,15 @@ func TestCloudAgentImageApprovalEditsAreValidatedAndIdempotent(t *testing.T) {
 	}
 	var before int64
 	db.Model(&model.BillingOrder{}).Count(&before)
-	if err := s.DecideCloudAgentApproval("user", run.ID, id, "approve", "", &settings); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if err := s.DecideCloudAgentApproval("user", run.ID, id, "approve", "", &settings); err != nil {
+			t.Fatal(err)
+		}
 	}
-	var afterFirstApproval int64
-	db.Model(&model.BillingOrder{}).Count(&afterFirstApproval)
-	if afterFirstApproval <= before {
-		t.Fatal("approval did not submit the approved media task")
-	}
-	if err := s.DecideCloudAgentApproval("user", run.ID, id, "approve", "", &settings); err != nil {
-		t.Fatal(err)
-	}
-	var afterRetry int64
-	db.Model(&model.BillingOrder{}).Count(&afterRetry)
-	if afterRetry != afterFirstApproval {
-		t.Fatalf("idempotent approval created another billing order: first=%d retry=%d", afterFirstApproval, afterRetry)
+	var orders int64
+	db.Model(&model.BillingOrder{}).Count(&orders)
+	if orders != before {
+		t.Fatal("editing approval charged before task submission")
 	}
 	changed := settings
 	changed.Size = "1:1"

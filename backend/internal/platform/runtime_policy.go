@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"infinite-canvas/backend/internal/model"
-
-	"gorm.io/gorm"
 )
 
 const runtimePolicySettingKey = "runtime_policy"
@@ -167,9 +165,7 @@ func DefaultRuntimePolicy() RuntimePolicySetting {
 			WorkerConcurrency:        defaultWorkerConcurrencyLimit(),
 			ChannelConcurrency:       defaultChannelConcurrencyLimit(),
 			ActiveTaskLimit:          5,
-			// 本地定制：生图走的是外部 CDN 取图链路，实测慢图 + 兜底代理重试
-			// 常常超过上游默认的 8 分钟，故放宽到 25 分钟（升级后需重新应用）。
-			ImageTimeoutMinutes:      25,
+			ImageTimeoutMinutes:      8,
 			TextTimeoutMinutes:       8,
 			AudioTimeoutMinutes:      8,
 			VideoTimeoutMinutes:      60,
@@ -236,8 +232,21 @@ func selfUseRuntimePolicy() RuntimePolicySetting {
 func SelfUseRuntimePolicy() RuntimePolicySetting { return selfUseRuntimePolicy() }
 
 func (s *Service) RuntimePolicy() (RuntimePolicySetting, error) {
-	_, value, err := s.readRuntimePolicy()
-	return value, err
+	if s.runtimePolicyCache == nil {
+		_, value, err := s.readRuntimePolicy()
+		return value, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return s.runtimePolicyCache.Get(ctx, runtimePolicySettingKey, func(ctx context.Context) (RuntimePolicySetting, int, error) {
+		reader := &Service{
+			repo:        s.repo.WithContext(ctx),
+			host:        s.host,
+			Coordinator: s.Coordinator,
+		}
+		_, value, err := reader.readRuntimePolicy()
+		return value, 2048, err
+	})
 }
 
 func (s *Service) RuntimeConcurrencySetting() (RuntimeTaskPolicy, error) {
@@ -245,7 +254,7 @@ func (s *Service) RuntimeConcurrencySetting() (RuntimeTaskPolicy, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return s.concurrencyCache.Get(ctx, runtimePolicySettingKey, func(ctx context.Context) (RuntimeTaskPolicy, int, error) {
-		reader := &Service{repo: s.repo.WithContext(ctx), host: s.host, Coordinator: s.Coordinator, concurrencyCache: s.concurrencyCache}
+		reader := &Service{repo: s.repo.WithContext(ctx), host: s.host, Coordinator: s.Coordinator, concurrencyCache: s.concurrencyCache, runtimePolicyCache: s.runtimePolicyCache}
 		policy, err := reader.RuntimePolicy()
 		return policy.Task, 256, err
 	})
@@ -304,6 +313,9 @@ func (s *Service) UpdateRuntimePolicySetting(actor *model.User, value RuntimePol
 	}
 
 	s.concurrencyCache.Clear()
+	if s.runtimePolicyCache != nil {
+		s.runtimePolicyCache.Clear()
+	}
 	if err := s.appendAdminAudit(actor, "runtime_policy.update", "system_setting", runtimePolicySettingKey, "更新资源与请求策略", map[string]any{"before": before, "after": value}); err != nil {
 		return nil, err
 	}
@@ -323,6 +335,9 @@ func (s *Service) ResetRuntimePolicySetting(actor *model.User) (*PublicRuntimePo
 	}
 
 	s.concurrencyCache.Clear()
+	if s.runtimePolicyCache != nil {
+		s.runtimePolicyCache.Clear()
+	}
 	after := DefaultRuntimePolicy()
 	if err := s.appendAdminAudit(actor, "runtime_policy.reset", "system_setting", runtimePolicySettingKey, "重置资源与请求策略", map[string]any{"before": before, "after": after}); err != nil {
 		return nil, err
@@ -331,13 +346,13 @@ func (s *Service) ResetRuntimePolicySetting(actor *model.User) (*PublicRuntimePo
 }
 
 func (s *Service) readRuntimePolicy() (*model.SystemSetting, RuntimePolicySetting, error) {
-	setting, err := s.repo.SystemSetting(runtimePolicySettingKey)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		value := DefaultRuntimePolicy()
-		return nil, value, validateRuntimePolicy(value)
-	}
+	setting, err := s.repo.SystemSettingOptional(runtimePolicySettingKey)
 	if err != nil {
 		return nil, RuntimePolicySetting{}, err
+	}
+	if setting == nil {
+		value := DefaultRuntimePolicy()
+		return nil, value, validateRuntimePolicy(value)
 	}
 	value := DefaultRuntimePolicy()
 	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal([]byte(setting.ValueJSON), &value) != nil {
