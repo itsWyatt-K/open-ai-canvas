@@ -47,6 +47,10 @@ type cloudAgentApproval struct {
 	Reason    string                    `json:"reason,omitempty"`
 }
 type cloudAgentRuntime struct {
+	// [LOCAL] 以下两字段为上游 v1.5.8.2 上下文压缩特性所依赖（upstream 新增）。
+	// 本地 ask_user 管线保留不动，仅补齐其依赖的状态面；差集见 ask_user 能力对照矩阵。
+	ContextCompactionCount int `json:"contextCompactionCount,omitempty"`
+	ContextCompaction     *cloudAgentContextCompaction `json:"contextCompaction,omitempty"`
 	RuntimeRunID           string                                  `json:"-"`
 	Request                CloudAgentRequest                       `json:"request"`
 	Policy                 cloudAgentPolicySnapshot                `json:"policy"`

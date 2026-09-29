@@ -98,17 +98,6 @@ func (s *Service) directResourceURL(resource *model.Resource, expiresAt time.Tim
 }
 
 // PrepareResourceDelivery 统一决定浏览器资源出口：配置 CDN 时默认直连 CDN，显式代理仅用于需要同源 Blob 的内部读取。
-func (s *Service) PrepareResourceDelivery(userID string, id string, options ResourceDeliveryOptions) (*ResourceDelivery, error) {
-	resource, err := s.repo.ResourceForUser(userID, id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, NotFound("资源不存在")
-		}
-		return nil, err
-	}
-	return s.prepareResourceDelivery(userID, resource, options)
-}
-
 func (s *Service) prepareResourceDelivery(userID string, resource *model.Resource, options ResourceDeliveryOptions) (*ResourceDelivery, error) {
 	if resource == nil {
 		return nil, errors.New("资源不存在")
@@ -120,46 +109,6 @@ func (s *Service) prepareResourceDelivery(userID string, resource *model.Resourc
 		setting, err := s.ossSettingForResource(userID, resource)
 		if err != nil {
 			return nil, err
-		}
-		// S3 兼容 Endpoint 可能是私网服务；浏览器默认始终使用同源代理。
-		// 只有明确的服务端上游需求才签发可公开访问的短时地址。
-		if setting.Provider == s3Provider && !options.ForceDirect {
-			return &ResourceDelivery{Resource: resource}, nil
-		}
-		if setting.Provider == qiniuKodoProvider && setting.CDNBaseURL != "" {
-			// 七牛私有空间即使配置了绑定域名，也不能匿名访问；必须使用
-			// Kodo 私有下载签名，否则浏览器会收到 NotSupportAnonymous。
-			redirectURL, err := signedOSSObjectURL(setting, resource.ObjectKey, time.Now().Add(directResourceURLTTL))
-			if err != nil {
-				return nil, err
-			}
-			return &ResourceDelivery{Resource: resource, RedirectURL: redirectURL}, nil
-		}
-		if setting.CDNBaseURL != "" {
-			redirectURL, err := ossCDNObjectURL(setting.CDNBaseURL, resource.ObjectKey)
-			if err != nil {
-				return nil, err
-			}
-			return &ResourceDelivery{Resource: resource, RedirectURL: redirectURL}, nil
-		}
-		if options.ForceDirect {
-			if setting.Provider == s3Provider && !publicHTTPSStorageEndpoint(setting.Endpoint) {
-				redirectURL, err := s.signedHTTPSPublicResourceURL(resource, time.Now().Add(directResourceURLTTL))
-				if err != nil {
-					return nil, err
-				}
-				return &ResourceDelivery{Resource: resource, RedirectURL: redirectURL}, nil
-			}
-			redirectURL, err := signedOSSObjectURL(setting, resource.ObjectKey, time.Now().Add(directResourceURLTTL))
-			if err != nil {
-				return nil, err
-			}
-			return &ResourceDelivery{Resource: resource, RedirectURL: redirectURL}, nil
-		}
-	}
-	return &ResourceDelivery{Resource: resource}, nil
-}
-
 func (s *Service) signedPublicResourceURL(resource *model.Resource, expiresAt time.Time) (string, error) {
 	if resource == nil {
 		return "", errors.New("资源不存在")
