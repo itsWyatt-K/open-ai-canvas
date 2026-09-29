@@ -83,8 +83,9 @@ export type StoryboardShot = z.infer<typeof storyboardShotSchema>;
 // ── L0 规则对象：供 Bundle / SKILL.md 注入的机器可读负面清单 ─────────────────
 // 与 rules/guardrail-rules.yaml 同构；TS 侧是可执行形式，YAML 侧是
 // 注入提示词上下文的声明形式。两份文件修改时必须同步（见 README）。
-
-export const guardrailRuleActionSchema = z.enum(["reject", "autofix", "strip", "warn"]);
+// B2（2026-09-29）：新增 "flag" —— 安全域词表初筛命中时只产候选、不阻断不改写，
+// 由 SafetyJudge 判定层与 ask_user 人工处置后续处理。详见 junkword-filter.ts。
+export const guardrailRuleActionSchema = z.enum(["reject", "autofix", "strip", "warn", "flag"]);
 
 export const guardrailRuleSchema = z.object({
     rule_id: z.string().min(1),
