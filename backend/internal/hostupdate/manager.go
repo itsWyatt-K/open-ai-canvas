@@ -270,7 +270,8 @@ func (m *Manager) runUpdate(fromVersion, targetVersion string) {
 		m.failWithoutRollback(PhaseFailed, err)
 		return
 	}
-	if err := m.verifyImages(targetVersion); err != nil {
+	// 上游 v1.5.8.2 起 verifyImages 返回部署镜像清单（双返回值），此处仅关心错误
+	if _, err := m.verifyImages(targetVersion); err != nil {
 		m.failWithoutRollback(PhaseFailed, err)
 		return
 	}
