@@ -10,6 +10,7 @@ import { isSeedanceVideoConfig } from "@/lib/seedance-video";
 import { modelCapabilityConfigFor, workflowFieldCurrentValue, workflowFieldHasStoredValue, workflowFieldKey, workflowFieldRandomKey, workflowFieldSubmissionValue, workflowOutputSizeValue, workflowVideoFieldsFromJson } from "@/lib/model-capabilities";
 import { modelRequestOptions, resolveCompatibleModel, resolveModelGenerationDefaults, resolveVideoOperation, type ModelGenerationDefaults, type ModelRequirements } from "@/lib/model-selection";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
+import { producedModelCandidateForGeneration } from "@/lib/canvas/produced-model";
 import { ensureMediaNodeMinimumSize } from "@/lib/canvas/canvas-node-size";
 import { interruptFileUpload } from "@/lib/canvas/canvas-file-upload";
 import { isCanvasWorkflowProvider, resolveCanvasWorkflowProvider } from "@/lib/canvas/canvas-workflow";
@@ -199,6 +200,7 @@ export function buildImageGenerationMetadata(type: CanvasImageGenerationType, co
         ...generationWorkflowMetadata(config),
         generationType: type,
         model: config.model,
+        producedModelCandidate: producedModelCandidateForGeneration(config),
         size: config.size,
         quality: config.quality,
         transparentBackground: config.transparentBackground,
@@ -235,10 +237,21 @@ export function buildAudioGenerationMetadata(config: AiConfig): CanvasNodeMetada
     return {
         ...generationWorkflowMetadata(config),
         model: config.model,
+        producedModelCandidate: producedModelCandidateForGeneration(config),
         audioVoice: config.audioVoice,
         audioFormat: config.audioFormat,
         audioSpeed: config.audioSpeed,
         audioInstructions: config.audioInstructions,
+        audioEmotionControlMethod: config.audioEmotionControlMethod,
+        audioEmotionRandom: config.audioEmotionRandom,
+        audioEmotionHappy: config.audioEmotionHappy,
+        audioEmotionAngry: config.audioEmotionAngry,
+        audioEmotionSad: config.audioEmotionSad,
+        audioEmotionAfraid: config.audioEmotionAfraid,
+        audioEmotionDisgusted: config.audioEmotionDisgusted,
+        audioEmotionMelancholic: config.audioEmotionMelancholic,
+        audioEmotionSurprised: config.audioEmotionSurprised,
+        audioEmotionCalm: config.audioEmotionCalm,
     };
 }
 

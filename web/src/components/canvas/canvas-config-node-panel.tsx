@@ -1,4 +1,4 @@
-import { Button, Input, InputNumber, Segmented, Select, Slider } from "antd";
+import { Button, Input, InputNumber, Segmented, Slider } from "antd";
 import { Tooltip } from "@/components/ui/base/tooltip";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown, Dice5, Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Sparkles, Video, Workflow as WorkflowIcon } from "lucide-react";
@@ -17,6 +17,7 @@ import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { workflowProviderPluginEnabled } from "@/lib/plugins/builtin/workflows";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import type { CanvasGenerationMode, CanvasNodeData, CanvasNodeMetadata, CanvasVideoEditOperation, CanvasWorkspaceMode } from "@/types/canvas";
+import { Select } from "@/components/ui/base/select";
 
 type CanvasConfigNodePanelProps = {
     node: CanvasNodeData;
@@ -500,6 +501,16 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
+        audioEmotionControlMethod: node.metadata?.audioEmotionControlMethod || globalConfig.audioEmotionControlMethod || defaultConfig.audioEmotionControlMethod,
+        audioEmotionRandom: node.metadata?.audioEmotionRandom || globalConfig.audioEmotionRandom || defaultConfig.audioEmotionRandom,
+        audioEmotionHappy: node.metadata?.audioEmotionHappy || globalConfig.audioEmotionHappy || defaultConfig.audioEmotionHappy,
+        audioEmotionAngry: node.metadata?.audioEmotionAngry || globalConfig.audioEmotionAngry || defaultConfig.audioEmotionAngry,
+        audioEmotionSad: node.metadata?.audioEmotionSad || globalConfig.audioEmotionSad || defaultConfig.audioEmotionSad,
+        audioEmotionAfraid: node.metadata?.audioEmotionAfraid || globalConfig.audioEmotionAfraid || defaultConfig.audioEmotionAfraid,
+        audioEmotionDisgusted: node.metadata?.audioEmotionDisgusted || globalConfig.audioEmotionDisgusted || defaultConfig.audioEmotionDisgusted,
+        audioEmotionMelancholic: node.metadata?.audioEmotionMelancholic || globalConfig.audioEmotionMelancholic || defaultConfig.audioEmotionMelancholic,
+        audioEmotionSurprised: node.metadata?.audioEmotionSurprised || globalConfig.audioEmotionSurprised || defaultConfig.audioEmotionSurprised,
+        audioEmotionCalm: node.metadata?.audioEmotionCalm || globalConfig.audioEmotionCalm || defaultConfig.audioEmotionCalm,
         count: normalizedImage?.count || String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
     };
 }
@@ -556,6 +567,16 @@ function buildModelNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
+        audioEmotionControlMethod: node.metadata?.audioEmotionControlMethod || globalConfig.audioEmotionControlMethod || defaultConfig.audioEmotionControlMethod,
+        audioEmotionRandom: node.metadata?.audioEmotionRandom || globalConfig.audioEmotionRandom || defaultConfig.audioEmotionRandom,
+        audioEmotionHappy: node.metadata?.audioEmotionHappy || globalConfig.audioEmotionHappy || defaultConfig.audioEmotionHappy,
+        audioEmotionAngry: node.metadata?.audioEmotionAngry || globalConfig.audioEmotionAngry || defaultConfig.audioEmotionAngry,
+        audioEmotionSad: node.metadata?.audioEmotionSad || globalConfig.audioEmotionSad || defaultConfig.audioEmotionSad,
+        audioEmotionAfraid: node.metadata?.audioEmotionAfraid || globalConfig.audioEmotionAfraid || defaultConfig.audioEmotionAfraid,
+        audioEmotionDisgusted: node.metadata?.audioEmotionDisgusted || globalConfig.audioEmotionDisgusted || defaultConfig.audioEmotionDisgusted,
+        audioEmotionMelancholic: node.metadata?.audioEmotionMelancholic || globalConfig.audioEmotionMelancholic || defaultConfig.audioEmotionMelancholic,
+        audioEmotionSurprised: node.metadata?.audioEmotionSurprised || globalConfig.audioEmotionSurprised || defaultConfig.audioEmotionSurprised,
+        audioEmotionCalm: node.metadata?.audioEmotionCalm || globalConfig.audioEmotionCalm || defaultConfig.audioEmotionCalm,
         count: generationDefaults.count || String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
     };
 }
@@ -572,5 +593,6 @@ function audioConfigPatch(key: CanvasAudioSettingKey, value: string) {
     if (key === "audioVoice") return { audioVoice: value };
     if (key === "audioFormat") return { audioFormat: value };
     if (key === "audioSpeed") return { audioSpeed: value };
-    return { audioInstructions: value };
+    if (key === "audioInstructions") return { audioInstructions: value };
+    return { [key]: value };
 }

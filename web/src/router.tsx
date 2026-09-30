@@ -3,7 +3,7 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router
 
 import { RequireAuth } from "@/components/auth/require-auth";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
-import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadInspirationPage, loadProjectDetailPage, loadProjectsPage } from "@/lib/workspace-route-modules";
+import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadProjectDetailPage, loadProjectsPage } from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
@@ -43,7 +43,6 @@ const CanvasPage = lazy(loadCanvasPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const CreatePage = lazy(loadCreatePage);
-const InspirationPage = lazy(loadInspirationPage);
 const NotFound = lazy(() => import("@/pages/not-found"));
 const SkillsPage = lazy(() => import("@/pages/skills"));
 const PluginsPage = lazy(() => import("@/pages/plugins"));
@@ -51,7 +50,6 @@ const EagleLibraryPage = lazy(() => import("@/pages/plugins/eagle"));
 const TasksPage = lazy(() => import("@/pages/tasks"));
 const ProjectsPage = lazy(loadProjectsPage);
 const ProjectDetailPage = lazy(loadProjectDetailPage);
-const BrewHubPage = lazy(() => import("@/pages/brew"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
 const UserLayout = lazy(() => import("@/layouts/user-layout"));
@@ -107,7 +105,6 @@ export const router = createBrowserRouter([
         children: [
             { path: "/", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> },
             { path: "/create", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> },
-            { path: "/inspiration", element: <RequireAuth>{deferred(<InspirationPage />)}</RequireAuth> },
             {
                 path: "/tasks",
                 element: (
@@ -145,14 +142,6 @@ export const router = createBrowserRouter([
                 element: (
                     <RequireAuth>
                         <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectsPage />)}</RequireFeature>
-                    </RequireAuth>
-                ),
-            },
-            {
-                path: "/brew",
-                element: (
-                    <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<BrewHubPage />)}</RequireFeature>
                     </RequireAuth>
                 ),
             },
