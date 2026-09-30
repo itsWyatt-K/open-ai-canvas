@@ -339,11 +339,6 @@ type (
 	VoiceProfileSummary                    = app.VoiceProfileSummary
 	WalletSummary                          = app.WalletSummary
 	WorkflowField                          = app.WorkflowField
-	// W1 任务链（自研，随 service → app 重构补的别名）
-	ReviewShotRequest                      = app.ReviewShotRequest
-	ShotReviewResult                       = app.ShotReviewResult
-	TaskChainDetail                        = app.TaskChainDetail
-	ShotTimelineEntry                      = app.ShotTimelineEntry
 )
 
 func CloudAgentCapabilitySetInfo() CloudAgentCapabilitySet {

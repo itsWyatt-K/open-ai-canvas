@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -744,7 +744,15 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 				nodesBefore, nodesAfter = project.SaveAudit.NodesBefore, project.SaveAudit.NodesAfter
 			}
 			// Metadata only: never log prompts, media URLs, cookies, or the canvas payload.
-			log.Printf("canvas_save request_id=%q trace_id=%q actor=%q canvas=%q base_revision=%d revision=%d nodes_before=%d nodes_after=%d connections=%d status=%d", RequestID(c), TraceID(c), user.ID, identity.ID, baseRevision, project.Revision, nodesBefore, nodesAfter, len(audit.Connections), c.Writer.Status())
+			// 自动保存非常频繁：常规保存只在 debug 输出；节点减少（可能丢数据）或保存失败才提升级别。
+			level := slog.LevelDebug
+			switch {
+			case c.Writer.Status() >= http.StatusBadRequest:
+				level = slog.LevelWarn
+			case nodesBefore >= 0 && nodesAfter < nodesBefore:
+				level = slog.LevelInfo
+			}
+			slog.Log(c.Request.Context(), level, "canvas_save", "request_id", RequestID(c), "trace_id", TraceID(c), "actor", user.ID, "canvas", identity.ID, "base_revision", baseRevision, "revision", project.Revision, "nodes_before", nodesBefore, "nodes_after", nodesAfter, "connections", len(audit.Connections), "status", c.Writer.Status())
 		}()
 		if err != nil {
 			failService(c, err)
