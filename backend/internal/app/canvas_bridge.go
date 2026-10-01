@@ -49,11 +49,11 @@ func (h canvasHost) OpenResourceRange(userID string, resource *model.Resource, r
 	return h.svc.openResourceRange(userID, resource, rangeHeader)
 }
 
-func (h canvasHost) PrepareResourceDelivery(userID string, resource *model.Resource, options assets.ResourceDeliveryOptions) (*assets.ResourceDelivery, error) {
+func (h canvasHost) PrepareResourceDelivery(userID string, resource *model.Resource, options assets.AccessOptions, rangeHeader string) (*assets.ResourceDelivery, error) {
 	if h.svc == nil {
 		return nil, nil
 	}
-	return h.svc.prepareResourceDelivery(userID, resource, options)
+	return h.svc.prepareResourceDelivery(userID, resource, options, rangeHeader)
 }
 
 func (h canvasHost) WithStorageLock(fn func() error) error {
@@ -150,8 +150,8 @@ func (s *Service) OpenSharedCanvasResourceRange(token string, resourceID string,
 	return s.canvasDomain().OpenSharedCanvasResourceRange(token, resourceID, rangeHeader)
 }
 
-func (s *Service) PrepareSharedCanvasResourceDelivery(token string, resourceID string, rangeHeader string) (*ResourceDelivery, error) {
-	return s.canvasDomain().PrepareSharedCanvasResourceDelivery(token, resourceID, rangeHeader)
+func (s *Service) PrepareSharedCanvasResourceDelivery(token string, resourceID string, options ResourceAccessOptions, rangeHeader string) (*ResourceDelivery, error) {
+	return s.canvasDomain().PrepareSharedCanvasResourceDelivery(token, resourceID, options, rangeHeader)
 }
 
 func (s *Service) validateCanvasMediaAssets(userID string, raw json.RawMessage) error {
@@ -210,12 +210,20 @@ func (s *Service) UserCanvasProjectSummaries(userID string) ([]UserDataSummary, 
 	return s.canvasDomain().UserCanvasProjectSummaries(userID)
 }
 
+func (s *Service) UserCanvasProjectMetadata(userID string, id string) (*model.CanvasProject, error) {
+	return s.canvasDomain().UserCanvasProjectMetadata(userID, id)
+}
+
 func (s *Service) UserCanvasProject(userID string, id string) (json.RawMessage, error) {
 	return s.canvasDomain().UserCanvasProject(userID, id)
 }
 
 func (s *Service) UpsertUserCanvasProject(userID string, raw json.RawMessage) (UserDataSummary, error) {
 	return s.canvasDomain().UpsertUserCanvasProject(userID, raw)
+}
+
+func (s *Service) RepairUserCanvasProject(userID string, raw json.RawMessage) (UserDataSummary, error) {
+	return s.canvasDomain().RepairUserCanvasProject(userID, raw)
 }
 
 func (s *Service) DeleteUserCanvasProject(userID string, id string) error {
@@ -260,6 +268,10 @@ func (s *Service) UserCanvasProjectsPage(userID string, page int, pageSize int, 
 
 func clientAssetPayload(asset model.Asset) json.RawMessage {
 	return canvas.ClientAssetPayload(asset)
+}
+
+func clientAssetListPayload(asset model.Asset) json.RawMessage {
+	return canvas.ClientAssetListPayload(asset)
 }
 
 func validateSyncedPayload(raw json.RawMessage, label string) error {

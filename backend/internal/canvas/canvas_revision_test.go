@@ -3,7 +3,7 @@ package canvas
 import (
 	"encoding/json"
 	"errors"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"infinite-canvas/backend/internal/repository"
 	"net/http"

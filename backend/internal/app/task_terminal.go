@@ -27,8 +27,6 @@ type taskTerminalCoordinator struct {
 type taskTerminalRepository interface {
 	Task(id string) (*model.Task, error)
 	UpdateTaskTerminalDiagnostic(task *model.Task, completedAt time.Time) (bool, error)
-	// W1-02 F-25：成功收口时统一回写 Shot.LatestTaskID（自研，升级后需重新应用）。
-	TouchShotLatestTask(shotID string, taskID string, now time.Time) error
 }
 
 type taskBillingLifecycle interface {
@@ -48,6 +46,18 @@ type taskLifecycleLogger interface {
 
 type taskOutputLifecycle interface {
 	RegisterTaskOutputFromTask(task model.Task) error
+}
+
+type audioDurationTaskBilling interface {
+	SettleBillingWithAudioDuration(orderID string, providerRequestID string, durationMs int64) error
+}
+
+type billingOrderReader interface {
+	BillingOrder(orderID string) (*model.BillingOrder, error)
+}
+
+type audioDurationTaskOutput interface {
+	AudioOutputDurationMs(task model.Task) (int64, error)
 }
 
 func newTaskTerminalCoordinator(s *Service) *taskTerminalCoordinator {
@@ -227,21 +237,41 @@ func (c *taskTerminalCoordinator) handleSuccess(task *model.Task) error {
 			completionErr = fmt.Errorf("任务成功后的项目产物登记失败：%w", registerErr)
 		}
 	}
-	if err := c.billing.SettleBilling(task.BillingOrderID, ""); err != nil {
+	settleBilling := func() error {
+		if audioBilling, ok := c.billing.(audioDurationTaskBilling); ok && capabilityFromTaskType(task.Type) == "audio" {
+			orderReader, readerOK := c.billing.(billingOrderReader)
+			if readerOK {
+				order, err := orderReader.BillingOrder(task.BillingOrderID)
+				if err != nil {
+					return err
+				}
+				// Only audio orders priced per second need measured output duration.
+				// Fixed-request audio must retain the ordinary settlement path even
+				// when the stored resource has no duration metadata.
+				if order == nil || order.Capability != "audio" || order.BillingMode != "per_second" {
+					return c.billing.SettleBilling(task.BillingOrderID, "")
+				}
+			}
+			output, outputOK := c.outputs.(audioDurationTaskOutput)
+			if outputOK {
+				if completedTask == nil {
+					return errors.New("任务成功后无法读取音频产物")
+				}
+				durationMs, err := output.AudioOutputDurationMs(*completedTask)
+				if err != nil {
+					return err
+				}
+				return audioBilling.SettleBillingWithAudioDuration(task.BillingOrderID, "", durationMs)
+			}
+		}
+		return c.billing.SettleBilling(task.BillingOrderID, "")
+	}
+	if err := settleBilling(); err != nil {
 		uncertainErr := c.billing.MarkBillingUncertain(task.BillingOrderID, "生成成功但积分结算失败："+err.Error())
 		_ = c.logger.log(task.UserID, task.ID, "error", "积分结算失败，已进入待核对", err.Error())
 		completionErr = errors.Join(completionErr, fmt.Errorf("积分结算失败：%w", err))
 		if uncertainErr != nil {
 			completionErr = errors.Join(completionErr, fmt.Errorf("记录计费待核对状态失败：%w", uncertainErr))
-		}
-	}
-	// W1-02 F-25 / 自研：成功收口时回写分镜的「最近一次成功生成任务」指针，
-	// 使 Bridge / API Provider / 其他执行端共享同一 Shot 生命周期，
-	// RegenerateShot 才能克隆到最新参数。回写失败只记账不阻断成功流程
-	// （与产物登记失败同一策略，允许幂等补写）。
-	if task.ShotID != "" {
-		if err := c.repo.TouchShotLatestTask(task.ShotID, task.ID, time.Now()); err != nil {
-			_ = c.logger.log(task.UserID, task.ID, "error", "任务成功但回写分镜最新任务指针失败", err.Error())
 		}
 	}
 	_ = c.logger.log(task.UserID, task.ID, "info", "任务完成，结果已持久化", "")

@@ -1,8 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -40,35 +43,81 @@ func providerResponseBusinessFailure(responseBody []byte) (string, string, bool)
 	if len(responseBody) == 0 {
 		return "", "", false
 	}
-	var payload map[string]any
-	if json.Unmarshal(responseBody, &payload) != nil {
-		return "", "", false
+	// 火山单向语音合成把多帧 JSON 直接拼在同一个 HTTP 200 里。只解析第一帧会把后面的业务失败当成成功。
+	decoder := json.NewDecoder(bytes.NewReader(responseBody))
+	decoder.UseNumber()
+	decoded := false
+	for {
+		var payload map[string]any
+		err := decoder.Decode(&payload)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			if !decoded {
+				return "", "", false
+			}
+			break
+		}
+		decoded = true
+		if payload == nil {
+			continue
+		}
+		if code, message, failed := providerPayloadBusinessFailure(payload); failed {
+			return code, message, true
+		}
 	}
-	return providerPayloadBusinessFailure(payload)
+	return "", "", false
 }
 
 func providerPayloadBusinessFailure(payload map[string]any) (string, string, bool) {
+	if header, ok := payload["header"].(map[string]any); ok {
+		// 只认火山语音合成这种明确的资源拒绝。header.code 在别的协议里可能是 HTTP 状态，不能一律当成业务失败。
+		rawMessage := strings.TrimSpace(stringField(header, "message"))
+		if speechResourceDeniedUserMessage(rawMessage) != "" {
+			if code, message, failed := providerBusinessFailure(header); failed {
+				return code, message, true
+			}
+			return "resource_not_granted", rawMessage, true
+		}
+	}
+	if code, message, failed := providerBusinessFailure(payload); failed {
+		return code, message, true
+	}
+	// DashScope 业务失败在 output 内
+	if output, ok := payload["output"].(map[string]any); ok {
+		return providerBusinessFailure(output)
+	}
+	return "", "", false
+}
+
+func providerBusinessFailure(payload map[string]any) (string, string, bool) {
 	if errorValue, ok := payload["error"].(map[string]any); ok {
 		code, message := providerFailureDetails(map[string]any{"error": errorValue})
 		if code != "" || message != "" {
 			return code, message, true
 		}
 	}
-	if !providerBusinessCodeFailed(payload["code"]) {
-		return "", "", false
-	}
-	code, message := providerFailureDetails(payload)
-	return code, message, true
-}
 
-func providerBusinessCodeFailed(value any) bool {
-	code := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
-	switch code {
-	case "", "0", "success", "succeeded", "ok", "<nil>":
-		return false
-	default:
-		return true
+	code := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["code"])))
+	if code != "" && code != "0" &&
+		code != "success" && code != "succeeded" &&
+		code != "ok" && code != "<nil>" {
+		code, message := providerFailureDetails(payload)
+		return code, message, true
 	}
+
+	status := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["task_status"])))
+	switch status {
+	case "failed", "failure", "error", "expired":
+		code, message := providerFailureDetails(payload)
+		if code == "" {
+			code = "task_failed"
+		}
+		return code, message, true
+	}
+
+	return "", "", false
 }
 
 func normalizedProviderErrorCode(value any) string {

@@ -3,10 +3,10 @@ package skills
 // These skills are deliberately expressed in the host's existing Agent
 // vocabulary. They describe the PoloX workflows without introducing a second
 // tool registry or allowing skill text to grant permissions.
-func builtinImageEditingSkillDefinitions() []builtinSkillDefinition {
+func builtinImageEditingSkillDefinitions() []localSeedSkillDefinition {
 	const owner = "yingce-system"
 	const created = int64(1789700000000)
-	return []builtinSkillDefinition{
+	return []localSeedSkillDefinition{
 		{
 			SkillID: "yingce-image-editing", SkillName: "图片编辑工作流",
 			Description: "基于画布图片节点，用自然语言和参考图完成图片编辑。",

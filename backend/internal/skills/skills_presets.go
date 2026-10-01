@@ -106,7 +106,7 @@ func (s *Service) SkillPresets() ([]SkillPreset, error) {
 
 // builtinSeedSkillIDs 从内置种子清单提取全部 skillId，供预设引用对账。
 func builtinSeedSkillIDs() []string {
-	var definitions []builtinSkillDefinition
+	var definitions []localSeedSkillDefinition
 	if err := json.Unmarshal(builtinSkillsJSON, &definitions); err != nil {
 		return nil
 	}

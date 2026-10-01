@@ -16,15 +16,6 @@ type taskTerminalRepositoryStub struct {
 	terminalCalls    int
 	terminalError    error
 	terminalConflict bool
-	// W1-02 F-25：记录成功收口时对 Shot.LatestTaskID 的回写（自研断言用）
-	shotLatestCalls int
-	shotLatestError error
-}
-
-// TouchShotLatestTask 满足 taskTerminalRepository（W1-02 F-25 回写分镜最新成功任务）。
-func (r *taskTerminalRepositoryStub) TouchShotLatestTask(_ string, _ string, _ time.Time) error {
-	r.shotLatestCalls++
-	return r.shotLatestError
 }
 
 func (r *taskTerminalRepositoryStub) Task(string) (*model.Task, error) {

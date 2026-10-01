@@ -1,10 +1,11 @@
 package handler
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -18,6 +19,25 @@ import (
 )
 
 func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
+	r.POST("/resources/access", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+		var req []service.ResourceAccessRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := svc.ResourceAccessBatch(user.ID, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"items": result})
+	})
 	r.POST("/assets/batch-delete", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -277,154 +297,28 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"resource": resource})
 	})
-	r.GET("/resources/:id/oss-url", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		resource, err := svc.Resource(user.ID, c.Param("id"))
-		if err != nil {
-			fail(c, http.StatusNotFound, err)
-			return
-		}
-		ossURL, err := svc.DirectResourceURL(user.ID, resource.ID)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		// 签名地址只用于当前复制动作，禁止浏览器或中间代理缓存。
-		c.Header("Cache-Control", "private, no-store")
-		c.Header("Referrer-Policy", "no-referrer")
-		ok(c, gin.H{"url": ossURL})
-	})
 	r.GET("/resources/:id/file", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		delivery, err := svc.PrepareResourceDelivery(user.ID, c.Param("id"), service.ResourceDeliveryOptions{
-			ForceDirect: c.Query("direct") == "1",
-			ForceProxy:  c.Query("proxy") == "1",
-		})
+		options := resourceAccessOptions(c)
+		delivery, err := svc.PrepareResourceDelivery(user.ID, c.Param("id"), options, c.GetHeader("Range"))
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		if delivery.RedirectURL != "" {
-			// 签名链接仅有效 5 分钟；重定向缓存必须短于签名 TTL，避免命中过期地址。
-			c.Header("Cache-Control", "private, max-age=240")
-			c.Header("Referrer-Policy", "no-referrer")
-			c.Header("X-Content-Type-Options", "nosniff")
-			c.Redirect(http.StatusTemporaryRedirect, delivery.RedirectURL)
-			return
-		}
-		resource := delivery.Resource
-		etag := resourceResponseETag(resource)
-		// variant=playback：serve 浏览器兼容播放副本（H.265→H.264 转码）。
-		// 副本就绪时用独立 ETag 后缀，避免浏览器拿原件缓存命中 304 而继续黑屏。
-		usePlayback := c.Query("variant") == "playback" && resource.Provider == "local" &&
-			resource.PlaybackStatus == model.PlaybackStatusReady && resource.PlaybackObjectKey != ""
-		serveETag := etag
-		if usePlayback {
-			serveETag = etag + ":pb"
-		}
-		// 资源 ID 内容不可变（上传永远生成新 ID，不会原地覆盖）：图片可以放心交给浏览器
-		// 磁盘强缓存 30 天，大画布二次打开零请求直读磁盘缓存。视频/音频涉及转码副本
-		// 就绪与 Range 语义，保持逐次条件请求（304）。
-		if strings.HasPrefix(resource.MimeType, "image/") {
-			c.Header("Cache-Control", "private, max-age=2592000, stale-while-revalidate=86400")
-		} else {
-			c.Header("Cache-Control", "private, no-cache")
-		}
-		c.Header("ETag", serveETag)
-		c.Header("Accept-Ranges", "bytes")
-		c.Header("X-Content-Type-Options", "nosniff")
-		if resource.Kind == "file" {
-			c.Header("Content-Disposition", "attachment")
-			c.Header("Content-Security-Policy", "sandbox")
-		}
-		if ifNoneMatch(c.GetHeader("If-None-Match"), serveETag) {
-			c.Status(http.StatusNotModified)
-			return
-		}
-		rangeHeader := c.GetHeader("Range")
-		if ifRange := strings.TrimSpace(c.GetHeader("If-Range")); ifRange != "" && ifRange != serveETag {
-			rangeHeader = ""
-		}
-		var stream *service.ResourceStream
-		if usePlayback {
-			stream, err = svc.OpenResourcePlaybackRange(user.ID, resource.ID)
-			if err == nil {
-				resource = stream.Resource // MimeType 已置 video/mp4
-			} else if errors.Is(err, service.ErrPlaybackNotReady) {
-				// 副本尚未就绪：回退原件，并撤销 :pb 后缀，保证副本就绪后
-				// 浏览器不会拿原件缓存命中 304 而继续黑屏。
-				c.Header("ETag", etag)
-				stream, err = svc.OpenResourceRange(user.ID, resource.ID, rangeHeader)
-				if err != nil {
-					failService(c, err)
-					return
-				}
-			} else {
-				failService(c, err)
-				return
-			}
-		} else {
-			stream, err = svc.OpenResourceRange(user.ID, resource.ID, rangeHeader)
-			if err != nil {
-				failService(c, err)
-				return
-			}
-		}
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		defer stream.Body.Close()
-		if resource.MimeType == "" {
-			resource.MimeType = "application/octet-stream"
-		}
-		if resource.Provider == "local" {
-			if seeker, ok := stream.Body.(io.ReadSeeker); ok {
-				c.Header("Content-Type", resource.MimeType)
-				http.ServeContent(c.Writer, c.Request, resource.ID, resource.UpdatedAt, seeker)
-				return
-			}
-		}
-		if stream.ContentRange != "" {
-			c.Header("Content-Range", stream.ContentRange)
-		}
-		if stream.AcceptRanges != "" {
-			c.Header("Accept-Ranges", stream.AcceptRanges)
-		}
-		c.DataFromReader(stream.StatusCode, stream.ContentLength, resource.MimeType, stream.Body, nil)
+		serveResourceDelivery(c, delivery, "private, no-cache", "")
 	})
 	publicResourceHandler := func(c *gin.Context) {
-		stream, err := svc.OpenPublicResourceRange(c.Param("id"), c.Query("expires"), c.Query("signature"), c.GetHeader("Range"))
+		options := resourceAccessOptions(c)
+		delivery, err := svc.PreparePublicResourceDelivery(c.Param("id"), c.Query("expires"), c.Query("signature"), options, c.GetHeader("Range"))
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		defer stream.Body.Close()
-		resource := stream.Resource
-		if resource.MimeType == "" {
-			resource.MimeType = "application/octet-stream"
-		}
-		c.Header("Cache-Control", "public, max-age=0, must-revalidate")
-		c.Header("Accept-Ranges", "bytes")
-		c.Header("Referrer-Policy", "no-referrer")
-		c.Header("X-Content-Type-Options", "nosniff")
-		if stream.ContentRange != "" {
-			c.Header("Content-Range", stream.ContentRange)
-		}
-		if seeker, ok := stream.Body.(io.ReadSeeker); ok {
-			c.Header("Content-Type", resource.MimeType)
-			http.ServeContent(c.Writer, c.Request, resource.ID, resource.UpdatedAt, seeker)
-			return
-		}
-		c.DataFromReader(stream.StatusCode, stream.ContentLength, resource.MimeType, stream.Body, nil)
+		serveResourceDelivery(c, delivery, "public, max-age=0, must-revalidate", "")
 	}
 	r.GET("/public/resources/:id/file", publicResourceHandler)
 	r.GET("/public/resources/:id/file/:filename", publicResourceHandler)
@@ -643,12 +537,25 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
+		metadata, err := svc.UserCanvasProjectMetadata(user.ID, c.Param("id"))
+		if err != nil {
+			fail(c, http.StatusNotFound, err)
+			return
+		}
+		etag := canvasProjectResponseETag(metadata)
+		c.Header("ETag", etag)
+		c.Header("Cache-Control", "private, no-cache")
+		addVaryHeader(c, "Accept-Encoding")
+		if ifNoneMatch(c.GetHeader("If-None-Match"), etag) {
+			c.Status(http.StatusNotModified)
+			return
+		}
 		project, err := svc.UserCanvasProject(user.ID, c.Param("id"))
 		if err != nil {
 			fail(c, http.StatusNotFound, err)
 			return
 		}
-		ok(c, gin.H{"project": project})
+		okCanvasProject(c, project)
 	})
 	r.GET("/canvas-projects/:id/history", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -699,7 +606,7 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		log.Printf("canvas_restore request_id=%q trace_id=%q actor=%q canvas=%q snapshot=%q base_revision=%d revision=%d", RequestID(c), TraceID(c), user.ID, c.Param("id"), c.Param("snapshotId"), *req.Revision, project.Revision)
+		slog.Info("canvas_restore", "request_id", RequestID(c), "trace_id", TraceID(c), "actor", user.ID, "canvas", c.Param("id"), "snapshot", c.Param("snapshotId"), "base_revision", *req.Revision, "revision", project.Revision)
 		ok(c, gin.H{"project": project})
 	})
 	r.PUT("/canvas-projects/:id", func(c *gin.Context) {
@@ -714,7 +621,8 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5<<20)
 		var req struct {
-			Project json.RawMessage `json:"project"`
+			Project                json.RawMessage `json:"project"`
+			RepairMissingResources bool            `json:"repairMissingResources"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			fail(c, http.StatusBadRequest, err)
@@ -737,7 +645,12 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if audit.Revision != nil {
 			baseRevision = *audit.Revision
 		}
-		project, err := svc.UpsertUserCanvasProject(user.ID, req.Project)
+		var project service.UserDataSummary
+		if req.RepairMissingResources {
+			project, err = svc.RepairUserCanvasProject(user.ID, req.Project)
+		} else {
+			project, err = svc.UpsertUserCanvasProject(user.ID, req.Project)
+		}
 		defer func() {
 			nodesBefore, nodesAfter := -1, len(audit.Nodes)
 			if project.SaveAudit != nil {
@@ -783,6 +696,75 @@ func hasUserAssetPageFilters(c *gin.Context) bool {
 	return false
 }
 
+func okCanvasProject(c *gin.Context, project json.RawMessage) {
+	payload, err := json.Marshal(gin.H{
+		"code": service.CodeOK,
+		"data": gin.H{"project": project},
+		"msg":  "ok",
+	})
+	if err != nil {
+		failInternal(c, http.StatusInternalServerError, err)
+		return
+	}
+	if len(payload) >= 1024 && acceptsGzip(c.GetHeader("Accept-Encoding")) {
+		var compressed bytes.Buffer
+		writer, err := gzip.NewWriterLevel(&compressed, gzip.BestSpeed)
+		if err != nil {
+			failInternal(c, http.StatusInternalServerError, err)
+			return
+		}
+		_, writeErr := writer.Write(payload)
+		closeErr := writer.Close()
+		if writeErr != nil || closeErr != nil {
+			failInternal(c, http.StatusInternalServerError, errors.Join(writeErr, closeErr))
+			return
+		}
+		c.Header("Content-Encoding", "gzip")
+		c.Header("Content-Length", strconv.Itoa(compressed.Len()))
+		c.Data(http.StatusOK, "application/json; charset=utf-8", compressed.Bytes())
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
+}
+
+func acceptsGzip(header string) bool {
+	wildcardAccepted := false
+	for _, item := range strings.Split(header, ",") {
+		parts := strings.Split(item, ";")
+		encoding := strings.TrimSpace(strings.ToLower(parts[0]))
+		accepted := true
+		for _, parameter := range parts[1:] {
+			name, value, found := strings.Cut(strings.TrimSpace(parameter), "=")
+			if found && strings.EqualFold(strings.TrimSpace(name), "q") {
+				quality, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+				accepted = err == nil && quality > 0
+			}
+		}
+		if encoding == "gzip" {
+			return accepted
+		}
+		if encoding == "*" {
+			wildcardAccepted = accepted
+		}
+	}
+	return wildcardAccepted
+}
+
+func addVaryHeader(c *gin.Context, value string) {
+	for _, existing := range c.Writer.Header().Values("Vary") {
+		for _, token := range strings.Split(existing, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), value) {
+				return
+			}
+		}
+	}
+	c.Header("Vary", strings.Join(append(c.Writer.Header().Values("Vary"), value), ", "))
+}
+
+func canvasProjectResponseETag(project *model.CanvasProject) string {
+	return `W/` + strconv.Quote(fmt.Sprintf("canvas-%d", project.Revision))
+}
+
 func resourceResponseETag(resource *model.Resource) string {
 	value := strings.Trim(strings.TrimSpace(resource.ETag), `"`)
 	if value == "" {
@@ -792,8 +774,16 @@ func resourceResponseETag(resource *model.Resource) string {
 }
 
 func ifNoneMatch(header string, etag string) bool {
+	normalize := func(value string) string {
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && strings.EqualFold(value[:2], "W/") {
+			return strings.TrimSpace(value[2:])
+		}
+		return value
+	}
+	etag = normalize(etag)
 	for _, candidate := range strings.Split(header, ",") {
-		candidate = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(candidate), "W/"))
+		candidate = normalize(candidate)
 		if candidate == "*" || candidate == etag {
 			return true
 		}

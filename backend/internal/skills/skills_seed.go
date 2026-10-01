@@ -25,7 +25,7 @@ type seedEffectiveUser struct {
 	UID       string `json:"uid"`
 }
 
-type builtinSkillDefinition struct {
+type localSeedSkillDefinition struct {
 	SkillID       string              `json:"skill_id"`
 	SkillName     string              `json:"skill_name"`
 	Description   string              `json:"description"`
@@ -48,7 +48,7 @@ type builtinSkillDefinition struct {
 
 // EnsureBuiltinSkills 校验并同步内置技能正文；用户关系独立保存，因此重复启动不会清空加入或收藏状态。
 func (s *Service) EnsureBuiltinSkills() error {
-	var definitions []builtinSkillDefinition
+	var definitions []localSeedSkillDefinition
 	if err := json.Unmarshal(builtinSkillsJSON, &definitions); err != nil {
 		return fmt.Errorf("解析内置技能失败: %w", err)
 	}

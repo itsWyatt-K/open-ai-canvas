@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -29,7 +29,7 @@ import (
 func newSQLiteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	directory := t.TempDir()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(directory, "test.db")+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(filepath.Join(directory, "test.db")+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}

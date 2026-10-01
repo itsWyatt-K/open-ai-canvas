@@ -14,8 +14,8 @@ import (
 	"infinite-canvas/backend/internal/platform"
 	"infinite-canvas/backend/internal/repository"
 
+	"github.com/glebarez/sqlite"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 

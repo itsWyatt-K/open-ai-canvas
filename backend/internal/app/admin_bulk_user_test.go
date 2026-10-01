@@ -6,8 +6,8 @@ import (
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 
+	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 

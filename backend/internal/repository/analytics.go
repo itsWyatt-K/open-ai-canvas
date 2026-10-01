@@ -75,7 +75,7 @@ func (r *Repository) RecordUserActivity(userID string, event string, count int, 
 
 func (r *Repository) AnalyticsTasks(filter AnalyticsFilter) ([]model.Task, error) {
 	var tasks []model.Task
-	query := r.db.Select("id", "user_id", "type", "status", "operation", "provider", "model", "started_at", "completed_at", "created_at").Where("created_at >= ? AND created_at < ?", filter.From, filter.To)
+	query := whereTimeRange(r.db.Select("id", "user_id", "type", "status", "operation", "provider", "model", "started_at", "completed_at", "created_at"), "created_at", filter.From, filter.To)
 	if filter.UserID != "" {
 		query = query.Where("user_id = ?", filter.UserID)
 	}
@@ -180,12 +180,86 @@ func (r *Repository) LatestProviderRequestIDForTask(taskID string) (string, erro
 	return strings.TrimSpace(log.ProviderRequestID), err
 }
 
+// LatestProviderRequestIDsForTasks returns the newest upstream request ID per task.
+// Task list queries intentionally select a narrow read model; this bulk lookup
+// hydrates IDs recorded in API logs so the UI can hide cancellation after the
+// upstream request has been accepted even when the task row was not updated yet.
+func (r *Repository) LatestProviderRequestIDsForTasks(taskIDs []string) (map[string]string, error) {
+	result := make(map[string]string, len(taskIDs))
+	if len(taskIDs) == 0 {
+		return result, nil
+	}
+	var logs []model.ApiCallLog
+	err := r.db.Select("task_id", "provider_request_id", "created_at").
+		Where("task_id IN ? AND provider_request_id <> ''", taskIDs).
+		Order("created_at desc").
+		Find(&logs).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, log := range logs {
+		taskID := strings.TrimSpace(log.TaskID)
+		providerRequestID := strings.TrimSpace(log.ProviderRequestID)
+		if taskID == "" || providerRequestID == "" {
+			continue
+		}
+		if _, exists := result[taskID]; !exists {
+			result[taskID] = providerRequestID
+		}
+	}
+	return result, nil
+}
+
+// APICallLogUsageForTask 返回一次任务调用里上游上报的用量。
+// 这是模型自己的分词器算出的计数，是上下文压力可以采信的权威锚点；
+// 没有上报（usage_available=false 或输入为 0）时返回 false，调用方退回本地估算。
+func (r *Repository) APICallLogUsageForTask(userID, taskID string) (model.ApiCallLog, bool, error) {
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(taskID) == "" {
+		return model.ApiCallLog{}, false, nil
+	}
+	var log model.ApiCallLog
+	err := r.db.Where("user_id = ? AND task_id = ? AND capability = ? AND status = ? AND usage_available = ?", userID, taskID, "text", model.ApiCallStatusSucceeded, true).
+		Order("created_at DESC").Limit(1).Find(&log).Error
+	if err != nil {
+		return model.ApiCallLog{}, false, err
+	}
+	if log.ID == "" || log.InputTokens <= 0 {
+		return model.ApiCallLog{}, false, nil
+	}
+	return log, true, nil
+}
+
+// LatestAPICallStatusForTask 返回任务最近一次上游调用的 HTTP 状态码；
+// 任务没收到任何上游响应（例如网络错误）时返回 0。
+func (r *Repository) LatestAPICallStatusForTask(taskID string) (int, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return 0, nil
+	}
+	var log model.ApiCallLog
+	err := r.db.Select("status_code").Where("task_id = ? AND request_kind <> ?", taskID, "poll").
+		Order("created_at DESC").Limit(1).Find(&log).Error
+	return log.StatusCode, err
+}
+
 func (r *Repository) HasAPICallLogForTask(taskID string) (bool, error) {
 	if strings.TrimSpace(taskID) == "" {
 		return false, nil
 	}
 	var count int64
 	err := r.db.Model(&model.ApiCallLog{}).Where("task_id = ?", taskID).Count(&count).Error
+	return count > 0, err
+}
+
+// HasVisibleFailedAPICallLogForTask 判断管理端默认请求明细里是否已经有这条任务的失败记录。
+// 轮询、下载、上传和本地保存默认不出现在请求日志列表，不能据此认为用户可见的失败已经被记录。
+func (r *Repository) HasVisibleFailedAPICallLogForTask(taskID string) (bool, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return false, nil
+	}
+	var count int64
+	err := r.db.Model(&model.ApiCallLog{}).
+		Where("task_id = ? AND status = ? AND COALESCE(request_kind, '') NOT IN ?", taskID, model.ApiCallStatusFailed, []string{"poll", "download", "upload", "local_save", "register"}).
+		Count(&count).Error
 	return count > 0, err
 }
 
@@ -208,8 +282,23 @@ func (r *Repository) VideoAPICallRoot(log model.ApiCallLog) (*model.ApiCallLog, 
 	return &root, nil
 }
 
+// whereTimeRange compares instants. SQLite stores time.Time as offset text, so a
+// lexicographic compare against a UTC bound hides records written after local
+// midnight until the UTC date rolls forward.
+func whereTimeRange(query *gorm.DB, column string, from, to time.Time) *gorm.DB {
+	switch column {
+	case "created_at", "api_call_logs.created_at":
+	default:
+		return query.Where("1 = 0")
+	}
+	if query.Dialector.Name() == "sqlite" {
+		return query.Where("unixepoch("+column+") >= ? AND unixepoch("+column+") < ?", from.Unix(), to.Unix())
+	}
+	return query.Where(column+" >= ? AND "+column+" < ?", from, to)
+}
+
 func (r *Repository) apiCallLogQuery(filter AnalyticsFilter) *gorm.DB {
-	query := r.db.Where("api_call_logs.created_at >= ? AND api_call_logs.created_at < ?", filter.From, filter.To)
+	query := whereTimeRange(r.db, "api_call_logs.created_at", filter.From, filter.To)
 	if filter.UserID != "" {
 		query = query.Where("api_call_logs.user_id = ?", filter.UserID)
 	}

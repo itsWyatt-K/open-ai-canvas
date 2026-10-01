@@ -409,7 +409,7 @@ func TestAdminPaymentOrdersSearchUserIdentity(t *testing.T) {
 
 func openPaymentTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared&_busy_timeout=5000"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared&_pragma=busy_timeout(5000)"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}

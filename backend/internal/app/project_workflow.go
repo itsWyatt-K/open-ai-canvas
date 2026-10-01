@@ -318,7 +318,7 @@ func (s *Service) RegisterTaskOutput(userID string, projectID string, stepID str
 	productionLink := &model.ProductionTaskLink{ID: newID(), TaskID: task.ID, ProjectID: projectID, CanvasID: canvasID, UnitID: unitID, ShotID: shotID, WorkflowStepID: step.ID, ArtifactType: artifactType, CreatedAt: now, UpdatedAt: now}
 	var artifact *model.ShotArtifact
 	if shot != nil && strings.TrimSpace(req.ResourceID) != "" && artifactType != "" {
-		artifact = &model.ShotArtifact{ID: newID(), ProjectID: projectID, UnitID: shot.UnitID, ShotID: shot.ID, RevisionID: shotRevisionID, TaskID: task.ID, Type: artifactType, ResourceID: strings.TrimSpace(req.ResourceID), Status: model.ShotArtifactStatusReady, Selected: true, MetadataJSON: metadata, CreatedAt: now, UpdatedAt: now}
+		artifact = &model.ShotArtifact{ID: newID(), ProjectID: projectID, UnitID: shot.UnitID, ShotID: shot.ID, RevisionID: shotRevisionID, TaskID: task.ID, Type: artifactType, ResourceID: strings.TrimSpace(req.ResourceID), Status: "ready", Selected: true, MetadataJSON: metadata, CreatedAt: now, UpdatedAt: now}
 	}
 	// 单镜产物成功只代表该镜头完成，不能提前放行整个章节阶段。
 	if shot != nil {
@@ -532,14 +532,20 @@ func (s *Service) RegisterTaskOutputFromTask(task model.Task) error {
 // 为「无工作流步骤语境但镜头明确」的成功生成任务直接登记镜头产物。
 //
 // 语义边界：
-//   - 只建 shot_artifacts 行（幂等走统一入口 createOrGetShotArtifactTx：
-//     按 (task_id, shot_id, type) 去重、版本分配、旧版本 selected 清零）；
+//   - 只建 shot_artifacts 行（幂等：按 (task_id, shot_id, type) 去重、
+//     版本分配、旧版本 selected 清零，语义与上游 RegisterWorkflowTaskOutput 一致）；
 //   - 不写资产库（asset/representation）、不写 ProductionTaskLink、不动任何
 //     workflow 步骤/实例状态——那些语义都属于步骤语境；
-//   - 静默跳过：无镜头、无输出资源、产物类型推导不出——登记是尽力而为，
-//     绝不阻塞任务收口；但镜头不存在/资源不存在/修订版不属于镜头仍报错
-//     （数据矛盾必须暴露）。
+//   - 全部静默跳过：无镜头、无输出资源、产物类型推导不出、项目/镜头/资源
+//     不存在——登记是尽力而为，绝不阻塞任务收口。
 //   - artifactType 缺省时从任务类型推导（canvas_video → video 等）。
+//
+// 2026-10-01 v1.6.0 吸收时调整错误语义：上游把 RegisterTaskOutputFromTask
+// 纳入 Cloud Agent 终态关键路径（advanceCloudAgentByID 重放检查点前会走到这里），
+// 该路径对错误零容忍——任何上报都会中断 run 终态推进，重放时撞乐观锁
+// （"数据已被更新，请刷新后重试"）。画布节点 ID 会以 shotId 形态进入任务输入
+// （如 sourceNodeId），并非真实分镜行，因此「不存在」是常态而非数据矛盾，
+// 改为静默跳过；真实分镜语境的错误仍由步骤路径暴露。
 func (s *Service) registerShotArtifactWithoutStep(task model.Task, projectID string, shotID string, shotRevisionID string, artifactType string, resourceID string, mediaType string, metadataJSON string) error {
 	shotID = strings.TrimSpace(shotID)
 	resourceID = strings.TrimSpace(resourceID)
@@ -560,27 +566,27 @@ func (s *Service) registerShotArtifactWithoutStep(task model.Task, projectID str
 		return nil
 	}
 	if _, err := s.activeProjectForUser(task.UserID, projectID); err != nil {
-		return err
+		return nil
 	}
 	shot, err := s.repo.ShotForProject(projectID, shotID)
 	if err != nil {
-		return err
+		return nil
 	}
 	if _, err := s.repo.ResourceForUser(task.UserID, resourceID); err != nil {
-		return err
+		return nil
 	}
 	revisionID := strings.TrimSpace(shotRevisionID)
 	if revisionID == "" {
 		revisionID = shot.CurrentRevisionID
 	} else if _, err := s.repo.ShotRevisionForShot(shot.ID, revisionID); err != nil {
-		return err
+		return nil
 	}
 	metadata := strings.TrimSpace(metadataJSON)
 	if metadata == "" {
 		metadata = "{}"
 	}
 	now := time.Now()
-	artifact := &model.ShotArtifact{ID: newID(), ProjectID: projectID, UnitID: shot.UnitID, ShotID: shot.ID, RevisionID: revisionID, TaskID: task.ID, Type: artifactType, ResourceID: resourceID, Status: model.ShotArtifactStatusReady, Selected: true, MetadataJSON: metadata, CreatedAt: now, UpdatedAt: now}
+	artifact := &model.ShotArtifact{ID: newID(), ProjectID: projectID, UnitID: shot.UnitID, ShotID: shot.ID, RevisionID: revisionID, TaskID: task.ID, Type: artifactType, ResourceID: resourceID, Status: "ready", Selected: true, MetadataJSON: metadata, CreatedAt: now, UpdatedAt: now}
 	return s.repo.SaveShotArtifactForTask(artifact)
 }
 

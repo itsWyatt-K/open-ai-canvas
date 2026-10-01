@@ -8,7 +8,7 @@ import (
 
 	"infinite-canvas/backend/internal/model"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -98,7 +98,7 @@ func TestPaymentReconciliationExportSnapshotAndRerun(t *testing.T) {
 }
 
 func TestPaymentExportKeepsSnapshotWhenRerunCompletesBetweenReads(t *testing.T) {
-	dsn := filepath.Join(t.TempDir(), "payment.db") + "?_journal_mode=WAL&_busy_timeout=5000"
+	dsn := filepath.Join(t.TempDir(), "payment.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

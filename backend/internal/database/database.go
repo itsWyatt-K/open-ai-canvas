@@ -8,6 +8,10 @@ import (
 
 	"infinite-canvas/backend/internal/logging"
 
+	// [LOCAL] 车道②本地适配：上游 v1.6.0 把 sqlite 驱动换成 gorm.io/driver/sqlite
+	// （mattn/go-sqlite3，需要 CGO）。本机编译链是 CGO_ENABLED=0（纯 Go 交叉编译），
+	// CGO 驱动的 stub 会在运行时直接报错，因此保留 glebarez 纯 Go 驱动。
+	// 语义差异：glebarez 用 _pragma DSN；mattn 用 _busy_timeout DSN——换回 _pragma 写法。
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
