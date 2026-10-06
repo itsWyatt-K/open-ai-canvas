@@ -13,9 +13,10 @@ import { cn } from "@/lib/utils";
 import { Live2DAvatar } from "./live2d-avatar";
 import { live2DModelURL } from "@/services/api/appearance";
 import { FluidOrb } from "@/components/ui/fluid-orb";
-import { ArrowLeft, Check, CircleDot, Clock3, Download, History, LoaderCircle, MessageSquarePlus, RotateCcw, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, CircleDot, Clock3, Coins, Download, History, LoaderCircle, MessageSquarePlus, RotateCcw, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { Button, Dropdown, Input, Popover } from "antd";
 import type { AgentContextPhase, AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
+import { CREDIT_PHASE_LABEL, formatCreditValue, type AgentCreditUsageView } from "@/lib/canvas/agent-credit-usage";
 import type { CloudAgentConversation } from "@/services/cloud-agent-conversations";
 import { AgentChatMessage, AgentOperationFeed, AgentReasoningFeed, AgentWorkingMessage, type CloudAgentChatMessage } from "./canvas-cloud-agent-chat-ui";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -259,6 +260,96 @@ export function AgentContextRing({ view }: { view: AgentContextUsageView }) {
                 <span className="agent-context-meter-copy">
                     <strong>{meterLabel}</strong>
                     <small>上下文</small>
+                </span>
+            </button>
+        </Popover>
+    );
+}
+
+export function AgentCreditRing({ view }: { view: AgentCreditUsageView }) {
+    const [open, setOpen] = useState(false);
+    const used = formatCreditValue(view.spentCredits);
+    const budget = view.maxCredits !== undefined ? formatCreditValue(view.maxCredits) : undefined;
+    const remaining = view.remainingCredits !== undefined ? formatCreditValue(view.remainingCredits) : undefined;
+    const usedRatio = view.ratio === undefined ? 0 : Math.max(0, Math.min(1, view.ratio));
+    const phaseLabel = CREDIT_PHASE_LABEL[view.phase];
+
+    return (
+        <Popover
+            open={open}
+            onOpenChange={setOpen}
+            trigger="click"
+            placement="bottomRight"
+            arrow={false}
+            overlayClassName="agent-context-popover"
+            getPopupContainer={(trigger) => trigger.closest<HTMLElement>(".canvas-agent-panel") ?? document.body}
+            content={
+                <div className="agent-context-panel agent-credit-panel" data-phase={view.phase}>
+                    <span className="agent-context-eyebrow">本轮请求 · 积分预算与累计消耗</span>
+                    <div className="agent-context-panel-head">
+                        <strong>{view.heading}</strong>
+                        {view.phase !== "idle" ? <span className={`agent-context-phase is-${view.phase}`}>{phaseLabel}</span> : null}
+                    </div>
+                    <div className="agent-context-summary">
+                        {budget !== undefined && remaining !== undefined ? (
+                            <>
+                                <strong>{used}</strong>
+                                <span>/ {budget} 积分</span>
+                                <em>剩余 {remaining}</em>
+                            </>
+                        ) : (
+                            <>
+                                <strong>{used}</strong>
+                                <span>积分</span>
+                            </>
+                        )}
+                    </div>
+                    {view.ratio !== undefined ? (
+                        <>
+                            <div className="agent-context-progress-head">
+                                <span>积分预算消耗进度</span>
+                                <strong>{view.percentLabel}</strong>
+                            </div>
+                            <div
+                                className="agent-context-progress agent-credit-progress"
+                                role="progressbar"
+                                aria-label={`积分已用 ${view.percentLabel}`}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={Math.round(usedRatio * 100)}
+                            >
+                                <span style={{ width: `${usedRatio * 100}%` }} />
+                            </div>
+                        </>
+                    ) : null}
+                    <p className="agent-context-detail">{view.detail}</p>
+                    <div className="agent-context-panel-foot">
+                        <span>真实计费扣减 · 实际结算口径</span>
+                        {budget !== undefined ? <span>上限 {budget} 积分</span> : null}
+                    </div>
+                </div>
+            }
+        >
+            <button
+                type="button"
+                className={`agent-context-ring agent-credit-ring is-${view.phase}`}
+                aria-label={`${view.heading}，${phaseLabel}。点击查看积分明细`}
+                aria-expanded={open}
+                title="查看积分用量"
+                onPointerDown={(event) => event.stopPropagation()}
+            >
+                <span
+                    className="agent-context-ring-visual"
+                    aria-hidden="true"
+                    style={
+                        {
+                            "--agent-context-progress": `${view.ring * 100}%`,
+                        } as CSSProperties
+                    }
+                />
+                <span className="agent-context-meter-copy">
+                    <strong>{view.percentLabel}</strong>
+                    <small>积分</small>
                 </span>
             </button>
         </Popover>

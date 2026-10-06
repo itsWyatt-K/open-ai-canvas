@@ -32,6 +32,12 @@ export default defineConfig({
                 changeOrigin: true,
                 xfwd: true,
             },
+            // E-Reverse 本地侧车（工具/e-reverse/server.py，127.0.0.1:8790）
+            "/ereverse-api": {
+                target: "http://127.0.0.1:8790",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/ereverse-api/, ""),
+            },
         },
     },
     resolve: {

@@ -4,6 +4,8 @@ import { nanoid } from "nanoid";
 
 import type { CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
 import type { CanvasImageMaskEditPayload } from "@/components/canvas/canvas-node-mask-edit-dialog";
+import type { StyleForgeGeneratePayload } from "@/components/canvas/canvas-node-styleforge-dialog";
+import type { StyleForgePrompt } from "@/services/api/visual-dna";
 import type { CanvasImageEditPayload } from "@/components/canvas/canvas-node-image-edit-dialog";
 import type { CanvasImageLayerDecompositionPayload } from "@/components/canvas/canvas-node-layer-decomposition-dialog";
 import { buildCanvasTextEditPrompt, type CanvasImageTextEditPayload, type CanvasImageTextLine } from "@/components/canvas/canvas-node-text-edit-dialog";
@@ -34,7 +36,7 @@ import {
     isGenerationCanceled,
     runBackendCanvasGenerationTask,
 } from "@/lib/canvas/canvas-project-generation";
-import { fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
+import { fitNodeSize, nodeSizeFromRatio, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { compositeEmotionImage, emotionGenerationSize, emotionProviderMask, normalizeEmotionPromptForProvider, resolveEmotionEditPlan } from "@/lib/canvas/canvas-emotion";
 import { DEFAULT_PORTRAIT_TEXTURE_SETTINGS } from "@/lib/canvas/canvas-portrait-texture";
 import { IMAGE_PROMPT_REVERSE } from "@/lib/prompts";
@@ -832,6 +834,110 @@ export function useCanvasMediaTools({
         }
     }, [bindGenerationTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, nodesRef, persistMediaNodes, projectId, resolveImageEditStyle, setConnections, setDialogNodeId, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest]);
 
+    const styleForgeImageNode = useCallback(async (productNode: CanvasNodeData, payload: StyleForgeGeneratePayload) => {
+        if (!productNode.metadata?.content) return;
+        const baseGenerationConfig = buildGenerationConfig(effectiveConfig, productNode, "image");
+        const selectedModel = payload.generationConfig?.model || payload.generationConfig?.imageModel || baseGenerationConfig.model;
+        const modelDefaults = defaultImageParamsForModel(baseGenerationConfig, selectedModel);
+        const generationConfig = {
+            ...baseGenerationConfig,
+            ...payload.generationConfig,
+            model: selectedModel,
+            imageModel: payload.generationConfig?.imageModel || selectedModel,
+            quality: normalizeMaskEditQuality(payload.generationConfig?.quality || baseGenerationConfig.quality || modelDefaults.quality, payload.generationConfig?.size || modelDefaults.size),
+            count: "1",
+            size: payload.generationConfig?.size || modelDefaults.size,
+        };
+        if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+            navigateToSettings({ continueCreation: true });
+            return;
+        }
+        const source = nodeReferenceImage(productNode);
+        if (!source) return;
+        const prompts = payload.prompts.slice(0, 12);
+        const imageDefaults = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
+        const pending: Array<{ nodeId: string; prompt: StyleForgePrompt; width: number; height: number }> = [];
+        const layoutNodes = [...nodesRef.current];
+        const newNodes: CanvasNodeData[] = [];
+        const newConnections: CanvasConnection[] = [];
+        prompts.forEach((promptItem) => {
+            const nodeSize = nodeSizeFromRatio(promptItem.aspect, imageDefaults.width, imageDefaults.height) || { width: imageDefaults.width, height: imageDefaults.height };
+            const preferredPosition = { x: productNode.position.x + productNode.width + 96, y: productNode.position.y };
+            const position = findAvailableGenerationGroupPosition(layoutNodes, preferredPosition, imageGenerationGroupSize(nodeSize, nodeSize, 1));
+            const nodeId = nanoid();
+            layoutNodes.push({ id: nodeId, type: CanvasNodeType.Image, title: promptItem.variant?.slice(0, 28) || "风格锻造", position, width: nodeSize.width, height: nodeSize.height, metadata: {} } as CanvasNodeData);
+            newNodes.push({
+                id: nodeId,
+                type: CanvasNodeType.Image,
+                title: promptItem.variant?.slice(0, 26) || "风格锻造",
+                position,
+                width: nodeSize.width,
+                height: nodeSize.height,
+                metadata: {
+                    ...canvasGenerationPromptMetadata(promptItem.prompt, promptItem.prompt),
+                    status: NODE_STATUS_LOADING,
+                    size: generationConfig.size,
+                    ...buildImageGenerationMetadata("edit", generationConfig, 1, [source]),
+                },
+            });
+            newConnections.push({ id: nanoid(), fromNodeId: productNode.id, toNodeId: nodeId });
+            pending.push({ nodeId, prompt: promptItem, width: nodeSize.width, height: nodeSize.height });
+        });
+        setNodes((current) => [...current, ...newNodes]);
+        setConnections((current) => [...current, ...newConnections]);
+        setSelectedNodeIds(new Set(pending.map((item) => item.nodeId)));
+        setSelectedConnectionId(null);
+        const runningId = pending[0]?.nodeId;
+        if (runningId) setRunningNodeId(runningId);
+        const controller = startGenerationRequest(pending[0].nodeId, productNode.id, runningId);
+        pending.slice(1).forEach((item) => startGenerationRequest(item.nodeId, productNode.id, runningId, controller));
+        let hasSuccess = false;
+        let failureCount = 0;
+        let representativeError: string | undefined;
+        try {
+            await Promise.all(pending.map(async (item) => {
+                try {
+                    const result = await runBackendCanvasGenerationTask({
+                        projectId,
+                        nodeId: item.nodeId,
+                        mode: "image",
+                        prompt: item.prompt.prompt,
+                        config: { ...generationConfig, count: "1" },
+                        referenceImages: [source],
+                        signal: controller.signal,
+                        metadata: { sourceNodeId: productNode.id, styleforge: payload.scene, variant: item.prompt.variant },
+                        onTaskCreated: (task) => bindGenerationTask(item.nodeId, task),
+                    });
+                    const image = result.images?.find((entry) => entry?.dataUrl);
+                    if (!image?.dataUrl) throw new Error("后端任务没有返回图片");
+                    const uploaded = await uploadImage(image.dataUrl);
+                    const size = fitNodeSize(uploaded.width, uploaded.height, item.width, item.height);
+                    const currentNode = nodesRef.current.find((entry) => entry.id === item.nodeId);
+                    if (!currentNode) throw new Error("节点已被删除");
+                    const finalizedNode = { ...currentNode, width: size.width, height: size.height, metadata: commitProducedModel({ ...currentNode.metadata, ...imageMetadata(uploaded), prompt: item.prompt.prompt, status: NODE_STATUS_SUCCESS }) };
+                    setNodes((current) => current.map((entry) => (entry.id === item.nodeId ? finalizedNode : entry)));
+                    await persistMediaNodes([finalizedNode]);
+                    hasSuccess = true;
+                } catch (error) {
+                    if (isGenerationCanceled(error)) return;
+                    failureCount += 1;
+                    const details = generationErrorMessage(error);
+                    representativeError = details;
+                    setNodes((current) => current.map((entry) => (entry.id === item.nodeId ? { ...entry, metadata: { ...entry.metadata, status: NODE_STATUS_ERROR, errorDetails: details } } : entry)));
+                } finally {
+                    finishGenerationRequest(item.nodeId, controller);
+                }
+            }));
+            if (failureCount > 0) {
+                message.error(hasSuccess ? `部分风格锻造失败（${failureCount}/${pending.length}）` : representativeError || "风格锻造失败");
+            } else {
+                message.success(`风格锻造完成：${pending.length} 张已生成`);
+            }
+        } finally {
+            setRunningNodeId(null);
+        }
+    }, [bindGenerationTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, nodesRef, persistMediaNodes, projectId, setConnections, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest]);
+
     const editImageNode = useCallback(async (node: CanvasNodeData, payload: CanvasImageEditPayload) => {
         if (!node.metadata?.content || !payload.prompt.trim()) return;
         const baseGenerationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1" };
@@ -1257,6 +1363,7 @@ export function useCanvasMediaTools({
         panoramaConfigNodeId,
         setPanoramaConfigNodeId,
         maskEditImageNode,
+        styleForgeImageNode,
         maskEditNodeId,
         imageEditNodeId,
         imageEditPreset,

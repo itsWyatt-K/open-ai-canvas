@@ -31,7 +31,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { App, Button } from "antd";
 import { ArrowLeftRight } from "lucide-react";
 import { AppModal } from "@/components/ui/product/app-modal";
-import { getNodeSpec } from "@/constant/canvas";
+import { getNodeSpec, NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
 import { CanvasCloudAgentPanel } from "@/components/canvas/canvas-cloud-agent-panel";
@@ -46,6 +46,7 @@ import { resolveProjectCanvasStyle } from "@/components/canvas/canvas-style-pick
 import { createStyleProfileSnapshot, resolveStyleProfile, serializeStyleProfile } from "@/lib/canvas/style-profile";
 import { CanvasNodeToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-toolbar";
 import { CanvasSubtitleDialog } from "@/components/canvas/canvas-subtitle-dialog";
+import { CanvasEreverseDialog } from "@/components/canvas/canvas-ereverse-dialog";
 import { CanvasVideoFrameDialog } from "@/components/canvas/canvas-video-frame-dialog";
 import { CanvasVideoSegmentDialog } from "@/components/canvas/canvas-video-segment-dialog";
 import { CanvasTimelineDialog } from "@/components/canvas/canvas-timeline-dialog";
@@ -115,6 +116,9 @@ import { TapNowImportDialog } from "./components/tapnow-import-dialog";
 import { CanvasFocusModeBar } from "@/components/canvas/canvas-focus-mode-bar";
 import { CanvasProjectContextMenu } from "./canvas-project-context-menu";
 import { CanvasProjectMediaDialogs } from "./canvas-project-media-dialogs";
+import { CanvasNodeStyleForgeDialog } from "@/components/canvas/canvas-node-styleforge-dialog";
+import { CanvasNodePsdExportDialog } from "@/components/canvas/canvas-node-psd-export-dialog";
+import { CanvasNodeSaveSkillDialog } from "@/components/canvas/canvas-node-save-skill-dialog";
 import { CanvasProjectSelectionToolbar } from "./canvas-project-selection-toolbar";
 import { CanvasProjectStatusDialogs } from "./canvas-project-status-dialogs";
 import { CanvasProjectWorldLayers } from "./canvas-project-world-layers";
@@ -269,6 +273,7 @@ function InfiniteCanvasPage() {
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
     const [subtitleNodeId, setSubtitleNodeId] = useState<string | null>(null);
     const [timelineNodeId, setTimelineNodeId] = useState<string | null>(null);
+    const [ereverseNodeId, setEreverseNodeId] = useState<string | null>(null);
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
     const [scriptEditorNodeId, setScriptEditorNodeId] = useState<string | null>(null);
@@ -279,6 +284,10 @@ function InfiniteCanvasPage() {
     const [directorNodeId, setDirectorNodeId] = useState<string | null>(null);
     const [versionCompareRootId, setVersionCompareRootId] = useState<string | null>(null);
     const [libTVImportOpen, setLibTVImportOpen] = useState(false);
+    const [styleForgeNodeId, setStyleForgeNodeId] = useState<string | null>(null);
+    const [psdExportOpen, setPsdExportOpen] = useState(false);
+    const [psdExportPreselectId, setPsdExportPreselectId] = useState<string | undefined>(undefined);
+    const [saveSkillNodeId, setSaveSkillNodeId] = useState<string | null>(null);
     const [titleEditing, setTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState("");
     const [shortcutRequestNonce, setShortcutRequestNonce] = useState(0);
@@ -834,6 +843,7 @@ function InfiniteCanvasPage() {
         generateEmotionNode,
         handleSegmentConfirm,
         maskEditImageNode,
+        styleForgeImageNode,
         maskEditNodeId,
         imageEditNodeId,
         imageEditPreset,
@@ -1454,12 +1464,15 @@ function InfiniteCanvasPage() {
         });
     }, [mentionReferencesByNodeId, setNodes]);
     const dialogNode = dialogNodeId ? nodeById.get(dialogNodeId) || null : null;
+    const styleForgeNode = styleForgeNodeId ? nodeById.get(styleForgeNodeId) || null : null;
+    const canvasImageNodes = useMemo(() => nodes.filter((node) => node.type === CanvasNodeType.Image && Boolean(node.metadata?.content)), [nodes]);
     // dragPreview is published on the same pointer-down frame as isNodeDragging.
     // Treat either signal as moving so floating editors disappear before the
     // first preview transform is painted and never affect drag layout.
     const isCanvasNodeMoving = isNodeDragging || Boolean(dragPreview?.nodeIds.size);
     const subtitleNode = subtitleNodeId ? nodeById.get(subtitleNodeId) || null : null;
     const timelineNode = timelineNodeId ? nodeById.get(timelineNodeId) || null : null;
+    const ereverseNode = ereverseNodeId ? nodeById.get(ereverseNodeId) || null : null;
     const frameNode = frameDialogNodeId ? nodeById.get(frameDialogNodeId) || null : null;
     const segmentNode = segmentDialogNodeId ? nodeById.get(segmentDialogNodeId) || null : null;
     const textEditorNode = textEditorNodeId ? nodeById.get(textEditorNodeId) || null : null;
@@ -2951,6 +2964,23 @@ function InfiniteCanvasPage() {
                             onAnnotate={(node) => setAnnotationNodeId(node.id)}
                             onAnnotationEdit={openAnnotationEditNode}
                             onMaskEdit={(node) => setMaskEditNodeId(node.id)}
+                            onStyleForge={(node) => {
+                                setDialogNodeId(null);
+                                setStyleForgeNodeId(node.id);
+                            }}
+                            onPsdExport={(node) => {
+                                setPsdExportPreselectId(node.id);
+                                setPsdExportOpen(true);
+                            }}
+                            onSaveAsSkill={(node) => setSaveSkillNodeId(node.id)}
+                            onAddTextLayer={(node) => {
+                                const textSize = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
+                                const position = { x: node.position.x + (node.width - textSize.width) / 2, y: node.position.y + (node.height - textSize.height) / 2 };
+                                const textNode = createCanvasNode(CanvasNodeType.Text, position, { content: "双击编辑文字", prompt: "双击编辑文字", status: "success", fontSize: 28 });
+                                setNodes((current) => [...current, textNode]);
+                                setSelectedNodeIds(new Set([textNode.id]));
+                                message.success("文字层已添加到图片中心，双击可编辑");
+                            }}
                             onRemoveBackground={openBackgroundRemoval}
                             onLayerDecomposition={openLayerDecomposition}
                             onTextEdit={openTextEditNode}
@@ -2978,6 +3008,7 @@ function InfiniteCanvasPage() {
                             onTrimVideoSegments={openVideoSegmentExtractor}
                             onSubtitles={(node) => setSubtitleNodeId(node.id)}
                             onTimeline={(node) => setTimelineNodeId(node.id)}
+                            onEreverse={(node) => setEreverseNodeId(node.id)}
                             extractingVideoFrames={toolbarNode?.id === extractingVideoFramesNodeId}
                             extractingAudio={segmentRunningMode === "audio"}
                             trimmingVideo={segmentRunningMode === "video"}
@@ -3081,6 +3112,26 @@ function InfiniteCanvasPage() {
                                     const currentTimeline = currentProject?.timeline;
                                     if (currentTimeline) {
                                         const next = syncNodeSubtitlesToTimeline(currentTimeline, nodeId, patch.subtitleEntries || []);
+                                        if (next !== currentTimeline) updateProject(projectId, { timeline: next });
+                                    }
+                                }}
+                            />
+                        ) : null}
+
+                        {ereverseNode ? (
+                            <CanvasEreverseDialog
+                                node={ereverseNode}
+                                open={Boolean(ereverseNode)}
+                                onClose={() => setEreverseNodeId(null)}
+                                onApplySubtitles={(nodeId, entries) => {
+                                    handleConfigNodeChange(nodeId, {
+                                        subtitleEntries: entries,
+                                        ...(entries.length ? {} : { subtitleHighlights: [] }),
+                                        subtitleUpdatedAt: new Date().toISOString(),
+                                    });
+                                    const currentTimeline = currentProject?.timeline;
+                                    if (currentTimeline) {
+                                        const next = syncNodeSubtitlesToTimeline(currentTimeline, nodeId, entries);
                                         if (next !== currentTimeline) updateProject(projectId, { timeline: next });
                                     }
                                 }}
@@ -3297,6 +3348,31 @@ function InfiniteCanvasPage() {
                             onTextEdit={(node, payload) => void editTextImageNode(node, payload)}
                             onUpscale={(node, params) => void upscaleImageNode(node, params)}
                             config={effectiveConfig}
+                        />
+
+                        {styleForgeNode ? (
+                            <CanvasNodeStyleForgeDialog
+                                productNode={styleForgeNode}
+                                imageNodes={canvasImageNodes}
+                                config={effectiveConfig}
+                                open
+                                onClose={() => setStyleForgeNodeId(null)}
+                                onGenerate={(payload) => {
+                                    setStyleForgeNodeId(null);
+                                    void styleForgeImageNode(payload.productNode, payload);
+                                }}
+                            />
+                        ) : null}
+                        <CanvasNodePsdExportDialog
+                            open={psdExportOpen}
+                            imageNodes={canvasImageNodes}
+                            preselectNodeId={psdExportPreselectId}
+                            onClose={() => setPsdExportOpen(false)}
+                        />
+                        <CanvasNodeSaveSkillDialog
+                            open={Boolean(saveSkillNodeId)}
+                            node={saveSkillNodeId ? nodeById.get(saveSkillNodeId) || null : null}
+                            onClose={() => setSaveSkillNodeId(null)}
                         />
 
                         <CanvasProjectStatusDialogs

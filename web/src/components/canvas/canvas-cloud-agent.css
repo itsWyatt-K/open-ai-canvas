@@ -129,6 +129,26 @@
     --agent-context-ring-color: #d4534e;
 }
 
+.agent-credit-ring {
+    --agent-context-ring-color: #f59e0b;
+}
+
+.agent-credit-ring.is-idle {
+    --agent-context-ring-color: color-mix(in srgb, var(--agent-ink) 24%, transparent);
+}
+
+.agent-credit-ring.is-ok {
+    --agent-context-ring-color: #10b981;
+}
+
+.agent-credit-ring.is-watch {
+    --agent-context-ring-color: #f59e0b;
+}
+
+.agent-credit-ring.is-exceeded {
+    --agent-context-ring-color: #ef4444;
+}
+
 .agent-context-ring.is-compacting .agent-context-ring-visual {
     animation: agent-context-spin 1.4s linear infinite;
 }
@@ -228,6 +248,12 @@
 .agent-context-phase.is-compacting {
     color: #a33b36;
 }
+.agent-context-phase.is-ok {
+    color: #059669;
+}
+.agent-context-phase.is-exceeded {
+    color: #dc2626;
+}
 
 .agent-context-summary {
     display: flex;
@@ -292,6 +318,16 @@
     background: #8b93ff;
     background: linear-gradient(90deg, color-mix(in srgb, var(--agent-accent, #8b93ff) 58%, white), var(--agent-accent, #8b93ff));
     transition: width 240ms ease;
+}
+
+.agent-credit-progress > span {
+    background: #f59e0b;
+    background: linear-gradient(90deg, #10b981, #f59e0b);
+}
+
+.agent-credit-panel[data-phase="exceeded"] .agent-credit-progress > span {
+    background: #ef4444;
+    background: linear-gradient(90deg, #f59e0b, #ef4444);
 }
 
 .agent-context-progress > i {

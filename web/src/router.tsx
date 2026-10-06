@@ -42,6 +42,7 @@ const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
+const EReversePage = lazy(() => import("@/pages/ereverse"));
 const CreatePage = lazy(loadCreatePage);
 const NotFound = lazy(() => import("@/pages/not-found"));
 const SkillsPage = lazy(() => import("@/pages/skills"));
@@ -98,6 +99,8 @@ export const router = createBrowserRouter([
         ],
     },
     { path: "/share/canvas/:token", element: fullScreenDeferred(<SharedCanvasPage />), errorElement: <RouteErrorPage /> },
+    // E-Reverse 本地工作台：仅连 127.0.0.1 侧车服务，不依赖登录后端
+    { path: "/ereverse", element: fullScreenDeferred(<EReversePage />), errorElement: <RouteErrorPage /> },
     ...(import.meta.env.DEV ? devRoutes() : []),
     {
         element: <AuthenticatedWorkspaceLayout />,

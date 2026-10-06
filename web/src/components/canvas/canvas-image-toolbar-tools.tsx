@@ -1,10 +1,10 @@
 import { isValidElement, type ReactNode } from "react";
-import { Brush, Camera, Clapperboard, Contrast, Copy, FastForward, FileText, Globe2, Grid2x2, Grid3x3, Layers3, Lock, LockOpen, Maximize2, Package, PencilLine, PersonStanding, Crop, Rewind, ScanFace, SlidersHorizontal, Smile, Sun, Upload, Scaling, WandSparkles } from "lucide-react";
+import { Brush, Camera, Clapperboard, Contrast, Copy, FastForward, FileText, Globe2, Grid2x2, Grid3x3, Layers3, Lock, LockOpen, Maximize2, Package, Palette, PencilLine, PersonStanding, Crop, Rewind, ScanFace, SlidersHorizontal, Smile, Sun, Upload, Scaling, Sparkles, WandSparkles } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import type { NodeToolbarGroup } from "@/lib/canvas/tool-registry";
 
-type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotation" | "annotationEdit" | "textEdit" | "maskEdit" | "removeBackground" | "layerDecomposition" | "emotion" | "portraitTexture" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "lighting" | "panorama" | "view" | "multi_camera_nine_grid" | "story_pitch_four_grid" | "character_face_three_view" | "product_three_view" | "storyboard_25_grid" | "character_three_view_generation" | "cinematic_light_correction" | "image_projection_after_3s" | "image_projection_before_5s";
+type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotation" | "annotationEdit" | "textEdit" | "maskEdit" | "styleForge" | "psdExport" | "saveAsSkill" | "addTextLayer" | "removeBackground" | "layerDecomposition" | "emotion" | "portraitTexture" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "lighting" | "panorama" | "view" | "multi_camera_nine_grid" | "story_pitch_four_grid" | "character_face_three_view" | "product_three_view" | "storyboard_25_grid" | "character_three_view_generation" | "cinematic_light_correction" | "image_projection_after_3s" | "image_projection_before_5s";
 
 type ImageToolHandlers = {
     onUpload: (node: CanvasNodeData) => void;
@@ -13,6 +13,10 @@ type ImageToolHandlers = {
     onAnnotationEdit: (node: CanvasNodeData) => void;
     onTextEdit: (node: CanvasNodeData) => void;
     onMaskEdit: (node: CanvasNodeData) => void;
+    onStyleForge: (node: CanvasNodeData) => void;
+    onPsdExport: (node: CanvasNodeData) => void;
+    onSaveAsSkill: (node: CanvasNodeData) => void;
+    onAddTextLayer: (node: CanvasNodeData) => void;
     onRemoveBackground: (node: CanvasNodeData) => void;
     onLayerDecomposition: (node: CanvasNodeData) => void;
     onEmotion: (node: CanvasNodeData) => void;
@@ -86,6 +90,36 @@ const imageToolDefinitions: ImageToolDefinition[] = [
         run: (node, handlers) => handlers.onUpload(node),
     },
     {
+        id: "addTextLayer",
+        label: "添加文字层",
+        description: "在图片中心叠加可编辑文字节点",
+        icon: () => <FileText className="size-3.5" />,
+        group: "more",
+        section: "素材",
+        order: 46,
+        run: (node, handlers) => handlers.onAddTextLayer(node),
+    },
+    {
+        id: "psdExport",
+        label: "导出分层PSD",
+        description: "把画布图片节点合成 Photoshop 分层文件",
+        icon: () => <Layers3 className="size-3.5" />,
+        group: "more",
+        section: "素材",
+        order: 47,
+        run: (node, handlers) => handlers.onPsdExport(node),
+    },
+    {
+        id: "saveAsSkill",
+        label: "存为技能",
+        description: "把本节点的提示词与配置沉淀为技能",
+        icon: () => <Palette className="size-3.5" />,
+        group: "more",
+        section: "素材",
+        order: 48,
+        run: (node, handlers) => handlers.onSaveAsSkill(node),
+    },
+    {
         id: "resize",
         label: "锁定宽高比",
         section: "节点管理",
@@ -123,6 +157,15 @@ const imageToolDefinitions: ImageToolDefinition[] = [
         group: "primary",
         order: 10,
         run: (node, handlers) => handlers.onMaskEdit(node),
+    },
+    {
+        id: "styleForge",
+        label: "风格锻造",
+        description: "参考图视觉DNA九维度分析，按风格批量出图",
+        icon: () => <Sparkles className="size-3.5" />,
+        group: "primary",
+        order: 12,
+        run: (node, handlers) => handlers.onStyleForge(node),
     },
     {
         id: "textEdit",

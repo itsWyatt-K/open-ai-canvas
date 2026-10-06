@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Input, Modal, Slider } from "antd";
-import { Brush, ChevronDown, Eraser, RotateCcw, WandSparkles, X } from "lucide-react";
+import { Brush, ChevronDown, Crop, Eraser, RotateCcw, WandSparkles, X } from "lucide-react";
 
 import { readImageMeta } from "@/lib/image-utils";
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
@@ -16,7 +16,7 @@ export type CanvasImageMaskEditPayload = {
     generationConfig?: Partial<Pick<AiConfig, "model" | "imageModel" | "size" | "quality" | "count" | "transparentBackground">>;
 };
 
-type DrawMode = "paint" | "erase";
+type DrawMode = "paint" | "erase" | "rect";
 
 const defaultBrushSize = 100;
 const maskFillColor = "rgba(37, 99, 235, .38)";
@@ -26,6 +26,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, config, onClose, onCon
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewCanvasRef = useRef<HTMLCanvasElement>(null);
     const drawingRef = useRef<{ active: boolean; last: { x: number; y: number } | null }>({ active: false, last: null });
+    const rectDragRef = useRef<{ active: boolean; start: { x: number; y: number } }>({ active: false, start: { x: 0, y: 0 } });
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
     const [prompt, setPrompt] = useState("");
     const [brushSize, setBrushSize] = useState(defaultBrushSize);
@@ -53,6 +54,12 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, config, onClose, onCon
 
     const draw = (event: ReactPointerEvent<HTMLCanvasElement>) => {
         const point = readCanvasPoint(event.currentTarget, event.clientX, event.clientY);
+        if (mode === "rect") {
+            if (rectDragRef.current.active && previewCanvasRef.current) {
+                renderRectPreview(previewCanvasRef.current, rectDragRef.current.start, point);
+            }
+            return;
+        }
         const maskCanvas = maskCanvasRef.current;
         const context = maskCanvas?.getContext("2d");
         if (!maskCanvas || !context) return;
@@ -78,18 +85,36 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, config, onClose, onCon
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);
+        const point = readCanvasPoint(event.currentTarget, event.clientX, event.clientY);
+        if (mode === "rect") {
+            rectDragRef.current = { active: true, start: point };
+            return;
+        }
         drawingRef.current = { active: true, last: null };
         if (maskCanvasRef.current) renderMaskPreview(maskCanvasRef.current, previewCanvasRef.current);
         draw(event);
     };
 
     const moveDraw = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-        if (!drawingRef.current.active) return;
+        if (mode === "rect" ? !rectDragRef.current.active : !drawingRef.current.active) return;
         event.preventDefault();
         draw(event);
     };
 
-    const stopDraw = () => {
+    const stopDraw = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        if (mode === "rect" && rectDragRef.current.active) {
+            const maskCanvas = maskCanvasRef.current;
+            const previewCanvas = previewCanvasRef.current;
+            rectDragRef.current.active = false;
+            const end = event ? readCanvasPoint(event.currentTarget, event.clientX, event.clientY) : null;
+            if (maskCanvas && previewCanvas && end) {
+                commitRectToMask(maskCanvas, rectDragRef.current.start, end);
+            }
+            clearCanvas(previewCanvas);
+            if (maskCanvas) renderMaskPreview(maskCanvas, previewCanvasRef.current, canvasHasPaint(maskCanvas));
+            if (maskCanvas && canvasHasPaint(maskCanvas)) setError("");
+            return;
+        }
         drawingRef.current = { active: false, last: null };
         const maskCanvas = maskCanvasRef.current;
         if (maskCanvas) renderMaskPreview(maskCanvas, previewCanvasRef.current, canvasHasPaint(maskCanvas));
@@ -106,7 +131,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, config, onClose, onCon
         const canvas = maskCanvasRef.current;
         if (!nextPrompt) return setError("请输入修改要求");
         if (!canvas) return;
-        if (!canvasHasPaint(canvas)) return setError("请先涂抹局部区域");
+        if (!canvasHasPaint(canvas)) return setError("请先用画笔涂抹或框选局部区域");
         onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas), generationConfig: { model: generationConfig.model, imageModel: generationConfig.imageModel, size: generationConfig.size, quality: generationConfig.quality, count: generationConfig.count, transparentBackground: generationConfig.transparentBackground } });
     };
 
@@ -141,22 +166,31 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, config, onClose, onCon
                             <div className="mt-2 text-sm opacity-60">{image ? `${image.width} x ${image.height}px` : "读取中"}</div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                             <Button type={mode === "paint" ? "primary" : "default"} aria-pressed={mode === "paint"} icon={<Brush className="size-4" />} onClick={() => setMode("paint")}>
                                 画笔
                             </Button>
                             <Button type={mode === "erase" ? "primary" : "default"} aria-pressed={mode === "erase"} icon={<Eraser className="size-4" />} onClick={() => setMode("erase")}>
                                 擦除
                             </Button>
+                            <Button type={mode === "rect" ? "primary" : "default"} aria-pressed={mode === "rect"} icon={<Crop className="size-4" />} onClick={() => { setMode("rect"); clearCanvas(previewCanvasRef.current); }}>
+                                框选
+                            </Button>
                         </div>
 
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="font-medium opacity-75">笔刷大小</span>
-                                <span className="font-semibold">{brushSize}px</span>
+                        {mode === "rect" ? (
+                            <div className="rounded-lg border border-dashed border-border/60 px-3 py-2 text-xs opacity-70">
+                                在图上拖拽框选要重绘的区域，松开后加入蒙版；可连续框选多个区域，「擦除」模式可抹掉。
                             </div>
-                            <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
-                        </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="font-medium opacity-75">笔刷大小</span>
+                                    <span className="font-semibold">{brushSize}px</span>
+                                </div>
+                                <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
+                            </div>
+                        )}
 
                         <div className="space-y-2">
                             <div className="text-sm font-medium opacity-75">修改要求</div>
@@ -254,6 +288,40 @@ function drawMaskStroke(context: CanvasRenderingContext2D, from: { x: number; y:
     context.moveTo(from.x, from.y);
     context.lineTo(to.x, to.y);
     context.stroke();
+}
+
+function normalizeRect(start: { x: number; y: number }, end: { x: number; y: number }) {
+    return {
+        x: Math.min(start.x, end.x),
+        y: Math.min(start.y, end.y),
+        w: Math.abs(end.x - start.x),
+        h: Math.abs(end.y - start.y),
+    };
+}
+
+function renderRectPreview(previewCanvas: HTMLCanvasElement, start: { x: number; y: number }, end: { x: number; y: number }) {
+    const context = previewCanvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    const { x, y, w, h } = normalizeRect(start, end);
+    context.save();
+    context.fillStyle = maskFillColor;
+    context.fillRect(x, y, w, h);
+    context.strokeStyle = maskBorderColor;
+    context.lineWidth = Math.max(1.5, previewCanvas.width / 800);
+    context.setLineDash([8, 5]);
+    context.strokeRect(x, y, w, h);
+    context.restore();
+}
+
+function commitRectToMask(maskCanvas: HTMLCanvasElement, start: { x: number; y: number }, end: { x: number; y: number }) {
+    const { x, y, w, h } = normalizeRect(start, end);
+    if (w < 3 || h < 3) return;
+    const context = maskCanvas.getContext("2d");
+    if (!context) return;
+    context.globalCompositeOperation = "source-over";
+    context.fillStyle = "#000";
+    context.fillRect(x, y, w, h);
 }
 
 function canvasHasPaint(canvas: HTMLCanvasElement) {

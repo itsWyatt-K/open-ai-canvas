@@ -1,4 +1,4 @@
-import { AudioLines, Captions, Clapperboard, Download, FolderPlus, Images, Image as ImageIcon, Info, LoaderCircle, Lock, Maximize2, MessageSquare, Minus, Music2, Plus, RefreshCw, Scissors, Settings2, Trash2, Unlock, Upload, UserRound, Video, WandSparkles } from "lucide-react";
+import { AudioLines, Captions, Clapperboard, Database, Download, FolderPlus, Images, Image as ImageIcon, Info, LoaderCircle, Lock, Maximize2, MessageSquare, Minus, Music2, Plus, RefreshCw, Scissors, Settings2, Trash2, Unlock, Upload, UserRound, Video, WandSparkles } from "lucide-react";
 
 import { CONTENT_MODERATION_ERROR_CODE, isContentModerationError } from "@/lib/generation-error";
 import { registerToolbarTools, type ToolContext, type ToolDefinition } from "@/lib/canvas/tool-registry";
@@ -115,6 +115,19 @@ export const nodeHoverToolbarTools: ToolDefinition[] = [
         applicable: (ctx) => hasVideo(ctx) && !simpleMode(ctx),
         disabled: (ctx) => ctx.extractingAudio || ctx.trimmingVideo,
         run: (ctx) => ctx.handlers.onNodeTrimVideoSegments(ctx.node!),
+    },
+    {
+        id: "ereverse",
+        toolbar: "node-hover",
+        category: "node-state",
+        label: "逆向生成视频事实表（词级时间轴 + 场景语义标签）",
+        displayLabel: "事实表",
+        icon: <Database className="size-3.5" />,
+        defaultVisible: true,
+        defaultOrder: 46,
+        nodeToolbar: { group: "process", order: 30, section: "提取素材", description: "E-Reverse 逆向管线：词级时间戳、场景关键帧、VLM 语义标签" },
+        applicable: (ctx) => hasVideo(ctx) && !simpleMode(ctx),
+        run: (ctx) => ctx.handlers.onNodeEreverse(ctx.node!),
     },
     {
         id: "saveAsset",

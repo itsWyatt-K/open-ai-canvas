@@ -30,6 +30,10 @@ PANEL_PORT = 17580
 PYTHON = r"C:\Users\khy\.workbuddy\binaries\python\versions\3.13.12\python.exe"
 NODE = r"C:\Users\khy\.workbuddy\binaries\node\versions\22.22.2-3\node.exe"
 
+# E-Reverse 侧车：独立 venv（py3.12 + torch/whisperx/transformers），与控制台解释器解耦
+EREVERSE_DIR = r"D:\AlcheMvision\工具\e-reverse"
+EREVERSE_PYTHON = os.path.join(EREVERSE_DIR, ".venv", "Scripts", "python.exe")
+
 # Windows 进程标志：脱离父进程独立存活
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -78,6 +82,18 @@ SERVICES = [
         "env": {},
         "log": os.path.join("web", "vite_dev.log"),
         "wait": 45,
+    },
+    {
+        "key": "ereverse",
+        "name": "E-Reverse 事实表侧车 (词级ASR · VLM)",
+        "desc": "视频逆向事实表管线（pft/v1）。支撑工作台 /ereverse 页面：词级时间轴、场景打标、点词跳转。",
+        "port": 8790,
+        "required": False,
+        "cwd": EREVERSE_DIR,
+        "cmd": [EREVERSE_PYTHON, "server.py"],
+        "env": {},
+        "log": "ereverse_sidecar.log",
+        "wait": 30,
     },
     {
         "key": "tunnel",
@@ -833,6 +849,7 @@ footer {
   <button class="primary" id="btnStartAll">⚡ 一键启动全部</button>
   <button class="danger" id="btnStopAll">⏹ 全部停止</button>
   <button class="gold" id="btnOpenCanvas">🎨 打开源起创作画布</button>
+  <button class="gold" id="btnOpenEreverse">🧬 E-Reverse 事实表</button>
   <button class="gold" id="btnOpen">🏠 进入工作台首页</button>
   <button id="btnSelfCheck">🩺 接入自检</button>
   <button id="btnRefresh">🔄 刷新</button>
@@ -1012,6 +1029,9 @@ document.getElementById('btnQuitPanel').onclick = quitPanel;
 document.getElementById('btnOpenCanvas').onclick = function(){
   window.open('http://127.0.0.1:3000/canvas?mode=new', '_blank');
 };
+document.getElementById('btnOpenEreverse').onclick = function(){
+  window.open('http://127.0.0.1:3000/ereverse', '_blank');
+};
 document.getElementById('btnOpen').onclick = function(){
   window.open('http://127.0.0.1:3000', '_blank');
 };
@@ -1168,6 +1188,15 @@ def auto_start_if_idle():
                 log_event("补启动公网隧道失败：%s" % e, "error")
             finally:
                 Handler.busy_state.pop("tunnel", None)
+        if not port_alive(SVC_BY_KEY["ereverse"]["port"], timeout=0.5):
+            log_event("检测到 E-Reverse 事实表侧车未运行，正在自动补齐…")
+            Handler.busy_state["ereverse"] = "starting"
+            try:
+                start_service(SVC_BY_KEY["ereverse"])
+            except Exception as e:
+                log_event("补启动 E-Reverse 侧车失败：%s" % e, "error")
+            finally:
+                Handler.busy_state.pop("ereverse", None)
         return
 
     log_event("正在初始化拉起「源起」核心服务集群（gemini-3.8-Flash 协同架构）…")
