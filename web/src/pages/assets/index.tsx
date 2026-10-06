@@ -15,6 +15,7 @@ import { AssetCard } from "./asset-library-cards";
 import { Switch } from "@/components/ui/base/switch";
 import { resourceStorageTitle, resourceStorageLabel } from "@/lib/canvas/resource-storage-status";
 import { AssetBatchUploadModal } from "./asset-batch-upload-modal";
+import { BrandKitsSection } from "./brand-kits-section";
 import { assetGridCardMinWidth, type AssetGridDensity, assetGridDensityOptions, parseAssetGridDensity } from "./asset-grid-density";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -626,6 +627,8 @@ export default function AssetsPage() {
                             />
                         </CollectionToolbar>
                 </div>
+
+                <BrandKitsSection />
 
                 <div className="collection-content assets-collection-content">
                     <div className="assets-collection-layout">

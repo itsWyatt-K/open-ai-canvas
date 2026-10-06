@@ -18,6 +18,11 @@ function walkSourceFiles(dir: string): string[] {
 const webRoot = resolve(import.meta.dir, "..");
 const srcRoot = resolve(webRoot, "src");
 
+/** Windows 下 relative() 返回反斜杠路径，白名单统一按 POSIX 斜杠比较。 */
+function relPosix(file: string) {
+    return relative(srcRoot, file).split("\\").join("/");
+}
+
 const axiosAllowed = new Set([
     "services/api/request.ts",
     "services/api/channel-transport.ts",
@@ -29,22 +34,21 @@ const axiosAllowed = new Set([
 test("business API modules call http instead of axios or request(apiClient)", () => {
     const offenders = walkSourceFiles(resolve(srcRoot, "services"))
         .filter((file) => {
-            const rel = relative(srcRoot, file);
-            if (axiosAllowed.has(rel)) return false;
+            if (axiosAllowed.has(relPosix(file))) return false;
             const source = readFileSync(file, "utf8");
             return /from ["']axios["']/.test(source) || /request\s*(?:<[^>]+>)?\s*\(\s*apiClient\./.test(source) || /const api = apiClient/.test(source);
         })
-        .map((file) => relative(srcRoot, file));
+        .map((file) => relPosix(file));
     expect(offenders).toEqual([]);
 });
 
 test("axios.create stays in the shared request client", () => {
     const offenders = walkSourceFiles(srcRoot)
         .filter((file) => {
-            if (relative(srcRoot, file) === "services/api/request.ts") return false;
+            if (relPosix(file) === "services/api/request.ts") return false;
             return readFileSync(file, "utf8").includes("axios.create(");
         })
-        .map((file) => relative(srcRoot, file));
+        .map((file) => relPosix(file));
     expect(offenders).toEqual([]);
 });
 

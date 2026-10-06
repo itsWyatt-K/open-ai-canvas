@@ -26,9 +26,10 @@ function MaskEditor({ dataUrl, config, onClose, onConfirm }: MaskEditorProps) {
     const surface = useRef<HTMLCanvasElement>(null);
     const strokes = useRef<MaskStroke[]>([]);
     const activePointer = useRef<number | null>(null);
+    const rectDragRef = useRef<{ active: boolean; start: MaskPoint }>({ active: false, start: [0, 0] });
     const frame = useRef<number | null>(null);
     const [diameter, setDiameter] = useState(100);
-    const [mode, setMode] = useState("paint");
+    const [mode, setMode] = useState<"paint" | "erase" | "rect">("paint");
     const [prompt, setPrompt] = useState("");
     const [settings, setSettings] = useState(config);
     const [error, setError] = useState("");
@@ -52,6 +53,7 @@ function MaskEditor({ dataUrl, config, onClose, onConfirm }: MaskEditorProps) {
     const finishStroke = (event: PointerEvent<HTMLCanvasElement>) => {
         if (activePointer.current !== event.pointerId) return;
         activePointer.current = null;
+        rectDragRef.current.active = false;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
         setStrokeCount(strokes.current.length);
     };
@@ -76,23 +78,37 @@ function MaskEditor({ dataUrl, config, onClose, onConfirm }: MaskEditorProps) {
                                 event.preventDefault(); event.stopPropagation();
                                 event.currentTarget.setPointerCapture(event.pointerId);
                                 activePointer.current = event.pointerId;
-                                strokes.current.push({ diameter, erase: mode === "erase", points: [pointAt(event)] });
+                                if (mode === "rect") {
+                                    rectDragRef.current = { active: true, start: pointAt(event) };
+                                    strokes.current.push({ diameter, erase: false, points: [pointAt(event), pointAt(event), pointAt(event), pointAt(event)] });
+                                } else {
+                                    strokes.current.push({ diameter, erase: mode === "erase", points: [pointAt(event)] });
+                                }
                                 setError(""); repaint();
                             }}
                             onPointerMove={(event) => {
                                 if (activePointer.current !== event.pointerId) return;
                                 event.preventDefault();
-                                strokes.current.at(-1)?.points.push(pointAt(event)); repaint();
+                                if (mode === "rect" && rectDragRef.current.active) {
+                                    const start = rectDragRef.current.start;
+                                    const end = pointAt(event);
+                                    const last = strokes.current.at(-1);
+                                    if (last) last.points = [start, [start[0], end[1]], end, [end[0], start[1]]];
+                                } else {
+                                    strokes.current.at(-1)?.points.push(pointAt(event));
+                                }
+                                repaint();
                             }} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} /> : null}
                     </div>
                     <p className="text-sm text-muted-foreground">{size ? `${size.width} × ${size.height} px · 蓝色区域将被重新生成` : loadError || "正在读取图片…"}</p>
                 </section>
                 <section className="flex max-h-[68vh] flex-col gap-4 overflow-y-auto pr-1">
-                    <Segmented block value={mode} onChange={setMode} options={[{ label: "画笔", value: "paint" }, { label: "擦除", value: "erase" }]} />
+                    <Segmented block value={mode} onChange={setMode} options={[{ label: "画笔", value: "paint" }, { label: "擦除", value: "erase" }, { label: "框选", value: "rect" }]} />
+                    {mode === "rect" ? <p className="text-xs text-muted-foreground">在图上拖拽框选要重绘的区域，松开后加入蒙版；可连续框选多个区域，「擦除」模式可抹掉。</p> : null}
                     <label className="text-sm">笔刷直径 · {diameter} px<Slider min={8} max={160} step={2} value={diameter} onChange={setDiameter} /></label>
                     <div className="flex gap-2">
                         <Button disabled={!strokeCount} onClick={() => { strokes.current.pop(); setStrokeCount(strokes.current.length); repaint(); }}>撤销笔画</Button>
-                        <Button onClick={() => { strokes.current = []; activePointer.current = null; setStrokeCount(0); setError(""); repaint(); }}>清空遮罩</Button>
+                        <Button onClick={() => { strokes.current = []; activePointer.current = null; rectDragRef.current = { active: false, start: [0, 0] }; setStrokeCount(0); setError(""); repaint(); }}>清空遮罩</Button>
                     </div>
                     <label className="flex flex-col gap-2 text-sm">修改要求<Input.TextArea rows={4} value={prompt} placeholder="描述选中区域需要发生的变化" onChange={(event) => { setPrompt(event.target.value); setError(""); }} /></label>
                     <Collapse defaultActiveKey={["settings"]} items={[{ key: "settings", label: "生成设置", children: <div className="space-y-4">

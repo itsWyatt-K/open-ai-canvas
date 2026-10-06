@@ -40,6 +40,10 @@ type CanvasNodeToolbarProps = {
     onDownload: (node: CanvasNodeData) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
     onMaskEdit: (node: CanvasNodeData) => void;
+    onStyleForge: (node: CanvasNodeData) => void;
+    onPsdExport: (node: CanvasNodeData) => void;
+    onSaveAsSkill: (node: CanvasNodeData) => void;
+    onAddTextLayer: (node: CanvasNodeData) => void;
     onRemoveBackground: (node: CanvasNodeData) => void;
     onLayerDecomposition: (node: CanvasNodeData) => void;
     onEmotion: (node: CanvasNodeData) => void;
@@ -58,6 +62,7 @@ type CanvasNodeToolbarProps = {
     onTrimVideoSegments: (node: CanvasNodeData) => void;
     onSubtitles: (node: CanvasNodeData) => void;
     onTimeline: (node: CanvasNodeData) => void;
+    onEreverse: (node: CanvasNodeData) => void;
     extractingVideoFrames: boolean;
     extractingAudio: boolean;
     trimmingVideo: boolean;
@@ -107,6 +112,10 @@ export function CanvasNodeToolbar({
     onDownload,
     onSaveAsset,
     onMaskEdit,
+    onStyleForge,
+    onPsdExport,
+    onSaveAsSkill,
+    onAddTextLayer,
     onRemoveBackground,
     onLayerDecomposition,
     onEmotion,
@@ -125,6 +134,7 @@ export function CanvasNodeToolbar({
     onTrimVideoSegments,
     onSubtitles,
     onTimeline,
+    onEreverse,
     extractingVideoFrames,
     extractingAudio,
     trimmingVideo,
@@ -255,7 +265,7 @@ export function CanvasNodeToolbar({
         }
         copyText(prompt, "提示词已复制");
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onAnnotate, onAnnotationEdit, onTextEdit, onMaskEdit, onRemoveBackground, onLayerDecomposition, onEmotion, onPortraitTexture, onCrop, onUpscale, onSuperResolve, onAngle, onLighting, onPanorama, onPrevis, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt, onNineGrid });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onAnnotate, onAnnotationEdit, onTextEdit, onMaskEdit, onStyleForge, onPsdExport, onSaveAsSkill, onAddTextLayer, onRemoveBackground, onLayerDecomposition, onEmotion, onPortraitTexture, onCrop, onUpscale, onSuperResolve, onAngle, onLighting, onPanorama, onPrevis, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt, onNineGrid });
 
     // 构建 ToolContext——供注册表解析工具
     const nodeHoverHandlers = {
@@ -264,7 +274,7 @@ export function CanvasNodeToolbar({
         onNodeSaveAsset: onSaveAsset, onNodeMaskEdit: onMaskEdit, onNodeRemoveBackground: onRemoveBackground, onNodeEmotion: onEmotion, onNodePortraitTexture: onPortraitTexture, onNodeCrop: onCrop,
         onNodeSplit: (target) => onSplit(target, { rows: 2, columns: 2 }), onNodeUpscale: onUpscale, onNodeSuperResolve: onSuperResolve, onNodeAngle: onAngle, onNodeViewImage: onViewImage,
         onNodeExtractVideoFrames: onExtractVideoFrames, onNodeExtractAudioFromVideo: onExtractAudioFromVideo, onNodeTrimVideoSegments: onTrimVideoSegments, onNodeReversePrompt: onReversePrompt, onNodeToggleFreeResize: onToggleFreeResize,
-        onNodeSubtitles: onSubtitles, onNodeTimeline: onTimeline, onNodeToggleLocked: onToggleLocked, onNodeCopyPrompt: copyImagePrompt,
+        onNodeSubtitles: onSubtitles, onNodeTimeline: onTimeline, onNodeEreverse: onEreverse, onNodeToggleLocked: onToggleLocked, onNodeCopyPrompt: copyImagePrompt,
     } as Partial<ToolbarHandlers> as ToolbarHandlers;
 
     const nodeHoverCtx: ToolContext = {
@@ -370,7 +380,7 @@ export function CanvasNodeToolbar({
 
 function NodeDockToolButton({ tool, iconOnly = false }: { tool: ToolbarTool; iconOnly?: boolean }) {
     return (
-        <Tooltip title={tool.description ? `${tool.label}：${tool.description}` : tool.label}>
+        <Tooltip title={tool.description ? `${tool.label}�?{tool.description}` : tool.label}>
         <button
             type="button"
             className={`aceternity-dock-command is-labeled pointer-events-auto inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[var(--dock-item-radius)] px-2.5 outline-none ${tool.active ? "is-active" : ""} ${tool.danger ? "is-danger" : ""}`}
@@ -711,7 +721,7 @@ function nodeGenerationRows(node: CanvasNodeData, producedModelText: string) {
         const totalSeconds = Math.max(0, Math.round(value / 1000));
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
-        add("耗时", minutes ? `${minutes}分 ${seconds}秒` : `${seconds}秒`);
+        add("耗时", minutes ? `${minutes}�?${seconds}秒` : `${seconds}秒`);
     };
 
     add("产出模型", producedModelText);

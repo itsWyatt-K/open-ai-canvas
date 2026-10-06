@@ -60,7 +60,8 @@ import { CanvasCloudAgentSettings, type AgentContextKey } from "./canvas-cloud-a
 import { useAgentPanelLayout } from "./use-agent-panel-layout";
 import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
-import { AgentContextRing, AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
+import { AgentContextRing, AgentCreditRing, AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
+import { presentAgentCreditUsage } from "@/lib/canvas/agent-credit-usage";
 import { AgentConnectorsBar } from "./canvas-cloud-agent-connectors";
 
 type CloudAgentPanelProps = {
@@ -1111,7 +1112,12 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, se
                                         references={[...references, ...buildSkillMentionReferences(installedSkills)]}
                                         slashSkills={installedSkills}
                                         includeAssetLibrary={false}
-                                        submitAccessory={<AgentContextRing view={presentAgentContextUsage(contextUsage)} />}
+                                        submitAccessory={
+                                            <div className="flex items-center gap-1.5">
+                                                <AgentCreditRing view={presentAgentCreditUsage(run?.spentCredits, maxCredits)} />
+                                                <AgentContextRing view={presentAgentContextUsage(contextUsage)} />
+                                            </div>
+                                        }
                                         footer={connectorsVisible ? <AgentConnectorsBar onClose={() => setConnectorsVisible(false)} /> : null}
                                         left={
                                             <ComposerControls
