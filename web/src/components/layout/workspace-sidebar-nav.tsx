@@ -47,6 +47,7 @@ function buildNav(features: FeatureAvailability, isAdmin: boolean): { groups: Wo
                 { ...toolItem("create", "/"), id: "home", title: "创作" },
                 { ...toolItem("projects", "/projects"), title: "短剧 Agent" },
                 { ...toolItem("canvas", "/canvas"), title: "自由画布" },
+                { ...toolItem("ecommerce", "/ecommerce"), title: "电商工作台" },
             ],
         },
         {
@@ -154,7 +155,7 @@ function NavItem({
     const Icon = item.icon;
     const rowStyle = collapsed ? undefined : ({ paddingLeft: `${level * 12 + 10}px` } as CSSProperties);
 
-    const collapsedTitle = item.id === "home" ? "创作" : item.id === "projects" ? "短剧" : item.id === "canvas" ? "画布" : item.id === "assets" ? "资产" : item.id === "skills" ? "技能" : item.id === "plugins" ? "插件" : item.id === "tasks" ? "历史" : item.title.slice(0, 2);
+    const collapsedTitle = item.id === "home" ? "创作" : item.id === "projects" ? "短剧" : item.id === "canvas" ? "画布" : item.id === "ecommerce" ? "电商" : item.id === "assets" ? "资产" : item.id === "skills" ? "技能" : item.id === "plugins" ? "插件" : item.id === "tasks" ? "历史" : item.title.slice(0, 2);
     const rowContent = (
         <>
             <span className="app-workspace-nav-main flex min-w-0 items-center gap-2.5">

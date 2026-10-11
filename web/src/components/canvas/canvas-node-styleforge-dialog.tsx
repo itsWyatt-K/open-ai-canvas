@@ -156,7 +156,8 @@ export function CanvasNodeStyleForgeDialog({ productNode, imageNodes, config, op
             prompts = prompts.slice(0, MAX_PROMPTS);
             if (!prompts.length) throw new Error("引擎没有返回提示词");
             const productTarget = selectableNodes.find((node) => node.id === productNodeId) || productNode;
-            onGenerate({ scene, dna, anchorCard, prompts, productNode: productTarget, generationConfig: { model: generationConfig.model, imageModel: generationConfig.imageModel, size, quality: generationConfig.quality, count: "1", transparentBackground: generationConfig.transparentBackground } });
+            const forgeModel = generationConfig.imageModel || generationConfig.model;
+            onGenerate({ scene, dna, anchorCard, prompts, productNode: productTarget, generationConfig: { model: forgeModel, imageModel: forgeModel, size, quality: generationConfig.quality, count: "1", transparentBackground: generationConfig.transparentBackground } });
         } catch (error) {
             message.error(error instanceof Error ? error.message : "提示词合成失败");
         } finally {

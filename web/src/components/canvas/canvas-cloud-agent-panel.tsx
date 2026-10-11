@@ -618,7 +618,9 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, se
                     model: modelOptionName(selectedModel) || undefined,
                     ...(logicalModelId ? { logicalModelId } : requestConfig.channelId ? { channelId: requestConfig.channelId, channelModelKey: modelOptionName(selectedModel) || undefined } : {}),
                     skillIds: [...new Set([...selectedSkillIds, ...resolveSkillMentions(value, installedSkills).map((skill) => skill.skillId)])],
-                    focusNodeIds: selectedNodeIds.length <= 8 ? selectedNodeIds : [],
+                    // 空选择时省略字段：预编译后端（DisallowUnknownFields）不识别 focusNodeIds，
+                    // 空数组与缺省语义等价（无聚焦节点），新旧后端兼容。
+                    ...(selectedNodeIds.length > 0 && selectedNodeIds.length <= 8 ? { focusNodeIds: selectedNodeIds } : {}),
                     permissionMode,
                     contextScope,
                     budget: { maxCredits: positiveNumber(maxCredits), maxGenerationTasks: permissionMode === "read_only" ? 0 : Number(maxGenerationTasks), maxVideoSeconds: permissionMode === "read_only" ? 0 : Number(maxVideoSeconds) },
