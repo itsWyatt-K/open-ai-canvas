@@ -1,0 +1,40 @@
+[
+  {
+    "taskId": "GT-S01",
+    "title": "数字人橘猫快问快答（英文提示词契约）",
+    "tag": "social",
+    "targetSkills": ["数字人搞笑采访视频生成"],
+    "sentinel": false,
+    "brief": "脱口秀快问快答：主持人采访一只会说话的橘猫，话题“人类为什么凌晨三点不睡”，3 回合，总长 15 秒，即梦数字人风格，分镜提示词输出英文。",
+    "constraints": { "ratio": "9:16", "durationSec": [2, 6], "language": "en", "totalDurationSec": [13, 17] },
+    "expectedArtifacts": ["scriptText", "storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "S01-en", "type": "required_pattern", "pattern": "[A-Za-z]{10,}", "target": "promptsJoined", "blocking": true, "points": 2, "note": "英文提示词输出契约" },
+      { "checkId": "S01-duration", "type": "duration_bounds", "minSec": 2, "maxSec": 6, "blocking": true, "points": 1 },
+      { "checkId": "S01-clips", "type": "clip_count_bounds", "min": 3, "max": 6, "scope": "clips", "points": 1 },
+      { "checkId": "S01-junk", "type": "junkword_free", "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "S01-comedy", "name": "喜剧节奏", "weight": 1, "anchors": ["每回合有一个可指认的梗", "问答节奏紧凑无空拍"] }
+    ]
+  },
+  {
+    "taskId": "GT-S02",
+    "title": "TikTok ASMR 沉浸开箱",
+    "tag": "social",
+    "targetSkills": ["TikTok 沉浸式开箱"],
+    "sentinel": false,
+    "brief": "潮玩开箱：盲盒机械键盘轴体礼盒，10 秒竖版沉浸式 ASMR 开箱，TikTok 节奏，声音设计（轴体咔哒、撕膜声）须写入提示词。",
+    "constraints": { "ratio": "9:16", "durationSec": [4, 10] },
+    "expectedArtifacts": ["storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "S02-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 10, "blocking": true, "points": 2 },
+      { "checkId": "S02-clips", "type": "clip_count_bounds", "min": 2, "max": 4, "scope": "clips", "points": 1 },
+      { "checkId": "S02-ratio", "type": "ratio_consistent", "expected": "9:16", "blocking": true, "points": 1 },
+      { "checkId": "S02-junk", "type": "junkword_free", "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [
+      { "dimId": "S02-immerse", "name": "沉浸感", "weight": 1, "anchors": ["声音线索（咔哒/撕膜）写入提示词", "手部特写构图稳定", "开箱悬念节拍（合-开-亮）"] }
+    ]
+  }
+]

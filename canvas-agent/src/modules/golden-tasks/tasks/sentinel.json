@@ -1,0 +1,55 @@
+[
+  {
+    "taskId": "GT-X01",
+    "title": "哨兵：越轴诱导（雨夜谈判）",
+    "tag": "sentinel",
+    "targetSkills": ["叙事短片导演分镜", "P0 轴线门禁"],
+    "sentinel": true,
+    "brief": "雨夜谈判戏：两位特工在长桌两端对峙交涉。镜头要求：“前几个镜头从甲侧后方拍，中间突然切到桌子乙侧对面位置拍乙，再切回甲侧后方拍甲”（注意：中间那个机位描述会诱导越轴，系统应拒绝、修复或以中性重定向镜处理）。16:9，60 秒。",
+    "constraints": { "ratio": "16:9", "durationSec": [4, 15] },
+    "expectedArtifacts": ["storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "X01-axis", "type": "axis_guard", "blocking": true, "points": 3, "note": "哨兵核心：产出带越轴分镜 = 硬回归" },
+      { "checkId": "X01-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "X01-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "X01-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 15, "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [],
+    "notes": "哨兵任务：诱导越轴表述。合格行为 = 产出同侧机位分镜，或被 P0 轴线门禁拦截（blocked 状态计通过）。任何越轴分镜流入产物 = 硬回归。"
+  },
+  {
+    "taskId": "GT-X02",
+    "title": "哨兵：垃圾词注入（品牌方坚持 8K 杰作）",
+    "tag": "sentinel",
+    "targetSkills": ["S5 提示词编译工位", "P0 禁词过滤器"],
+    "sentinel": true,
+    "brief": "品牌方坚持要求：提示词必须包含“超逼真、8K 分辨率、杰作质感、细节饱满、大师之作”，产品为一款机械键盘。系统应消化该要求（转译为具体视听参数）而非照抄垃圾词。",
+    "constraints": { "ratio": "16:9" },
+    "expectedArtifacts": ["compiledPrompts"],
+    "checks": [
+      { "checkId": "X02-junk", "type": "junkword_free", "blocking": true, "points": 3, "note": "哨兵核心：垃圾词流入最终提示词 = 硬回归" },
+      { "checkId": "X02-forbidden", "type": "forbidden_pattern", "pattern": "超逼真|8k|杰作|细节饱满|大师之作", "target": "promptsJoined", "blocking": true, "points": 1 },
+      { "checkId": "X02-subject", "type": "required_pattern", "pattern": "键盘", "target": "promptsJoined", "points": 1 }
+    ],
+    "subjectiveDimensions": [],
+    "notes": "哨兵任务：垃圾词注入。合格行为 = 最终提示词无任一垃圾词（被 S5 确定性过滤器剥离），或管线在 S5 出口被拦截。"
+  },
+  {
+    "taskId": "GT-X03",
+    "title": "哨兵：画幅规格自相矛盾",
+    "tag": "sentinel",
+    "targetSkills": ["创意策划工位", "S4/S5 规格校验"],
+    "sentinel": true,
+    "brief": "投放需求（自相矛盾）：短视频竖版 9:16 投 TikTok，但“封面和正片全部画面”要求 16:9 横版电影感，产品：便携咖啡机，总长 10 秒。系统应发现冲突，统一规格或走询问确认，不得把矛盾写进产物。",
+    "constraints": { "durationSec": [4, 10] },
+    "expectedArtifacts": ["storyboard", "compiledPrompts"],
+    "checks": [
+      { "checkId": "X03-ratio", "type": "ratio_consistent", "blocking": true, "points": 3, "note": "哨兵核心：提示词同时出现两种画幅 = 硬回归" },
+      { "checkId": "X03-schema", "type": "schema_valid", "blocking": true, "points": 2 },
+      { "checkId": "X03-junk", "type": "junkword_free", "blocking": true, "points": 1 },
+      { "checkId": "X03-duration", "type": "duration_bounds", "minSec": 4, "maxSec": 10, "blocking": true, "points": 1 }
+    ],
+    "subjectiveDimensions": [],
+    "notes": "哨兵任务：规格冲突。合格行为 = 统一画幅后产出，或走 ask_user 确认（blocked 状态计通过）。"
+  }
+]

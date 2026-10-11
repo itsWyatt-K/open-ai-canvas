@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 影策 Exit Gate · L0 规则对象（机器可读负面清单）
+#
+# 用途：
+#   1. 注入 Bundle / SKILL.md 上下文（模型读同一份规则，关键规则建议在
+#      上下文首尾各放一份，利用首因/近因效应）；
+#   2. 人工审阅与评审对账。
+# 本文件与 src/junkword-filter.ts、src/axis-guard.ts 中的可执行规则
+# 同构。⚠️ 两份文件修改时必须同步（后续可改为由本文件生成 TS 规则）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+rules:
+  # ── S5 提示词出口（编译后、提交 dreamina 前） ──────────────────────────────
+  - rule_id: zh-quality-jargon
+    severity: hard
+    scope: S5_prompt
+    condition: "regex: /超逼真|超写实|超高清|超高画质|极高画质|顶级画质|大师之作|杰作|细节饱满|极致细节|高清画质/g"
+    action: strip
+    message: "虚无质量咒语词：对生成模型无稳定正向作用，且稀释提示词语义密度。"
+    autofix_note: "确定性剥离；用具体视听参数替代（胶片型号、光比、快门开角度、色温）。"
+
+  - rule_id: en-quality-jargon
+    severity: hard
+    scope: S5_prompt
+    condition: "regex: /\\b(masterpiece|best quality|award[ -]?winning|ultra[ -]?realistic|hyper[ -]?realistic|insanely detailed|extremely detailed|ultra[ -]?detailed|trending on artstation)\\b/gi"
+    action: strip
+    message: "英文质量咒语词：源自 SD1.5 时代社区玄学，对现代模型无稳定增益。"
+    autofix_note: "确定性剥离；替换为可执行的视觉指令（灯光方案、材质、构图锚点）。"
+
+  - rule_id: resolution-in-prompt
+    severity: soft
+    scope: S5_prompt
+    condition: "regex: /\\b(8k|4k|uhd)\\b/gi"
+    action: strip
+    message: "分辨率属于生成参数位（size/quality），写在提示词文本中无效且冗余。"
+    autofix_note: "确定性剥离，改在 dreamina_cli 的 size/quality 参数中指定。"
+
+  - rule_id: aspect-ratio-conflict
+    severity: hard
+    scope: S5_prompt
+    condition: "regex: /(?<![\\d.])([1-9]\\d?(?:\\.\\d{1,2})?)\\s*[:：]\\s*(\\d{1,2})(?!\\d)/g 去重后出现 ≥2 个不同规格值"
+    action: reject
+    message: "提示词文本中出现多个不同画幅比，属规格冲突；画幅必须统一走参数位。"
+    autofix_note: "单一出现降级为告警；多个不同值直接阻断，删除文本画幅描述。"
+
+  # ── S4 分镜出口（结构化 JSON，几何校验） ──────────────────────────────────
+  - rule_id: axis-180-guard
+    severity: hard
+    scope: S4_storyboard
+    condition: "geometry: 同场次（sceneId）内，机位相对轴线（axisSubjectIds 两端连线）的地面叉积符号不一致"
+    action: autofix
+    message: "越轴：机位越过场次轴线到对侧，与场内多数机位方向相反。"
+    autofix_note: "自动修复提案 = 机位沿轴线镜像（y 不变，x-z 反射），保持机位距离不变。"
+
+  - rule_id: axis-180-split-scene
+    severity: hard
+    scope: S4_storyboard
+    condition: "geometry: 同场次内机位在轴线两侧对半分布"
+    action: reject
+    message: "机位两侧对半分布，疑似整体越轴，需人工复核或重新设计机位。"
+    autofix_note: "无确定修复，退回人工。"
+
+  - rule_id: axis-180-on-axis
+    severity: soft
+    scope: S4_storyboard
+    condition: "geometry: 机位地面叉积绝对值 ≤ epsilon（默认 0.001）"
+    action: warn
+    message: "机位落在轴线上：中性镜头可作重定向镜，但请人工确认是否有意为之。"
+    autofix_note: "放行但入审计报告。"
+
+  - rule_id: storyboard-schema
+    severity: hard
+    scope: S4_storyboard
+    condition: "schema: 分镜 JSON 不符合 storyboardSchema（subjects/scenes/shots/cameraPosition/axisSubjectIds 必填）"
+    action: reject
+    message: "分镜 JSON 不符合 S4 出口契约，无法执行几何校验。"
+    autofix_note: "退回 S4 重新产出结构化分镜。"
