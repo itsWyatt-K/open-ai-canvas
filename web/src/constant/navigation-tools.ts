@@ -27,7 +27,7 @@ export const navigationTools = [
     },
     {
         slug: "ecommerce",
-        label: "电商工作台",
+        label: "电商工坊",
         icon: ShoppingBag,
         section: "创作空间",
     },

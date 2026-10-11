@@ -48,7 +48,7 @@ function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[];
                 { ...toolItem("inspirations", "/inspirations"), title: "灵感" },
                 { ...toolItem("projects", "/projects"), title: "短剧 Agent" },
                 { ...toolItem("canvas", "/canvas"), title: "自由画布" },
-                { ...toolItem("ecommerce", "/ecommerce"), title: "电商工作台" },
+                ...(features.ecommerceEnabled ? [{ ...toolItem("ecommerce", "/ecommerce"), title: "电商工坊" }] : []),
             ],
         },
         {
