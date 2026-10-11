@@ -33,6 +33,7 @@ export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onCl
             { id: "home", title: "首页", icon: Home, to: "/" },
             toolEntry("projects", "/projects"),
             toolEntry("canvas", "/canvas"),
+            toolEntry("ecommerce", "/ecommerce"),
             ...(features.taskCenterEnabled ? [toolEntry("tasks", "/tasks")] : []),
             toolEntry("assets", "/assets"),
             toolEntry("skills", "/skills"),

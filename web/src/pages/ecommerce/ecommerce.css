@@ -1,0 +1,283 @@
+/* 电商工作台 · 模块私有样式（作用域 .ecommerce-*，先例：projects/detail/workflow.css） */
+
+.ecommerce-workbench-page .ecommerce-shell {
+    display: flex;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+}
+
+.ecommerce-workbench-page .ecommerce-main {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ecommerce-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg, 14px);
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.ecommerce-header-copy h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.ecommerce-header-copy p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    opacity: 0.55;
+}
+
+.ecommerce-view-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 24px;
+}
+
+/* 通用区块 */
+.ecommerce-section {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg, 14px);
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.ecommerce-section h3 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ecommerce-section h3 + * {
+    margin-top: 0;
+}
+
+.ecommerce-section > * + * {
+    margin-top: 8px;
+}
+
+.ecommerce-empty {
+    display: grid;
+    place-items: center;
+    padding: 32px 12px;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-lg, 14px);
+    opacity: 0.85;
+}
+
+/* 产品库 */
+.ecommerce-product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.ecommerce-product-card {
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg, 14px);
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    transition: border-color 0.2s, transform 0.2s;
+}
+
+.ecommerce-product-card:hover {
+    border-color: var(--primary, #6a5cff);
+    transform: translateY(-2px);
+}
+
+.ecommerce-product-cover {
+    display: grid;
+    aspect-ratio: 4 / 3;
+    place-items: center;
+    background: var(--surface-active, rgba(127, 127, 127, 0.08));
+}
+
+.ecommerce-product-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ecommerce-product-body {
+    padding: 10px 12px;
+}
+
+/* 上传框 */
+.ecommerce-upload-box {
+    display: grid;
+    min-height: 88px;
+    cursor: pointer;
+    place-items: center;
+    padding: 10px;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-md, 10px);
+    text-align: center;
+}
+
+.ecommerce-upload-box:hover {
+    border-color: var(--primary, #6a5cff);
+}
+
+.ecommerce-select {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 10px);
+    background: transparent;
+    color: inherit;
+}
+
+/* 风格锻造双栏 */
+.ecommerce-styleforge-view {
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.ecommerce-panel-col,
+.ecommerce-dna-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ecommerce-kit-card {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 10px);
+}
+
+/* 批量生产 */
+.ecommerce-production-view {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.ecommerce-production-form {
+    position: sticky;
+    top: 0;
+}
+
+.ecommerce-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 10px;
+}
+
+.ecommerce-gallery-card {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 10px);
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.ecommerce-gallery-card[data-status="failed"] {
+    border-color: color-mix(in srgb, #e5484d 45%, var(--border));
+}
+
+.ecommerce-gallery-cover {
+    display: grid;
+    aspect-ratio: 3 / 4;
+    place-items: center;
+    background: var(--surface-active, rgba(127, 127, 127, 0.08));
+}
+
+.ecommerce-gallery-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ecommerce-gallery-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 8px;
+}
+
+/* Agent 坞 */
+.ecommerce-agent-dock {
+    display: flex;
+    width: clamp(340px, 30vw, 430px);
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg, 14px);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.ecommerce-agent-dock-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.ecommerce-agent-dock-body {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+}
+
+.ecommerce-agent-panel-host {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+}
+
+.ecommerce-agent-panel-host > * {
+    flex: 1;
+    min-height: 0;
+}
+
+.ecommerce-agent-placeholder {
+    display: grid;
+    flex: 1;
+    place-items: center;
+    padding: 24px;
+    font-size: 12px;
+    opacity: 0.6;
+    text-align: center;
+}
+
+.ecommerce-agent-fab {
+    position: fixed;
+    right: 26px;
+    bottom: 26px;
+    z-index: 60;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+}
+
+@media (max-width: 1080px) {
+    .ecommerce-styleforge-view,
+    .ecommerce-production-view {
+        grid-template-columns: 1fr;
+    }
+
+    .ecommerce-production-form {
+        position: static;
+    }
+}

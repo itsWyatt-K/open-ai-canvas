@@ -34,6 +34,7 @@ import { validateVideoSegmentBatch } from "@/lib/canvas/canvas-video-regeneratio
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
 import { buildGenerationConfig, buildImageGenerationMetadata, nodeReferenceImage, isGenerationCanceled, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { fitNodeSize, nodeSizeFromRatio, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
+import { imagePresetForRatio, imagePresetValue } from "@/lib/image-size-presets";
 import { compositeEmotionImage, emotionGenerationSize, emotionProviderMask, normalizeEmotionPromptForProvider, resolveEmotionEditPlan } from "@/lib/canvas/canvas-emotion";
 import { DEFAULT_PORTRAIT_TEXTURE_SETTINGS } from "@/lib/canvas/canvas-portrait-texture";
 import { IMAGE_PROMPT_REVERSE } from "@/lib/prompts";
@@ -843,17 +844,40 @@ export function useCanvasMediaTools({
 
     const styleForgeImageNode = useCallback(async (productNode: CanvasNodeData, payload: StyleForgeGeneratePayload) => {
         if (!productNode.metadata?.content) return;
-        const baseGenerationConfig = buildGenerationConfig(effectiveConfig, productNode, "image");
-        const selectedModel = payload.generationConfig?.model || payload.generationConfig?.imageModel || baseGenerationConfig.model;
+        // 对话框的模型选择经由节点元数据参与 buildGenerationConfig 的完整路由
+        // （前台模型开关关闭时顶层不得携带 logicalModelId，裸覆盖 model 会触发目录不匹配）。
+        // 比例串不进节点元数据——渠道可能只收像素尺寸，由下方平台预设函数换算。
+        const specNode: CanvasNodeData = {
+            ...productNode,
+            metadata: {
+                ...productNode.metadata,
+                ...(payload.generationConfig?.model ? { model: payload.generationConfig.model } : {}),
+            },
+        };
+        const baseGenerationConfig = buildGenerationConfig(effectiveConfig, specNode, "image");
+        const selectedModel = baseGenerationConfig.model;
         const modelDefaults = defaultImageParamsForModel(baseGenerationConfig, selectedModel);
+        // 对话框给的是比例串（3:4）；渠道可能只收像素尺寸——用平台预设函数换算成该模型合法值。
+        const wantedRatio = payload.generationConfig?.size || "";
+        const imageProfile = modelCapabilityConfigFor(baseGenerationConfig, selectedModel).image;
+        let resolvedSize = baseGenerationConfig.size || modelDefaults.size;
+        if (wantedRatio && imageProfile && imageProfile.size.parameter !== "none") {
+            try {
+                const preset = imagePresetForRatio("1k", wantedRatio);
+                const candidate = imagePresetValue(imageProfile, preset);
+                const allowed = imageProfile.size.values.filter((value) => value !== "*");
+                if (!allowed.length || allowed.includes(candidate) || imageProfile.size.allowCustom) resolvedSize = candidate;
+            } catch {
+                // 非法比例串保持路由默认尺寸
+            }
+        }
         const generationConfig = {
             ...baseGenerationConfig,
-            ...payload.generationConfig,
             model: selectedModel,
-            imageModel: payload.generationConfig?.imageModel || selectedModel,
-            quality: normalizeMaskEditQuality(payload.generationConfig?.quality || baseGenerationConfig.quality || modelDefaults.quality, payload.generationConfig?.size || modelDefaults.size),
+            imageModel: selectedModel,
+            quality: normalizeMaskEditQuality(baseGenerationConfig.quality || modelDefaults.quality, resolvedSize),
             count: "1",
-            size: payload.generationConfig?.size || modelDefaults.size,
+            size: resolvedSize,
         };
         if (!isAiConfigReady(generationConfig, generationConfig.model)) {
             navigateToSettings({ continueCreation: true });
