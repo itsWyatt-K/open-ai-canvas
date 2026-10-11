@@ -24,6 +24,7 @@ const (
 	FeatureSystemPlugins         = "systemPluginsVisibleToUsers"
 	FeatureInspirationSources    = "inspirationSourcesVisible"
 	FeatureTimelineTranscription = "timelineTranscription"
+	FeatureEcommerce             = "ecommerce"
 )
 
 type FeatureAvailability struct {
@@ -37,6 +38,7 @@ type FeatureAvailability struct {
 	SystemPluginsVisibleToUsers  bool `json:"systemPluginsVisibleToUsers"`
 	InspirationSourcesVisible    bool `json:"inspirationSourcesVisible"`
 	TimelineTranscriptionEnabled bool `json:"timelineTranscriptionEnabled"`
+	EcommerceEnabled             bool `json:"ecommerceEnabled"`
 }
 
 type PublicFeatureAvailability struct {
@@ -59,6 +61,7 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		SystemPluginsVisibleToUsers:  true,
 		InspirationSourcesVisible:    true,
 		TimelineTranscriptionEnabled: true,
+		EcommerceEnabled:             false,
 	}
 }
 
@@ -126,6 +129,8 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 		return value.InspirationSourcesVisible, nil
 	case FeatureTimelineTranscription:
 		return value.TimelineTranscriptionEnabled, nil
+	case FeatureEcommerce:
+		return value.EcommerceEnabled, nil
 	default:
 		return false, errors.New("未知功能开放配置")
 	}
@@ -158,6 +163,8 @@ func (s *Service) RequireFeature(feature string) error {
 		return kernel.Forbidden("素材来源说明暂未开放")
 	case FeatureTimelineTranscription:
 		return kernel.Forbidden("字幕转写暂未开放")
+	case FeatureEcommerce:
+		return kernel.Forbidden("电商工坊暂未开放")
 	default:
 		return kernel.Forbidden("该功能暂未开放")
 	}

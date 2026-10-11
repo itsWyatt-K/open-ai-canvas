@@ -32,6 +32,7 @@ export type FeatureAvailability = {
     customChannelsEnabled: boolean;
     frontendModelsEnabled: boolean;
     pluginCenterEnabled: boolean;
+    ecommerceEnabled: boolean;
     systemPluginsVisibleToUsers: boolean;
     inspirationSourcesVisible: boolean;
     configured?: boolean;
@@ -47,6 +48,7 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     customChannelsEnabled: true,
     frontendModelsEnabled: false,
     pluginCenterEnabled: true,
+    ecommerceEnabled: false,
     systemPluginsVisibleToUsers: true,
     inspirationSourcesVisible: true,
 };
