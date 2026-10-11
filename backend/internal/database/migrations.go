@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 49
+const CurrentSchemaVersion int64 = 50
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -160,6 +160,19 @@ var schemaMigrations = []migration{
 	{version: 49, name: "banner_sort_order", checksum: "sha256:banner-sort-order-v49-20261010", apply: func(tx *gorm.DB) error {
 		if !tx.Migrator().HasColumn(&model.BannerAnnouncement{}, "SortOrder") {
 			return tx.Migrator().AddColumn(&model.BannerAnnouncement{}, "SortOrder")
+		}
+		return nil
+	}},
+	{version: 50, name: "ecommerce_workshop", checksum: "sha256:ecommerce-workshop-v50-20261011", apply: func(tx *gorm.DB) error {
+		// 电商工坊域五表（本地无旧电商表，全新创建；命名沿用 ecommerce_ 前缀）。
+		if err := tx.AutoMigrate(
+			&model.EcommerceProduct{},
+			&model.EcommerceSlot{},
+			&model.EcommerceSlotVersion{},
+			&model.EcommerceUserConfig{},
+			&model.EcommercePreset{},
+		); err != nil {
+			return fmt.Errorf("创建电商工坊表：%w", err)
 		}
 		return nil
 	}},
