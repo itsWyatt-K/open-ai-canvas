@@ -48,7 +48,10 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     customChannelsEnabled: true,
     frontendModelsEnabled: false,
     pluginCenterEnabled: true,
-    ecommerceEnabled: false,
+    // [本地开发权宜 2026-10-12] 后端二进制（9-23 旧版）不认识 ecommerceEnabled 字段，
+    // 管理后台开开关也会被旧后端丢弃；重编译后端前临时置 true 让入口可见。
+    // 后端重编后应还原为 false，回归「管理员后台开启」的正轨。
+    ecommerceEnabled: true,
     systemPluginsVisibleToUsers: true,
     inspirationSourcesVisible: true,
 };
