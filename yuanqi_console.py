@@ -28,7 +28,41 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 PANEL_PORT = 17580
 
 PYTHON = r"C:\Users\khy\.workbuddy\binaries\python\versions\3.13.12\python.exe"
-NODE = r"C:\Users\khy\.workbuddy\binaries\node\versions\22.22.2-3\node.exe"
+
+
+def _resolve_managed_node() -> str:
+    """动态解析 WorkBuddy managed node.exe。
+
+    平台补丁升级会更换 versions 下的目录名（如 22.22.2-3 → 22.22.2-6），
+    写死路径必漂移导致前端起不来。这里按版本号取最新，找不到回退 PATH。
+    """
+    # PYTHON = <binaries>/python/versions/3.13.12/python.exe → 上溯 4 层到 <binaries>
+    binaries_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(PYTHON))))
+    versions_dir = os.path.join(binaries_root, "node", "versions")
+    found = []
+    try:
+        for name in os.listdir(versions_dir):
+            exe = os.path.join(versions_dir, name, "node.exe")
+            if os.path.isfile(exe):
+                found.append((name, exe))
+    except OSError:
+        pass
+    if not found:
+        return "node"
+
+    def _version_key(item):
+        name = item[0]
+        try:
+            parts = tuple(int(p) for p in name.split("-")[0].split("."))
+        except ValueError:
+            parts = (0,)
+        return (parts, name)
+
+    found.sort(key=_version_key, reverse=True)
+    return found[0][1]
+
+
+NODE = _resolve_managed_node()
 
 # E-Reverse 侧车：独立 venv（py3.12 + torch/whisperx/transformers），与控制台解释器解耦
 EREVERSE_DIR = r"D:\AlcheMvision\工具\e-reverse"
