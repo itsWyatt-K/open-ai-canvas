@@ -44,6 +44,7 @@ const (
 	FeatureSystemPlugins               = app.FeatureSystemPlugins
 	FeatureInspirationSources          = app.FeatureInspirationSources
 	FeatureTaskCenter                  = app.FeatureTaskCenter
+	FeatureEcommerce                   = app.FeatureEcommerce
 	FeatureTimelineTranscription       = app.FeatureTimelineTranscription
 	ModelCatalogSourceSystem           = app.ModelCatalogSourceSystem
 	PaymentPluginAlipayPage            = app.PaymentPluginAlipayPage

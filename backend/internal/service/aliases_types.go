@@ -276,6 +276,10 @@ type (
 	RuntimeResourcePolicy                  = app.RuntimeResourcePolicy
 	RuntimeTaskPolicy                      = app.RuntimeTaskPolicy
 	Service                                = app.Service
+	ImportItem                             = app.ImportItem
+	ProductSummary                         = app.ProductSummary
+	ProductDetail                          = app.ProductDetail
+	SlotSummary                            = app.SlotSummary
 	ShotRevisionInput                      = app.ShotRevisionInput
 	SkillCategory                          = app.SkillCategory
 	SkillLibraryCategory                   = app.SkillLibraryCategory

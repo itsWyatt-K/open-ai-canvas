@@ -51,6 +51,9 @@ func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+// DB 暴露底层 gorm 句柄（测试与跨包查询用）。
+func (r *Repository) DB() *gorm.DB { return r.db }
+
 func (r *Repository) WithContext(ctx context.Context) *Repository {
 	return &Repository{db: r.db.WithContext(ctx)}
 }
