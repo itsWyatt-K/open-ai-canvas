@@ -30,7 +30,7 @@ func newEcommerceProductsTestService(t *testing.T) *Service {
 	return &Service{repo: repository.New(db)}
 }
 
-func seedResource(t *testing.T, svc *Service, userID, name string) string {
+func seedEcommerceResource(t *testing.T, svc *Service, userID, name string) string {
 	t.Helper()
 	resource := &model.Resource{ID: kernel.NewID(), UserID: userID, Kind: "image", Status: "ready"}
 	if err := svc.repo.CreateResource(resource); err != nil {
@@ -46,9 +46,9 @@ func importItem(resourceID, name string) ImportItem {
 
 func TestImportEcommerceProducts_新建与跳过(t *testing.T) {
 	svc := newEcommerceProductsTestService(t)
-	resourceA := seedResource(t, svc, "user-a", "水杯主图.png")
-	resourceB := seedResource(t, svc, "user-a", "蓝牙耳机.png")
-	resourceC := seedResource(t, svc, "user-b", "他人商品图.png")
+	resourceA := seedEcommerceResource(t, svc, "user-a", "水杯主图.png")
+	resourceB := seedEcommerceResource(t, svc, "user-a", "蓝牙耳机.png")
+	resourceC := seedEcommerceResource(t, svc, "user-b", "他人商品图.png")
 
 	// 首次导入两条
 	created, skipped, err := svc.ImportEcommerceProducts("user-a", []ImportItem{importItem(resourceA, "水杯主图.png"), importItem(resourceB, "蓝牙耳机.png")})
@@ -85,8 +85,8 @@ func TestImportEcommerceProducts_新建与跳过(t *testing.T) {
 
 func TestListEcommerceProducts_过滤与聚合(t *testing.T) {
 	svc := newEcommerceProductsTestService(t)
-	resourceA := seedResource(t, svc, "user-a", "商品A.png")
-	resourceB := seedResource(t, svc, "user-a", "商品B.png")
+	resourceA := seedEcommerceResource(t, svc, "user-a", "商品A.png")
+	resourceB := seedEcommerceResource(t, svc, "user-a", "商品B.png")
 	if _, _, err := svc.ImportEcommerceProducts("user-a", []ImportItem{importItem(resourceA, "商品A.png"), importItem(resourceB, "商品B.png")}); err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestListEcommerceProducts_过滤与聚合(t *testing.T) {
 
 func TestEcommerceProductDetail_他人NotFound(t *testing.T) {
 	svc := newEcommerceProductsTestService(t)
-	resourceA := seedResource(t, svc, "user-a", "商品A.png")
+	resourceA := seedEcommerceResource(t, svc, "user-a", "商品A.png")
 	if _, _, err := svc.ImportEcommerceProducts("user-a", []ImportItem{importItem(resourceA, "商品A.png")}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestEcommerceProductDetail_他人NotFound(t *testing.T) {
 
 func TestRenameEcommerceProduct_已开始禁止改名(t *testing.T) {
 	svc := newEcommerceProductsTestService(t)
-	resourceA := seedResource(t, svc, "user-a", "商品A.png")
+	resourceA := seedEcommerceResource(t, svc, "user-a", "商品A.png")
 	if _, _, err := svc.ImportEcommerceProducts("user-a", []ImportItem{importItem(resourceA, "商品A.png")}); err != nil {
 		t.Fatal(err)
 	}
@@ -191,8 +191,8 @@ func TestRenameEcommerceProduct_已开始禁止改名(t *testing.T) {
 
 func TestDeleteEcommerceProducts_在途拒绝(t *testing.T) {
 	svc := newEcommerceProductsTestService(t)
-	resourceA := seedResource(t, svc, "user-a", "商品A.png")
-	resourceB := seedResource(t, svc, "user-a", "商品B.png")
+	resourceA := seedEcommerceResource(t, svc, "user-a", "商品A.png")
+	resourceB := seedEcommerceResource(t, svc, "user-a", "商品B.png")
 	if _, _, err := svc.ImportEcommerceProducts("user-a", []ImportItem{importItem(resourceA, "商品A.png"), importItem(resourceB, "商品B.png")}); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestDeleteEcommerceProducts_在途拒绝(t *testing.T) {
 	if _, ok := refused[productB.ID]; ok {
 		t.Fatal("draft 任务不应被拒绝")
 	}
-	items, total, _ := svc.ListEcommerceProducts("user-a", "", "")
+	_, total, _ := svc.ListEcommerceProducts("user-a", "", "")
 	if total != 1 {
 		t.Fatalf("删除后应剩 1 条: %d", total)
 	}

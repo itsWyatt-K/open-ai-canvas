@@ -32,6 +32,7 @@ const (
 	FeatureSystemPlugins         = platform.FeatureSystemPlugins
 	FeatureInspirationSources    = platform.FeatureInspirationSources
 	FeatureTimelineTranscription = platform.FeatureTimelineTranscription
+	FeatureEcommerce             = platform.FeatureEcommerce
 )
 
 type platformHost struct {

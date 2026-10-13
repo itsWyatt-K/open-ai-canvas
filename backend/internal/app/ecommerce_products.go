@@ -296,11 +296,3 @@ func sanitizeProductName(name string) string {
 	}
 	return cleaned
 }
-
-// resourceFileURL 原图缩略图 URL（与前端资源文件路由一致）。
-func resourceFileURL(resourceID string) string {
-	if resourceID == "" {
-		return ""
-	}
-	return "/api/resources/" + resourceID + "/file"
-}

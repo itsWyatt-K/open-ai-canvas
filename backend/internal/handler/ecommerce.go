@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"yingce/backend/internal/ecommerce"
@@ -38,7 +39,7 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 		}
 		var cfg ecommerce.ConfigView
 		if err := c.ShouldBindJSON(&cfg); err != nil {
-			failService(c, NewAppError(http.StatusBadRequest, "配置格式无效"))
+			fail(c, http.StatusBadRequest, errors.New("配置格式无效"))
 			return
 		}
 		saved, err := svc.SaveEcommerceConfig(user.ID, cfg)
@@ -72,7 +73,7 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			Config ecommerce.ConfigView `json:"config"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			failService(c, NewAppError(http.StatusBadRequest, "预设格式无效"))
+			fail(c, http.StatusBadRequest, errors.New("预设格式无效"))
 			return
 		}
 		preset, err := svc.SaveEcommercePreset(user.ID, body.Name, body.Config)
@@ -109,7 +110,7 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			} `json:"items"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			failService(c, NewAppError(http.StatusBadRequest, "导入参数格式无效"))
+			fail(c, http.StatusBadRequest, errors.New("导入参数格式无效"))
 			return
 		}
 		items := make([]service.ImportItem, 0, len(body.Items))
@@ -159,7 +160,7 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			Name string `json:"name"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			failService(c, NewAppError(http.StatusBadRequest, "参数格式无效"))
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
 			return
 		}
 		if err := svc.RenameEcommerceProduct(user.ID, c.Param("id"), body.Name); err != nil {
@@ -178,7 +179,7 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			IDs []string `json:"ids"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			failService(c, NewAppError(http.StatusBadRequest, "参数格式无效"))
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
 			return
 		}
 		refused, err := svc.DeleteEcommerceProducts(user.ID, body.IDs)
@@ -197,6 +198,6 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		_ = user
-		failService(c, NewAppError(http.StatusNotImplemented, "编排器施工中（M3），暂时无法启动"))
+		fail(c, http.StatusNotImplemented, errors.New("编排器施工中（M3），暂时无法启动"))
 	})
 }
