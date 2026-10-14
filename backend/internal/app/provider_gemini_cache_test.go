@@ -17,7 +17,7 @@ import (
 	"yingce/backend/internal/protocol"
 	"yingce/backend/internal/repository"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

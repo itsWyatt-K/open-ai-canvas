@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"yingce/backend/internal/kernel"

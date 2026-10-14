@@ -15,7 +15,7 @@ import (
 	"yingce/backend/internal/repository"
 
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
