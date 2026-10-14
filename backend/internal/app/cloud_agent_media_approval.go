@@ -11,11 +11,17 @@ import (
 // Only user-editable image options cross the approval boundary. Targets,
 // references, prompt, snapshot and generation mode remain server-authored.
 type CloudAgentMediaSettings struct {
-	LogicalModelID  string `json:"logicalModelId,omitempty"`
-	ChannelID       string `json:"channelId,omitempty"`
-	ChannelModelKey string `json:"channelModelKey,omitempty"`
-	Size            string `json:"size"`
-	Quality         string `json:"quality"`
+	LogicalModelID             string `json:"logicalModelId,omitempty"`
+	ChannelID                  string `json:"channelId,omitempty"`
+	ChannelModelKey            string `json:"channelModelKey,omitempty"`
+	Size                       string `json:"size"`
+	ImageResolution            string `json:"imageResolution,omitempty"`
+	ImageParameters            string `json:"imageParameters,omitempty"`
+	Quality                    string `json:"quality"`
+	DurationSeconds            *int   `json:"durationSeconds,omitempty"`
+	VideoGenerateAudio         *bool  `json:"videoGenerateAudio,omitempty"`
+	VideoWatermark             *bool  `json:"videoWatermark,omitempty"`
+	VideoArkPrivateAssetUpload *bool  `json:"videoArkPrivateAssetUpload,omitempty"`
 }
 
 // updateCloudAgentMediaApproval rebuilds the complete prepared admission for an
@@ -27,17 +33,32 @@ func (s *Service) updateCloudAgentMediaApproval(repo *repository.Repository, run
 	}
 	call := state.Approval.Call
 	if call.Function.Name != "generate_media" {
-		return BadAuthRequest("当前审批不是图片生成，不能修改生成参数")
+		return BadAuthRequest("当前审批不是媒体生成，不能修改生成参数")
 	}
 	var args cloudAgentMediaArgs
 	if err := decodeCloudAgentJSONObject(call.Function.Arguments, &args); err != nil {
 		return err
 	}
-	if args.Mode != "image" {
-		return BadAuthRequest("仅图片生成审批支持修改模型、画幅和质量")
+	if args.Mode != "image" && args.Mode != "video" {
+		return BadAuthRequest("仅图片或视频生成审批支持修改模型和规格")
 	}
 	args.LogicalModelID, args.ChannelID, args.ChannelModelKey = settings.LogicalModelID, settings.ChannelID, settings.ChannelModelKey
-	args.Size, args.Quality = settings.Size, settings.Quality
+	args.Size, args.ImageResolution, args.Quality = settings.Size, settings.ImageResolution, settings.Quality
+	args.ImageParameters = settings.ImageParameters
+	if args.Mode == "video" {
+		if settings.DurationSeconds != nil {
+			if *settings.DurationSeconds < 0 {
+				return BadAuthRequest("视频时长不能为负数")
+			}
+			args.Duration = *settings.DurationSeconds
+		}
+		args.VideoGenerateAudio = settings.VideoGenerateAudio
+		args.VideoWatermark = settings.VideoWatermark
+		args.VideoArkPrivateAssetUpload = settings.VideoArkPrivateAssetUpload
+	}
+	if args.Mode == "image" && (settings.DurationSeconds != nil || settings.VideoGenerateAudio != nil || settings.VideoWatermark != nil || settings.VideoArkPrivateAssetUpload != nil) {
+		return BadAuthRequest("视频参数仅适用于视频生成审批")
+	}
 	raw, err := json.Marshal(args)
 	if err != nil {
 		return err
@@ -57,14 +78,12 @@ func (s *Service) updateCloudAgentMediaApproval(repo *repository.Repository, run
 	if err != nil {
 		return err
 	}
-	var resolved struct {
-		Config map[string]any `json:"config"`
-	}
+	var resolved map[string]any
 	if err := json.Unmarshal([]byte(task.InputJSON), &resolved); err != nil {
 		return err
 	}
 	requested, _ := req.Input["config"].(map[string]any)
-	if err := validateCloudAgentResolvedMediaOptions(requested, resolved.Config); err != nil {
+	if err := validateCloudAgentResolvedMediaOptions(requested, resolved); err != nil {
 		return err
 	}
 	name, err := s.cloudAgentMediaModelName(args)
@@ -110,9 +129,36 @@ func replaceCloudAgentPreparedLeases(repo *repository.Repository, userID, runID,
 	return repo.ReplaceCloudAgentResourceLeases(userID, runID, approvalID, ids, prepared.Quote.ExpiresAt)
 }
 
-func validateCloudAgentResolvedMediaOptions(requested, resolved map[string]any) error {
-	for _, key := range []string{"size", "videoSeconds", "vquality", "quality", "count", "videoGenerateAudio"} {
-		if value := stringValue(requested[key]); value != "" && !strings.EqualFold(value, stringValue(resolved[key])) {
+func validateCloudAgentResolvedMediaOptions(requested, resolvedInput map[string]any) error {
+	resolvedOptions, _ := resolvedInput["capabilityOptions"].(map[string]any)
+	resolvedConfig, _ := resolvedInput["config"].(map[string]any)
+	if raw := requested["imageParameters"]; raw != nil {
+		var values map[string]any
+		if encoded, ok := raw.(string); ok {
+			if err := json.Unmarshal([]byte(encoded), &values); err != nil {
+				return creationConflict("图片参数格式无效")
+			}
+		} else {
+			values, _ = raw.(map[string]any)
+		}
+		for name, value := range values {
+			if resolvedOptions[name] != value {
+				return creationConflict("模型解析后的图片参数与审批内容不同")
+			}
+		}
+	}
+	for _, key := range []string{"size", "imageResolution", "videoSeconds", "vquality", "quality", "count", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload"} {
+		requestedValue := stringValue(requested[key])
+		if key == "quality" && requestedValue != "" {
+			if _, declared := resolvedOptions[key]; !declared && !strings.EqualFold(requestedValue, stringValue(resolvedOptions["imageResolution"])) {
+				return creationConflict("所选图片模型未声明质量参数，请使用模型声明的图片分辨率或质量选项")
+			}
+		}
+		resolved := stringValue(resolvedOptions[key])
+		if resolved == "" {
+			resolved = stringValue(resolvedConfig[key])
+		}
+		if requestedValue != "" && !strings.EqualFold(requestedValue, resolved) {
 			return creationConflict("模型解析后的生成规格与审批参数不同，请重新读取目录并审批")
 		}
 	}

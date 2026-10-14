@@ -25,6 +25,8 @@ const (
 	FeatureInspirationSources    = "inspirationSourcesVisible"
 	FeatureTimelineTranscription = "timelineTranscription"
 	FeatureEcommerce             = "ecommerce"
+	FeatureImageWorkbench        = "imageWorkbench"
+	FeatureVideoWorkbench        = "videoWorkbench"
 )
 
 type FeatureAvailability struct {
@@ -39,6 +41,8 @@ type FeatureAvailability struct {
 	InspirationSourcesVisible    bool `json:"inspirationSourcesVisible"`
 	TimelineTranscriptionEnabled bool `json:"timelineTranscriptionEnabled"`
 	EcommerceEnabled             bool `json:"ecommerceEnabled"`
+	ImageWorkbenchEnabled        bool `json:"imageWorkbenchEnabled"`
+	VideoWorkbenchEnabled        bool `json:"videoWorkbenchEnabled"`
 }
 
 type PublicFeatureAvailability struct {
@@ -62,6 +66,8 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		InspirationSourcesVisible:    true,
 		TimelineTranscriptionEnabled: true,
 		EcommerceEnabled:             false,
+		ImageWorkbenchEnabled:        false,
+		VideoWorkbenchEnabled:        false,
 	}
 }
 
@@ -131,6 +137,10 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 		return value.TimelineTranscriptionEnabled, nil
 	case FeatureEcommerce:
 		return value.EcommerceEnabled, nil
+	case FeatureImageWorkbench:
+		return value.ImageWorkbenchEnabled, nil
+	case FeatureVideoWorkbench:
+		return value.VideoWorkbenchEnabled, nil
 	default:
 		return false, errors.New("未知功能开放配置")
 	}
@@ -165,6 +175,10 @@ func (s *Service) RequireFeature(feature string) error {
 		return kernel.Forbidden("字幕转写暂未开放")
 	case FeatureEcommerce:
 		return kernel.Forbidden("电商工坊暂未开放")
+	case FeatureImageWorkbench:
+		return kernel.Forbidden("生图暂未开放")
+	case FeatureVideoWorkbench:
+		return kernel.Forbidden("视频暂未开放")
 	default:
 		return kernel.Forbidden("该功能暂未开放")
 	}

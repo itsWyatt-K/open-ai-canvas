@@ -33,6 +33,8 @@ const (
 	FeatureInspirationSources    = platform.FeatureInspirationSources
 	FeatureTimelineTranscription = platform.FeatureTimelineTranscription
 	FeatureEcommerce             = platform.FeatureEcommerce
+	FeatureImageWorkbench        = platform.FeatureImageWorkbench
+	FeatureVideoWorkbench        = platform.FeatureVideoWorkbench
 )
 
 type platformHost struct {

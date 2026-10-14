@@ -50,7 +50,6 @@ export function isBuiltinCanvasNodeType(type: CanvasNodeTypeId): type is CanvasN
 }
 
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
-export type CanvasMediaPerformanceMode = "auto" | "quality" | "performance";
 export type CanvasWorkspaceMode = "simple" | "professional";
 export type CanvasToolMode = "move" | "box-select";
 export type CanvasFolderStyle = "glass" | "stacked" | "midnight" | "paper" | "cinema" | "compact";
@@ -289,6 +288,8 @@ export type CanvasNodeMetadata = {
     workflowParameters?: Record<string, unknown>;
     size?: string;
     quality?: string;
+    imageResolution?: string;
+    imageParameters?: string;
     transparentBackground?: string;
     count?: number;
     textCount?: number;

@@ -14,6 +14,7 @@ import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { ModelLogo } from "@/components/model-logo";
 import { ModelTags } from "@/components/model-tags";
+import { videoReferenceCapabilityTag } from "@/lib/model-tags";
 import { quoteModel, type LogicalModelQuote, type PublicChannelModelAvailability } from "@/services/api/logical-models";
 
 type ModelPickerProps = {
@@ -137,7 +138,7 @@ export function ModelPicker({
         window.requestAnimationFrame(() => {
             const buttons = menuRef.current?.querySelectorAll<HTMLButtonElement>('[data-model-picker-item]:not(:disabled)');
             const target = last ? buttons?.item((buttons?.length || 1) - 1) : buttons?.item(0);
-            target?.focus();
+            focusPickerOption(target);
         });
     };
     const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -150,7 +151,7 @@ export function ModelPicker({
         if (event.key === "Escape") {
             event.preventDefault();
             setOpen(false);
-            triggerRef.current?.focus();
+            triggerRef.current?.focus({ preventScroll: true });
             return;
         }
         if (event.key === "ArrowLeft" && activeGroupKey !== null) {
@@ -165,7 +166,7 @@ export function ModelPicker({
         event.preventDefault();
         const activeIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
         const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : event.key === "ArrowUp" ? Math.max(0, activeIndex - 1) : Math.min(buttons.length - 1, activeIndex + 1);
-        buttons[nextIndex]?.focus();
+        focusPickerOption(buttons[nextIndex]);
     };
     const content = (
         <div
@@ -264,6 +265,7 @@ export function ModelPicker({
                 placement="bottomLeft"
                 align={{ overflow: { adjustY: true, shiftX: true } }}
                 arrow={false}
+                motion={{ motionName: "" }}
                 content={content}
                 classNames={{
                     root: cn("canvas-model-picker-popover", "creation-model-picker-popover", popoverClassName),
@@ -293,6 +295,19 @@ export function ModelPicker({
             </Popover>
         </div>
     );
+}
+
+function focusPickerOption(target: HTMLButtonElement | null | undefined) {
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    // Only reveal the focused row inside its pane; scrolling portal ancestors moves the page.
+    const pane = target.closest<HTMLElement>(".canvas-model-picker-model-pane, .canvas-model-picker-menu");
+    if (!pane) return;
+    const row = target.getBoundingClientRect();
+    const top = pane.getBoundingClientRect().top + pane.clientTop;
+    const bottom = top + pane.clientHeight;
+    const delta = row.top < top ? row.top - top : row.bottom > bottom ? row.bottom - bottom : 0;
+    if (delta) pane.scrollTop += delta;
 }
 
 function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
@@ -331,6 +346,8 @@ export function ModelLabel({
     const logicalCost = channel.modelCosts?.find((item) => item.model === modelOptionName(model));
     const logicalSpec = logicalCost?.logicalCapabilitySpec;
     const videoProfile = capability === "video" ? modelCapabilityConfigFor(config, model).video : undefined;
+    const capabilityTag = videoReferenceCapabilityTag(videoProfile?.references);
+    const modelTags = capabilityTag ? [capabilityTag, ...(logicalCost?.tags || [])] : logicalCost?.tags;
     const capabilitySummary =
         disabledReason ||
         logicalCost?.description?.trim() ||
@@ -354,7 +371,7 @@ export function ModelLabel({
                 <span className={cn("canvas-model-picker-description mt-1 block", showDescription && "is-visible")} style={{ color: theme.node.muted }}>
                     {capabilitySummary}
                 </span>
-                <ModelTags tags={logicalCost?.tags} />
+                <ModelTags tags={modelTags} />
             </span>
             {!creationVariant && meta.time ? (
                 <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[var(--fs-tiny)] tabular-nums" style={{ background: theme.toolbar.itemHover, color: theme.node.muted }}>

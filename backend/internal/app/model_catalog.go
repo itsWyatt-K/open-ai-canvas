@@ -169,10 +169,12 @@ func (s *Service) publicSystemChannelCatalog(intent *ModelRequestIntent) ([]Publ
 		}
 
 		if len(publicModels) > 0 {
+			// 系统渠道的真实名称属于内部部署信息（供应商、中转站、内部命名等），
+			// 不得通过普通用户可访问的创作目录泄漏。前端只依赖 ID 做分组，名称留空后由客户端统一展示为“系统模型”。
 			result = append(result, PublicChannelCatalog{
 				ID:          channel.ID,
-				Name:        channel.Name,
-				DisplayName: channel.Name,
+				Name:        "",
+				DisplayName: "",
 				SortOrder:   channel.SortOrder,
 				Models:      publicModels,
 			})
@@ -188,6 +190,10 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 	if cm == nil {
 		return PublicChannelModel{}, fmt.Errorf("渠道模型为空")
 	}
+	normalized, err := normalizedChannelModelCapability(cm, s.protocolRegistry())
+	if err != nil {
+		return PublicChannelModel{}, err
+	}
 	// 仓储层已预加载价格档；这里只发布当前启用且价格字段自洽的活动档位。
 	priceTiers := cm.PriceTiers
 
@@ -195,6 +201,11 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 	for _, tier := range priceTiers {
 		if !tier.Enabled || !tier.PriceConfigured || !ValidatePriceTierPrice(&tier, cm.Capability, cm.Protocol) {
 			continue
+		}
+		if normalized != nil && normalized.Image != nil && normalized.Image.Parameters != nil {
+			if validateImageParameterPriceSelector(normalized.Image.Parameters, model.DecodeSKUSelector(tier.SelectorJSON)) != nil {
+				continue
+			}
 		}
 		publicTiers = append(publicTiers, PublicChannelModelPriceTier{
 			ID:                           tier.ID,
@@ -213,10 +224,6 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 	pricingMode, displayPrice, priceLabel := computeChannelModelPriceDisplay(cm, publicTiers)
 
 	var capabilityConfig map[string]any
-	normalized, err := normalizedChannelModelCapability(cm)
-	if err != nil {
-		return PublicChannelModel{}, err
-	}
 	if normalized != nil {
 		capabilityConfig, err = modelCapabilityConfigToMap(normalized)
 		if err != nil {
@@ -229,7 +236,7 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 		if specErr != nil {
 			return PublicChannelModel{}, fmt.Errorf("投影渠道模型默认参数失败：%w", specErr)
 		}
-		defaultOptions, err = channelModelDefaultOptions(*cm, spec)
+		defaultOptions, err = channelModelDefaultOptions(*cm, spec, s.protocolRegistry())
 		if err != nil {
 			return PublicChannelModel{}, err
 		}
@@ -301,7 +308,7 @@ func (s *Service) channelModelMatchesIntent(cm *model.ChannelModel, intent *Mode
 	if normalizeCapability(cm.Capability) == "audio" {
 		return true, nil
 	}
-	config, err := normalizedChannelModelCapability(cm)
+	config, err := normalizedChannelModelCapability(cm, s.protocolRegistry())
 	if err != nil {
 		return false, err
 	}

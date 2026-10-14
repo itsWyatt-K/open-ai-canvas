@@ -8,7 +8,13 @@ export type AgentMediaSettings = {
     channelId?: string;
     channelModelKey?: string;
     size: string;
+    imageResolution?: string;
+    imageParameters?: string;
     quality: string;
+    durationSeconds?: number;
+    videoGenerateAudio?: boolean;
+    videoWatermark?: boolean;
+    videoArkPrivateAssetUpload?: boolean;
 };
 export type AgentProfileScope = "user" | "project" | "canvas";
 

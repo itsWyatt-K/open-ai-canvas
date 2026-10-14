@@ -157,6 +157,8 @@ export type AiConfig = {
     textModels: string[];
     audioModels: string[];
     quality: string;
+    imageResolution: string;
+    imageParameters?: string;
     size: string;
     transparentBackground: string;
     count: string;
@@ -211,6 +213,7 @@ export const defaultConfig: AiConfig = {
     textModels: [],
     audioModels: [],
     quality: "auto",
+    imageResolution: "auto",
     size: "1:1",
     transparentBackground: "false",
     count: "1",
@@ -362,7 +365,7 @@ export const useConfigStore = create<ConfigStore>()(
                         createModelChannel({
                             ...channel,
                             id: channel.id || `system-${index + 1}`,
-                            name: channel.name || `系统渠道 ${index + 1}`,
+                            name: "系统模型",
                             scope: "system",
                             apiKey: channel.apiKey || "system",
                         }),

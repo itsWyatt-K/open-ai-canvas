@@ -5,8 +5,6 @@ import {
     ArrowLeft,
     BarChart3,
     BellRing,
-    ChevronLeft,
-    ChevronRight,
     ChevronDown,
     CloudUpload,
     Coins,
@@ -24,6 +22,8 @@ import {
     Moon,
     Palette,
     Paintbrush,
+    PanelLeftClose,
+    PanelLeftOpen,
     PlugZap,
     RadioTower,
     RefreshCw,
@@ -35,6 +35,7 @@ import {
     Sun,
     TicketCheck,
     ToggleLeft,
+    WandSparkles,
     UsersRound,
 } from "lucide-react";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
@@ -77,6 +78,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
             { path: "/admin/channels", label: "系统渠道", description: "渠道、模型与售价", icon: <RadioTower className="size-4" /> },
             { path: "/admin/models", label: "前台模型", description: "展示、线路与用户价格", icon: <Layers3 className="size-4" />, requireFeature: "frontendModelsEnabled" },
             { path: "/admin/prompt-templates", label: "提示词模板", description: "平台创作策略版本", icon: <MessageSquareText className="size-4" /> },
+            { path: "/admin/workbench-tools", label: "工作台工具", description: "生图/视频工具与预设", icon: <WandSparkles className="size-4" /> },
             { path: "/admin/resources", label: "存储资源", description: "资源列表、容量与预览", icon: <Database className="size-4" /> },
         ],
     },
@@ -84,6 +86,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
         label: "用户与运营",
         items: [
             { path: "/admin/users", label: "用户管理", description: "账号、角色与状态", icon: <UsersRound className="size-4" /> },
+            { path: "/admin/login-logs", label: "用户登录日志", description: "登录、失败与主动退出", icon: <FileClock className="size-4" /> },
             { path: "/admin/announcements", label: "系统公告", description: "发布、关闭与历史公告", icon: <BellRing className="size-4" /> },
             { path: "/admin/banner-announcements", label: "常驻通知", description: "首页顶部常驻滚动通知", icon: <Megaphone className="size-4" /> },
             { path: "/admin/agent-lessons", label: "Agent 记忆", description: "按用户查看个人记忆", icon: <Sparkles className="size-4" /> },
@@ -172,20 +175,27 @@ function AdminShellLayout() {
                             </AdminTooltip>
                         </div>
                         <AdminNavigation collapsed={collapsed} />
-                        <div className="admin-sidebar-footer shrink-0">
-                            <AdminTooltip title={collapsed ? "返回创作台" : undefined} placement="right">
-                                <NavLink to="/" aria-label={collapsed ? "返回创作台" : undefined} className={cn("admin-nav-link", collapsed && "is-collapsed")}>
-                                    <Home className="size-4" strokeWidth={1.6} />
-                                    {!collapsed ? <span>返回创作台</span> : null}
-                                </NavLink>
-                            </AdminTooltip>
+                        <div className={cn("admin-sidebar-footer shrink-0", collapsed && "is-collapsed")}>
+                            <div className="admin-sidebar-footer-row">
+                                <AdminTooltip title={collapsed ? "返回创作台" : undefined} placement="right">
+                                    <NavLink to="/" aria-label={collapsed ? "返回创作台" : undefined} className={cn("admin-nav-link", collapsed && "is-collapsed")}>
+                                        <Home className="size-4" strokeWidth={1.6} />
+                                        {!collapsed ? <span>返回创作台</span> : null}
+                                    </NavLink>
+                                </AdminTooltip>
+                                {!collapsed ? (
+                                    <button type="button" className="admin-sidebar-collapse-toggle" onClick={toggleCollapsed} aria-label="收起侧栏" title="收起侧栏" aria-expanded={!collapsed}>
+                                        <PanelLeftClose className="size-4" strokeWidth={1.7} />
+                                    </button>
+                                ) : null}
+                            </div>
+                            {collapsed ? (
+                                <button type="button" className="admin-sidebar-collapse-toggle is-collapsed" onClick={toggleCollapsed} aria-label="展开侧栏" title="展开侧栏">
+                                    <PanelLeftOpen className="size-4" strokeWidth={1.7} />
+                                </button>
+                            ) : null}
                         </div>
                     </aside>
-                    <AdminTooltip title={collapsed ? "展开侧栏" : "收起侧栏"} placement="right">
-                        <button type="button" className={cn("admin-sidebar-edge-toggle hidden lg:grid", collapsed && "is-collapsed")} onClick={toggleCollapsed} aria-label={collapsed ? "展开侧栏" : "收起侧栏"} aria-expanded={!collapsed}>
-                            {collapsed ? <ChevronRight className="size-3.5" aria-hidden="true" /> : <ChevronLeft className="size-3.5" aria-hidden="true" />}
-                        </button>
-                    </AdminTooltip>
                     <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
                         <MobileAdminNavigation />
                         <Suspense

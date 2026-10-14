@@ -39,6 +39,7 @@ const (
 	FeatureCredits                     = app.FeatureCredits
 	FeatureCustomChannels              = app.FeatureCustomChannels
 	FeatureFrontendModels              = app.FeatureFrontendModels
+	FeatureImageWorkbench              = app.FeatureImageWorkbench
 	FeaturePluginCenter                = app.FeaturePluginCenter
 	FeatureShortDrama                  = app.FeatureShortDrama
 	FeatureSystemPlugins               = app.FeatureSystemPlugins
@@ -46,6 +47,7 @@ const (
 	FeatureTaskCenter                  = app.FeatureTaskCenter
 	FeatureEcommerce                   = app.FeatureEcommerce
 	FeatureTimelineTranscription       = app.FeatureTimelineTranscription
+	FeatureVideoWorkbench              = app.FeatureVideoWorkbench
 	ModelCatalogSourceSystem           = app.ModelCatalogSourceSystem
 	PaymentPluginAlipayPage            = app.PaymentPluginAlipayPage
 	PaymentPluginWeChatNative          = app.PaymentPluginWeChatNative
