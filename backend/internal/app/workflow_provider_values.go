@@ -894,6 +894,101 @@ func runningHubPromptFallback(workflow map[string]interface{}, prompt string) []
 	return nil
 }
 
+// runningHubNegativePromptFallback 在 ComfyUI/RunningHub 工作流里定位负向词节点
+// （CLIPTextEncode 且字段名/_meta 标题含 negative/负面等标记），把 negativePrompt
+// 注入进去。与正回退互为镜像：负向标记加分、正向标记减分。
+//
+// 硬门槛：候选必须带真实负向标记才纳入，否则宁可不注入——避免把负向词写进
+// 正向 CLIPTextEncode 节点（那会污染正向描述，比不注入更糟）。
+func runningHubNegativePromptFallback(workflow map[string]interface{}, negative string) []map[string]any {
+	if strings.TrimSpace(negative) == "" || len(workflow) == 0 {
+		return nil
+	}
+	bestNodeID := ""
+	bestFieldName := ""
+	bestScore := -1000
+	nodeIDs := make([]string, 0, len(workflow))
+	for nodeID := range workflow {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	sort.Slice(nodeIDs, func(i, j int) bool { return managementNodeIDLess(nodeIDs[i], nodeIDs[j]) })
+	for _, nodeID := range nodeIDs {
+		node, ok := workflow[nodeID].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		inputs, ok := node["inputs"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		fieldNames := make([]string, 0, len(inputs))
+		for fieldName := range inputs {
+			fieldNames = append(fieldNames, fieldName)
+		}
+		sort.Strings(fieldNames)
+		classType := strings.ToLower(strings.TrimSpace(fmt.Sprint(node["class_type"])))
+		metaTitle := strings.ToLower(strings.TrimSpace(fmt.Sprint(workflowNodeMetaTitle(node))))
+		for _, fieldName := range fieldNames {
+			if !hasWorkflowNegativeMarker(fieldName, metaTitle) {
+				continue
+			}
+			if !isWorkflowPromptCandidate(fieldName, classType, metaTitle) {
+				continue
+			}
+			if isWorkflowLinkValue(inputs[fieldName]) {
+				continue
+			}
+			score := workflowNegativeCandidateScore(fieldName, classType, metaTitle)
+			if bestNodeID == "" || score > bestScore {
+				bestNodeID = nodeID
+				bestFieldName = fieldName
+				bestScore = score
+			}
+		}
+	}
+	if bestNodeID != "" {
+		return []map[string]any{{"nodeId": bestNodeID, "fieldName": bestFieldName, "fieldValue": negative}}
+	}
+	return nil
+}
+
+// workflowNegativeMarkers 是负向词节点/字段的识别标记（英文 + 中文），
+// 供正/负向打分与候选门槛共用，避免三处各维护一份而漂移。
+var workflowNegativeMarkers = []string{"negative", "neg prompt", "negprompt", "负面", "反向", "负向", "排除"}
+
+// hasWorkflowNegativeMarker 判断字段名/节点标题是否带负向词语义标记。
+func hasWorkflowNegativeMarker(fieldName string, metaTitle string) bool {
+	descriptor := strings.ToLower(strings.TrimSpace(fieldName + " " + metaTitle))
+	for _, marker := range workflowNegativeMarkers {
+		if strings.Contains(descriptor, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// workflowNegativeCandidateScore 是 workflowPromptCandidateScore 的负向镜像。
+func workflowNegativeCandidateScore(fieldName string, classType string, metaTitle string) int {
+	descriptor := strings.ToLower(strings.TrimSpace(fieldName + " " + metaTitle))
+	score := 0
+	if hasWorkflowNegativeMarker(fieldName, metaTitle) {
+		score += 100
+	}
+	for _, marker := range []string{"positive", "正面", "正向"} {
+		if strings.Contains(descriptor, marker) {
+			score -= 100
+			break
+		}
+	}
+	if strings.Contains(classType, "cliptextencode") {
+		score += 5
+	}
+	if isWorkflowPromptFieldName(fieldName) {
+		score += 2
+	}
+	return score
+}
+
 func isWorkflowMediaSource(source string) bool {
 	normalized := strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(strings.TrimSpace(source)), "_", ""), "-", "")
 	switch normalized {
@@ -969,6 +1064,30 @@ func workflowFieldsBindPrompt(fields []WorkflowField) bool {
 		source := strings.ReplaceAll(strings.ReplaceAll(normalizeWorkflowFieldSource(field), "_", ""), "-", "")
 		switch source {
 		case "prompt", "text", "positiveprompt", "positive":
+			return true
+		}
+	}
+	return false
+}
+
+// workflowFieldsBindNegativePrompt 判断用户是否已显式绑定过负向词字段
+// （source=negativeprompt/negative/negprompt，BindNegativePrompt 标记，
+// 或字段名/标签本身带负向语义）。已绑定时不做负向节点回退注入，
+// 避免覆盖管理员配置。
+func workflowFieldsBindNegativePrompt(fields []WorkflowField) bool {
+	for _, field := range fields {
+		if field.Enabled != nil && !*field.Enabled || strings.TrimSpace(field.NodeID) == "" || strings.TrimSpace(field.FieldName) == "" {
+			continue
+		}
+		if field.BindNegativePrompt {
+			return true
+		}
+		source := strings.ReplaceAll(strings.ReplaceAll(normalizeWorkflowFieldSource(field), "_", ""), "-", "")
+		switch source {
+		case "negativeprompt", "negative", "negprompt", "neg":
+			return true
+		}
+		if hasWorkflowNegativeMarker(field.FieldName, field.Label) {
 			return true
 		}
 	}

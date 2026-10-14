@@ -2,7 +2,7 @@ import { Download, FileImage, Layers3, Loader2, Play, RefreshCw } from "lucide-r
 import { Button, Empty, Input, Select, Slider, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { batchStyleForge, exportLayeredPsd, synthesizeStyleForge, type StyleForgePrompt, type StyleForgeScene } from "@/services/api/visual-dna";
+import { batchStyleForge, buildEcommercePsdLayers, exportLayeredPsd, renderCopyLayer, synthesizeStyleForge, type StyleForgePrompt, type StyleForgeScene } from "@/services/api/visual-dna";
 import { createGenerationTask, waitForGenerationTask } from "@/services/api/task-center";
 import { uploadImage } from "@/services/image-storage";
 import { useBrandKitStore } from "@/stores/canvas/use-brand-kit-store";
@@ -219,7 +219,7 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
                                     {item.imageUrl ? (
                                         <div className="flex gap-1">
                                             <Button size="small" type="text" title="下载" icon={<Download className="size-3.5" />} onClick={() => downloadDataUrl(item.imageUrl!, item.variant)} />
-                                            <Button size="small" type="text" title="导出分层PSD" icon={<Layers3 className="size-3.5" />} onClick={() => void exportPsd(item.imageUrl!, item.variant)} />
+                                            <Button size="small" type="text" title="导出分层PSD" icon={<Layers3 className="size-3.5" />} onClick={() => void exportPsd(item.imageUrl!, item.variant, queue.indexOf(item) + 1, textOverlay.split("\n").map((line) => line.trim()).filter(Boolean))} />
                                             <Button size="small" type="text" title="存入资产库" icon={<FileImage className="size-3.5" />} onClick={() => void saveToAssets(item.imageUrl!, item.variant)} />
                                             <Button size="small" type="text" title="送画布精修" disabled={!canvasId} onClick={() => void sendToCanvas(item.imageUrl!, item.variant, canvasId)} />
                                         </div>
@@ -245,41 +245,66 @@ function downloadDataUrl(url: string, name: string) {
     anchor.click();
 }
 
-async function exportPsd(imageUrl: string, name: string) {
+async function exportPsd(imageUrl: string, name: string, slotIndex = 1, copyLines: string[] = [], subjectUrl?: string) {
     try {
         message.loading({ content: "正在合成 layered PSD…", key: "psd" });
-        const response = await fetch(imageUrl);
-        const blob = await response.blob();
-        const dataUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.readAsDataURL(blob);
-        });
-        const size = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-            const image = new Image();
-            image.onload = () => resolve({ width: image.width, height: image.height });
-            image.onerror = () => reject(new Error("图片解码失败"));
-            image.src = dataUrl;
-        });
-        const psd = await exportLayeredPsd(
-            [
-                { name: "背景", dataUrl: await solidLayer(size.width, size.height, "#ffffff") },
-                { name: name.slice(0, 30) || "成图", dataUrl },
-            ],
-            size.width,
-            size.height,
-            `ecom-${name}`,
-        );
+        const dataUrl = await fetchAsDataUrl(imageUrl);
+        const size = await readDataUrlSize(dataUrl);
+        const background = await solidLayer(size.width, size.height, "#ffffff");
+        let layers;
+        if (subjectUrl) {
+            // 有商品透明抠图层 → 美工级三层：背景环境 → 商品主体 → 文案标题。
+            const subject = await fetchAsDataUrl(subjectUrl);
+            const copy = await renderCopyLayer(copyLines, size.width, size.height);
+            layers = buildEcommercePsdLayers({
+                slotIndex,
+                slotLabel: name,
+                backgroundDataUrl: background,
+                subjectDataUrl: subject,
+                copyDataUrl: copy ?? undefined,
+            });
+        } else {
+            // 无抠图层 → 回退两层（背景 + 成图）；成图已含烧入文案，不再叠加文案层以免双影。
+            layers = buildEcommercePsdLayers({
+                slotIndex,
+                slotLabel: name,
+                backgroundDataUrl: background,
+                compositeDataUrl: dataUrl,
+            });
+        }
+        if (!layers.length) throw new Error("没有可导出的图层");
+        const psd = await exportLayeredPsd(layers, size.width, size.height, `ecom-${name}`);
         const url = URL.createObjectURL(psd);
         const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = `ecom-${name}.psd`;
         anchor.click();
         URL.revokeObjectURL(url);
-        message.success({ content: "分层 PSD 已导出", key: "psd" });
+        message.success({ content: `分层 PSD 已导出（${layers.length} 层）`, key: "psd" });
     } catch (error) {
         message.error({ content: error instanceof Error ? error.message : "PSD 导出失败", key: "psd" });
     }
+}
+
+async function fetchAsDataUrl(url: string): Promise<string> {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`图片读取失败（${response.status}）`);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("图片读取失败"));
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function readDataUrlSize(dataUrl: string): Promise<{ width: number; height: number }> {
+    return await new Promise<{ width: number; height: number }>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve({ width: image.width, height: image.height });
+        image.onerror = () => reject(new Error("图片解码失败"));
+        image.src = dataUrl;
+    });
 }
 
 async function solidLayer(width: number, height: number, color: string): Promise<string> {

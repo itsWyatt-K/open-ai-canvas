@@ -154,6 +154,10 @@ func (s *Service) runRunningHubWorkflow(ctx context.Context, input canvasGenerat
 	if !workflowFieldsBindPrompt(workflowFields) {
 		nodeInfo = upsertRunningHubNodeInfo(nodeInfo, runningHubPromptFallback(mappingWorkflow, input.Prompt))
 	}
+	// 负向词回退：与正回退同构，只在没有显式负向字段绑定时注入负向 CLIPTextEncode 节点。
+	if !workflowFieldsBindNegativePrompt(workflowFields) {
+		nodeInfo = upsertRunningHubNodeInfo(nodeInfo, runningHubNegativePromptFallback(mappingWorkflow, input.NegativePrompt))
+	}
 	body := map[string]any{"apiKey": apiKey}
 	endpoint := root + "/task/openapi/create"
 	if webappID != "" {

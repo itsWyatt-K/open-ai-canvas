@@ -103,6 +103,9 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 		options["response_format"] = grokImageResponseFormat(input.ImageCapability)
 		request.ProviderOptions[input.Config.InterfaceType] = options
 	}
+	// 负向词走声明式插件的原生映射（providerOptions 扩展键 + Extra 双路），
+	// 必须在 Grok 的 response_format 覆写之后执行，避免覆盖已注入的键。
+	applyProtocolNegativePrompt(&request, input.Config.InterfaceType, input.NegativePrompt)
 	return request
 }
 
@@ -180,10 +183,23 @@ func protocolMediaReferences(values []providerMedia, kind string) []protocol.Med
 }
 
 func protocolMediaReference(value providerMedia, kind string, order int) protocol.MediaReference {
+	metadata := map[string]any{"bytes": value.Bytes, "width": value.Width, "height": value.Height, "durationMs": value.DurationMs, "storageKey": strings.TrimSpace(value.StorageKey)}
+	// 参考图强控参数随 MediaReference.Metadata 下发，声明式插件可经
+	// media.metadata.strength / media.metadata.controlMode 读取，
+	// 用于 IP-Adapter 权重与 ControlNet 预处理模式映射。
+	if value.Strength > 0 {
+		metadata["strength"] = value.Strength
+	}
+	if mode := strings.ToLower(strings.TrimSpace(value.ControlMode)); mode != "" {
+		metadata["controlMode"] = mode
+	}
+	if maskKey := strings.TrimSpace(value.MaskStorageKey); maskKey != "" {
+		metadata["maskStorageKey"] = maskKey
+	}
 	return protocol.MediaReference{
 		ID: strings.TrimSpace(value.ID), URL: strings.TrimSpace(value.URL), DataURL: strings.TrimSpace(value.DataURL),
 		Kind: kind, MIMEType: firstNonEmpty(strings.TrimSpace(value.MimeType), strings.TrimSpace(value.Type)), Name: strings.TrimSpace(value.Name), Order: order,
-		Metadata: map[string]any{"bytes": value.Bytes, "width": value.Width, "height": value.Height, "durationMs": value.DurationMs, "storageKey": strings.TrimSpace(value.StorageKey)},
+		Metadata: metadata,
 	}
 }
 

@@ -127,7 +127,81 @@ export async function batchStyleForge(input: {
     return { prompts: result.prompts, anchorCard: result.anchor_card || "", groups: result.groups || [] };
 }
 
-export async function exportLayeredPsd(layers: Array<{ name: string; dataUrl: string }>, width: number, height: number, filename: string): Promise<Blob> {
+/** 分层 PSD 的单个图层。字段名与引擎契约一致（snake_case `data_url`）。 */
+export type PsdLayerInput = {
+    name: string;
+    data_url: string;
+    /** 图层不透明度 0-255，默认 255。 */
+    opacity?: number;
+};
+
+/** 电商详情页分层 PSD 的标准图层名：`01_情绪首屏_商品主体`（保留中文语义）。 */
+export function psdLayerName(slotIndex: number, slotLabel: string, role: "背景" | "商品主体" | "文案" | "成图"): string {
+    const order = String(Math.max(1, slotIndex)).padStart(2, "0");
+    const label = slotLabel.trim().slice(0, 20) || "未命名";
+    return `${order}_${label}_${role}`;
+}
+
+/**
+ * 组装电商详情页分层 PSD（自底向上：背景环境 → 商品透明主体 → 文案标题）。
+ * 空层自动跳过；无任何有效层时返回空数组，由调用方决定是否回退为整图单层导出。
+ */
+export function buildEcommercePsdLayers(input: {
+    slotIndex?: number;
+    slotLabel?: string;
+    backgroundDataUrl?: string;
+    subjectDataUrl?: string;
+    copyDataUrl?: string;
+    compositeDataUrl?: string;
+}): PsdLayerInput[] {
+    const index = input.slotIndex ?? 1;
+    const label = input.slotLabel ?? "详情页";
+    const layers: PsdLayerInput[] = [];
+    if (input.backgroundDataUrl) layers.push({ name: psdLayerName(index, label, "背景"), data_url: input.backgroundDataUrl });
+    if (input.subjectDataUrl) layers.push({ name: psdLayerName(index, label, "商品主体"), data_url: input.subjectDataUrl });
+    if (input.copyDataUrl) layers.push({ name: psdLayerName(index, label, "文案"), data_url: input.copyDataUrl });
+    // 只有整图时才作为「成图」层收底；有拆层时不叠加整图，避免商品/文案双影。
+    if (!layers.length && input.compositeDataUrl) {
+        layers.push({ name: psdLayerName(index, label, "成图"), data_url: input.compositeDataUrl });
+    }
+    return layers;
+}
+
+/**
+ * 把文案行渲染成透明文案层（PNG data URL），供美工在 PS 里单独改字。
+ * 返回 null 表示无有效文案。字体/描边可按需覆盖。
+ */
+export async function renderCopyLayer(
+    lines: string[],
+    width: number,
+    height: number,
+    options?: { fontSize?: number; color?: string; bottomRatio?: number; align?: CanvasTextAlign },
+): Promise<string | null> {
+    const text = lines.map((line) => line.trim()).filter(Boolean);
+    if (!text.length || width <= 0 || height <= 0) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    const fontSize = options?.fontSize ?? Math.max(18, Math.round(width * 0.045));
+    const lineHeight = Math.round(fontSize * 1.45);
+    context.font = `600 ${fontSize}px "PingFang SC", "Microsoft YaHei", sans-serif`;
+    context.fillStyle = options?.color ?? "#ffffff";
+    context.textAlign = options?.align ?? "center";
+    context.textBaseline = "bottom";
+    context.shadowColor = "rgba(0,0,0,0.35)";
+    context.shadowBlur = Math.round(fontSize * 0.3);
+    const x = context.textAlign === "left" ? Math.round(width * 0.08) : context.textAlign === "right" ? Math.round(width * 0.92) : Math.round(width / 2);
+    const bottom = Math.round(height * (options?.bottomRatio ?? 0.92));
+    text.forEach((line, indexFromEnd) => {
+        const y = bottom - indexFromEnd * lineHeight;
+        context.fillText(line, x, y);
+    });
+    return canvas.toDataURL("image/png");
+}
+
+export async function exportLayeredPsd(layers: PsdLayerInput[], width: number, height: number, filename: string): Promise<Blob> {
     const base = (typeof localStorage !== "undefined" && localStorage.getItem("nxf-bridge-base")) || DEFAULT_NXF_BASE;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120_000);

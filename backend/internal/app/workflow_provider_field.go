@@ -32,6 +32,9 @@ type WorkflowField struct {
 	Step           interface{}   `json:"step,omitempty"`
 	RandomEnabled  bool          `json:"randomEnabled,omitempty"`
 	BindPrompt     bool          `json:"bindPrompt,omitempty"`
+	// BindNegativePrompt 标记该字段由用户显式绑定为负向词输入；
+	// 置位时后端不再做负向节点回退注入（管理员配置优先）。
+	BindNegativePrompt bool `json:"bindNegativePrompt,omitempty"`
 	// 指针用于区分“未配置（默认启用）”和明确传入 false。
 	Enabled            *bool  `json:"enabled,omitempty"`
 	Source             string `json:"source,omitempty"`
@@ -124,8 +127,14 @@ func (f *WorkflowField) UnmarshalJSON(data []byte) error {
 	if !workflowFieldRawHas(raw, "bindPrompt") {
 		f.BindPrompt = workflowFieldRawBool(raw, f.BindPrompt, "bind_prompt")
 	}
+	if !workflowFieldRawHas(raw, "bindNegativePrompt") {
+		f.BindNegativePrompt = workflowFieldRawBool(raw, f.BindNegativePrompt, "bind_negative_prompt")
+	}
 	if f.BindPrompt && strings.TrimSpace(f.Source) == "" && !sourceConfigured {
 		f.Source = "prompt"
+	}
+	if f.BindNegativePrompt && strings.TrimSpace(f.Source) == "" && !sourceConfigured {
+		f.Source = "negativeprompt"
 	}
 	sourceFromUpstreamConfigured := workflowFieldRawHas(raw, "sourceFromUpstream") || workflowFieldRawHas(raw, "source_from_upstream")
 	f.sourceConfigured = sourceConfigured || sourceFromUpstreamConfigured

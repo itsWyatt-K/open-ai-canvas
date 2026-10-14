@@ -21,6 +21,7 @@ var sseFrameBoundaryPattern = regexp.MustCompile(`\r?\n\r?\n`)
 type canvasGenerationInput struct {
 	Mode             string                 `json:"mode"`
 	Prompt           string                 `json:"prompt"`
+	NegativePrompt   string                 `json:"negativePrompt,omitempty"`
 	Config           providerConfig         `json:"config"`
 	ReferenceImages  []providerMedia        `json:"referenceImages"`
 	ReferenceVideos  []providerMedia        `json:"referenceVideos"`
@@ -108,19 +109,22 @@ const videoPollTimeout = time.Hour
 const maxProviderResponseBytes int64 = 64 << 20
 
 type providerMedia struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	DataURL    string `json:"dataUrl"`
-	URL        string `json:"url"`
-	StorageKey string `json:"storageKey"`
-	Role       string `json:"role,omitempty"`
-	SlotKey    string `json:"slotKey,omitempty"`
-	MimeType   string `json:"mimeType"`
-	Bytes      int64  `json:"bytes"`
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
-	DurationMs int64  `json:"durationMs"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Type            string `json:"type"`
+	DataURL         string `json:"dataUrl"`
+	URL             string `json:"url"`
+	StorageKey      string `json:"storageKey"`
+	Role            string `json:"role,omitempty"`
+	SlotKey         string `json:"slotKey,omitempty"`
+	Strength        float64 `json:"strength,omitempty"`
+	ControlMode     string `json:"controlMode,omitempty"`
+	MaskStorageKey  string `json:"maskStorageKey,omitempty"`
+	MimeType        string `json:"mimeType"`
+	Bytes           int64  `json:"bytes"`
+	Width           int    `json:"width"`
+	Height          int    `json:"height"`
+	DurationMs      int64  `json:"durationMs"`
 }
 
 type imageResponse struct {

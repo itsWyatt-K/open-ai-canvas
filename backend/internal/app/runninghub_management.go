@@ -148,6 +148,14 @@ func collectManagementWorkflowFields(workflow map[string]any, capability string)
 		promptNodeID = strings.TrimSpace(stringValue(promptFields[0]["nodeId"]))
 		promptFieldName = strings.TrimSpace(stringValue(promptFields[0]["fieldName"]))
 	}
+	// 负向词节点预推断：让设置页把负向 CLIPTextEncode 字段直接标为 negativeprompt 来源，
+	// 保存后运行期即不再走回退注入（管理员显式配置优先）。
+	negativeNodeID := ""
+	negativeFieldName := ""
+	if negativeFields := runningHubNegativePromptFallback(workflow, "negative"); len(negativeFields) > 0 {
+		negativeNodeID = strings.TrimSpace(stringValue(negativeFields[0]["nodeId"]))
+		negativeFieldName = strings.TrimSpace(stringValue(negativeFields[0]["fieldName"]))
+	}
 	nodeIDs := make([]string, 0, len(workflow))
 	for nodeID := range workflow {
 		nodeIDs = append(nodeIDs, nodeID)
@@ -188,6 +196,12 @@ func collectManagementWorkflowFields(workflow map[string]any, capability string)
 				field["source"] = "prompt"
 				field["sourceAutomatic"] = true
 				field["required"] = true
+				field["role"] = "prompt"
+				field["enabled"] = true
+			} else if nodeID == negativeNodeID && fieldName == negativeFieldName {
+				field["source"] = "negativeprompt"
+				field["sourceAutomatic"] = true
+				field["bindNegativePrompt"] = true
 				field["role"] = "prompt"
 				field["enabled"] = true
 			} else if source := managementAutomaticInputSource(fieldName, fieldType); source != "" {

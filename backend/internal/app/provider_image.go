@@ -53,7 +53,7 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
 		writeField(writer, "model", input.Config.Model)
-		writeField(writer, "prompt", withSystemPrompt(input.Config, input.Prompt))
+		writeField(writer, "prompt", effectiveImagePrompt(input))
 		writeField(writer, "n", "1")
 		if imageParameterSupported(input.ImageCapability, "response_format") {
 			writeField(writer, "response_format", "b64_json")
@@ -89,7 +89,7 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 	} else {
 		body := map[string]interface{}{
 			"model":  input.Config.Model,
-			"prompt": withSystemPrompt(input.Config, input.Prompt),
+			"prompt": effectiveImagePrompt(input),
 			"n":      1,
 		}
 		if imageParameterSupported(input.ImageCapability, "response_format") {
@@ -151,7 +151,8 @@ func runGeminiImageTask(ctx context.Context, input canvasGenerationInput) (map[s
 	}
 
 	parts := make([]geminiImageContentPart, 0, 1+len(input.ReferenceImages))
-	if prompt := strings.TrimSpace(input.Prompt); prompt != "" {
+	// Gemini 的 systemPrompt 走 SystemInstruction，此处只拼正文 + 负向禁令段。
+	if prompt := strings.TrimSpace(input.Prompt + negativeConstraintBlock(input.NegativePrompt)); prompt != "" {
 		parts = append(parts, geminiImageContentPart{Text: prompt})
 	}
 	for _, image := range input.ReferenceImages {
@@ -301,7 +302,7 @@ func grokImageRequestBody(input canvasGenerationInput) (grokImageRequest, string
 	}
 	body := grokImageRequest{
 		Model:          input.Config.Model,
-		Prompt:         withSystemPrompt(input.Config, input.Prompt),
+		Prompt:         effectiveImagePrompt(input),
 		N:              1,
 		ResponseFormat: grokImageResponseFormat(input.ImageCapability),
 		// Grok 图片协议用 aspect_ratio 表达画布比例；同时发送 size 会被上游按 OpenAI 枚举校验并拒绝。
@@ -461,7 +462,7 @@ func volcengineArkImageDataURLs(ctx context.Context, config providerConfig, payl
 func volcengineArkImageBody(input canvasGenerationInput) (map[string]interface{}, error) {
 	body := map[string]interface{}{
 		"model":           input.Config.Model,
-		"prompt":          withSystemPrompt(input.Config, input.Prompt),
+		"prompt":          effectiveImagePrompt(input),
 		"n":               1,
 		"response_format": "b64_json",
 		"watermark":       false,

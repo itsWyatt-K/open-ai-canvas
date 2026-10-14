@@ -45,7 +45,7 @@ func runVolcengineJiMengImageTask(ctx context.Context, input canvasGenerationInp
 	}
 	body := map[string]interface{}{
 		"req_key":      input.Config.Model,
-		"prompt":       withSystemPrompt(input.Config, input.Prompt),
+		"prompt":       effectiveImagePrompt(input),
 		"force_single": true,
 	}
 	if width, height := jiMengImageDimensions(input.Config.Size); width > 0 && height > 0 {

@@ -88,7 +88,7 @@ export function CanvasNodePsdExportDialog({ open, imageNodes, preselectNodeId, o
             const normalized = await Promise.all(dataUrls.map((dataUrl) => normalizeToCanvas(dataUrl, width, height)));
             const layers = orderedSelection.map((node, index) => ({
                 name: node.title?.slice(0, 40) || `图层 ${index + 1}`,
-                dataUrl: normalized[index],
+                data_url: normalized[index],
             }));
             const blob = await exportLayeredPsd(layers, width, height, `styleforge-${Date.now().toString(36)}`);
             const url = URL.createObjectURL(blob);
