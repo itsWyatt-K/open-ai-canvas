@@ -1,1 +1,5 @@
 plugin-packages/*.sh text eol=lf
+
+# 内置 Skill 包按内容哈希校验（见 internal/skills/skills_yingshi_builtin_test.go），
+# 必须保持仓库原生 LF，否则 Windows autocrlf 会把 .py 转成 CRLF 导致哈希不匹配。
+backend/builtin/** text eol=lf

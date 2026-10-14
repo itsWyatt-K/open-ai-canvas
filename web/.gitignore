@@ -1,3 +1,4 @@
 .tmp-pack/
 # 构建冒烟产物（dist/ 清空受沙箱批量删除保护拦截时的替代输出目录）
 dist-smoke/
+dist-merge-smoke/
