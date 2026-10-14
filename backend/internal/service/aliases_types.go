@@ -286,6 +286,9 @@ type (
 	ProductSummary                         = app.ProductSummary
 	ProductDetail                          = app.ProductDetail
 	SlotSummary                            = app.SlotSummary
+	EcommerceStartOptions                  = app.EcommerceStartOptions
+	EcommerceStartResult                   = app.EcommerceStartResult
+	EcommerceSlotDispatch                  = app.EcommerceSlotDispatch
 	ShotRevisionInput                      = app.ShotRevisionInput
 	SkillCategory                          = app.SkillCategory
 	SkillLibraryCategory                   = app.SkillLibraryCategory

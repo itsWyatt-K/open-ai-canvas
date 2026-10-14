@@ -143,7 +143,9 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		detail, err := svc.EcommerceProductDetail(user.ID, c.Param("id"))
+		// 详情即对账：把已收尾子任务的结果回写到槽位版本与商品状态，
+		// 前端刷新页面即可看到最新进度（无需额外轮询接口）。
+		detail, err := svc.SyncEcommerceProduct(user.ID, c.Param("id"))
 		if err != nil {
 			failService(c, err)
 			return
@@ -190,14 +192,39 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 		ok(c, gin.H{"deleted": len(body.IDs) - len(refused), "refused": refused})
 	})
 
-	// ---- 任务动作占位（B5-B8 编排器后接）----
+	// ---- 任务动作（M3 编排器）----
 	group.POST("/products/:id/start", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		_ = user
-		fail(c, http.StatusNotImplemented, errors.New("编排器施工中（M3），暂时无法启动"))
+		var body service.EcommerceStartOptions
+		if c.Request.ContentLength > 0 {
+			if err := c.ShouldBindJSON(&body); err != nil {
+				fail(c, http.StatusBadRequest, errors.New("启动参数格式无效"))
+				return
+			}
+		}
+		result, err := svc.StartEcommerceProduct(user.ID, c.Param("id"), body)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
+	// 对账：把子任务终态回写到槽位版本与商品状态（详情接口也会隐式对账）。
+	group.POST("/products/:id/sync", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		detail, err := svc.SyncEcommerceProduct(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, detail)
 	})
 }

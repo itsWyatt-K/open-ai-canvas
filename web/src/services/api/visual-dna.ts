@@ -98,6 +98,8 @@ export async function synthesizeStyleForge(input: {
     variant?: string;
     variables?: Record<string, unknown>;
     count?: number;
+    /** 附加负向词库（品牌/品类防封词，顿号分隔）。 */
+    negativeExtra?: string;
 }): Promise<{ prompts: StyleForgePrompt[]; anchorCard: string }> {
     const result = await nxfFetch<{ prompts: StyleForgePrompt[]; anchor_card: string }>("/api/nxf/visual-dna/synthesize", {
         dna: input.dna,
@@ -108,6 +110,7 @@ export async function synthesizeStyleForge(input: {
         variant: input.variant || "",
         variables: input.variables || {},
         count: input.count ?? 1,
+        negative_extra: input.negativeExtra || "",
     });
     return { prompts: result.prompts, anchorCard: result.anchor_card || "" };
 }

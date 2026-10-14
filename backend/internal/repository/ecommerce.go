@@ -147,3 +147,154 @@ func (r *Repository) ListEcommerceSlotVersions(slotID string) ([]model.Ecommerce
 	}
 	return versions, nil
 }
+
+// ---------------------------------------------------------------- 编排器写路径
+//
+// 纪律：编排器是写路径，所有更新都带主键或归属条件；批量插入走事务，
+// 避免「槽位已建、版本未建」的半成品状态。
+
+// CreateEcommerceSlots 批量建槽位（同商品同 kind+slot_no 幂等跳过由调用方保证）。
+func (r *Repository) CreateEcommerceSlots(slots []model.EcommerceSlot) error {
+	if len(slots) == 0 {
+		return nil
+	}
+	for index := range slots {
+		if slots[index].ID == "" {
+			slots[index].ID = kernel.NewID()
+		}
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.CreateInBatches(&slots, 50).Error
+	})
+}
+
+// CreateEcommerceSlotVersion 新建槽位版本快照（唯一 (slot_id, version)）。
+func (r *Repository) CreateEcommerceSlotVersion(version *model.EcommerceSlotVersion) error {
+	if version.ID == "" {
+		version.ID = kernel.NewID()
+	}
+	return r.db.Create(version).Error
+}
+
+// EcommerceSlotVersionByID 按主键取版本（编排器回写用，无归属条件——
+// 调用方已通过商品归属校验，版本表无 user_id 列）。
+func (r *Repository) EcommerceSlotVersionByID(id string) (*model.EcommerceSlotVersion, error) {
+	var version model.EcommerceSlotVersion
+	if err := r.db.Where("id = ?", id).First(&version).Error; err != nil {
+		return nil, err
+	}
+	return &version, nil
+}
+
+// ListEcommerceSlotVersionsByChildTaskIDs 按子任务 ID 批量取版本
+// （对账时一次查完，避免 N+1）。
+func (r *Repository) ListEcommerceSlotVersionsByChildTaskIDs(taskIDs []string) ([]model.EcommerceSlotVersion, error) {
+	ids := make([]string, 0, len(taskIDs))
+	for _, id := range taskIDs {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			ids = append(ids, trimmed)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var versions []model.EcommerceSlotVersion
+	if err := r.db.Where("child_task_id IN ?", ids).Find(&versions).Error; err != nil {
+		return nil, err
+	}
+	return versions, nil
+}
+
+// UpdateEcommerceSlotVersionResult 回写版本终态：状态 + 产物资源 + 失败原因。
+func (r *Repository) UpdateEcommerceSlotVersionResult(versionID, status, resourceID, errorMessage string) error {
+	updates := map[string]any{"status": status}
+	if strings.TrimSpace(resourceID) != "" {
+		updates["resource_id"] = resourceID
+	}
+	if strings.TrimSpace(errorMessage) != "" {
+		updates["error_message"] = errorMessage
+	}
+	return r.db.Model(&model.EcommerceSlotVersion{}).Where("id = ?", versionID).Updates(updates).Error
+}
+
+// UpdateEcommerceSlotDispatch 写槽位派发态：状态 + 生成提示词 + 视觉方案快照。
+func (r *Repository) UpdateEcommerceSlotDispatch(slotID, status, generationPrompt, visualPlanJSON string, currentVersion int) error {
+	updates := map[string]any{"status": status, "updated_at": time.Now()}
+	if strings.TrimSpace(generationPrompt) != "" {
+		updates["generation_prompt"] = generationPrompt
+	}
+	if strings.TrimSpace(visualPlanJSON) != "" {
+		updates["visual_plan_json"] = visualPlanJSON
+	}
+	if currentVersion > 0 {
+		updates["current_version"] = currentVersion
+	}
+	return r.db.Model(&model.EcommerceSlot{}).Where("id = ?", slotID).Updates(updates).Error
+}
+
+// UpdateEcommerceSlotStatus 只更新槽位状态（对账回写用）。
+func (r *Repository) UpdateEcommerceSlotStatus(slotID, status string) error {
+	return r.db.Model(&model.EcommerceSlot{}).Where("id = ?", slotID).
+		Updates(map[string]any{"status": status, "updated_at": time.Now()}).Error
+}
+
+// UpdateEcommerceProductRun 写商品编排态：状态 + 标题状态 + 方案快照与修订号。
+func (r *Repository) UpdateEcommerceProductRun(userID, productID, status, titleStatus, planJSON string, planRevision int) error {
+	updates := map[string]any{"status": status, "updated_at": time.Now()}
+	if strings.TrimSpace(titleStatus) != "" {
+		updates["title_status"] = titleStatus
+	}
+	if strings.TrimSpace(planJSON) != "" {
+		updates["plan_json"] = planJSON
+	}
+	if planRevision > 0 {
+		updates["plan_revision"] = planRevision
+	}
+	return r.db.Model(&model.EcommerceProduct{}).Where("user_id = ? AND id = ?", userID, productID).
+		Updates(updates).Error
+}
+
+// UpdateEcommerceProductStatus 只更新商品状态与原因（对账回写用）。
+func (r *Repository) UpdateEcommerceProductStatus(userID, productID, status, titleStatus, statusReason string) error {
+	updates := map[string]any{"status": status, "updated_at": time.Now()}
+	if strings.TrimSpace(titleStatus) != "" {
+		updates["title_status"] = titleStatus
+	}
+	updates["status_reason"] = statusReason
+	return r.db.Model(&model.EcommerceProduct{}).Where("user_id = ? AND id = ?", userID, productID).
+		Updates(updates).Error
+}
+
+// UpdateEcommerceProductBrief 编排前同步卖点与视觉锚点（导入接口只带名称）。
+func (r *Repository) UpdateEcommerceProductBrief(userID, productID, sellingPoints, extraRequirements string) error {
+	updates := map[string]any{"updated_at": time.Now()}
+	if strings.TrimSpace(sellingPoints) != "" {
+		updates["selling_points"] = sellingPoints
+	}
+	if strings.TrimSpace(extraRequirements) != "" {
+		updates["extra_requirements"] = extraRequirements
+	}
+	return r.db.Model(&model.EcommerceProduct{}).Where("user_id = ? AND id = ?", userID, productID).
+		Updates(updates).Error
+}
+
+// UpsertEcommercePreset 预设写入（按 user+id 幂等；无 id 时新建）。
+func (r *Repository) UpsertEcommercePreset(preset *model.EcommercePreset) error {
+	if strings.TrimSpace(preset.ID) == "" {
+		preset.ID = kernel.NewID()
+		preset.CreatedAt = time.Now()
+	}
+	preset.UpdatedAt = time.Now()
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var existing model.EcommercePreset
+		err := tx.Where("user_id = ? AND id = ?", preset.UserID, preset.ID).First(&existing).Error
+		if err == nil {
+			return tx.Model(&model.EcommercePreset{}).Where("user_id = ? AND id = ?", preset.UserID, preset.ID).
+				Updates(map[string]any{"name": preset.Name, "config_json": preset.ConfigJSON, "updated_at": preset.UpdatedAt}).Error
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return tx.Create(preset).Error
+	})
+}

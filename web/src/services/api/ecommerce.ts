@@ -127,6 +127,52 @@ export type EcommerceProductDetail = {
     slots: EcommerceSlotSummary[];
 };
 
+/** M3 编排器启动参数（channelId + model 必填，服务端不猜测模型）。 */
+export type EcommerceStartOptions = {
+    presetId?: string;
+    channelId: string;
+    model: string;
+    size?: string;
+    quality?: string;
+    count?: number;
+    slotKeys?: string[];
+    projectId?: string;
+    /** 是否额外派发「商品透明主体层」任务（三层 PSD 用），默认 true。 */
+    withSubjectLayer?: boolean;
+    /** 卖点与视觉锚点：导入接口只带名称，编排前需同步落库。 */
+    sellingPoints?: string;
+    extraRequirements?: string;
+};
+
+/** 单槽位派发结果。 */
+export type EcommerceSlotDispatch = {
+    slotId: string;
+    slotKey: string;
+    title: string;
+    kind: EcommerceSlotKind;
+    slotNo: number;
+    version: number;
+    versionId: string;
+    childTaskId?: string;
+    status: string;
+    prompt: string;
+    negative?: string;
+    error?: string;
+};
+
+/** 启动结果（编排概览 + 降级标记）。 */
+export type EcommerceStartResult = {
+    productId: string;
+    status: EcommerceStatus;
+    presetKey?: string;
+    presetName?: string;
+    anchorCard?: string;
+    degraded?: string[];
+    slots: EcommerceSlotDispatch[];
+    dispatched: number;
+    failed: number;
+};
+
 // ---------------------------------------------------------------- 函数
 
 export function getEcommerceConfig() {
@@ -168,6 +214,39 @@ export function renameEcommerceProduct(id: string, name: string) {
 
 export function deleteEcommerceProducts(ids: string[]) {
     return http.post<{ deleted: number; refused: Record<string, string> }>("/ecommerce/products/delete", { ids });
+}
+
+/** 启动 M3 编排器：服务端合成各槽位提示词并派发 canvas_image 子任务。 */
+export function startEcommerceProduct(id: string, options: EcommerceStartOptions) {
+    return http.post<EcommerceStartResult>(`/ecommerce/products/${encodeURIComponent(id)}/start`, options);
+}
+
+/** 对账：把子任务终态回写到槽位版本与商品状态。 */
+export function syncEcommerceProduct(id: string) {
+    return http.post<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/sync`);
+}
+
+/**
+ * 轮询商品详情直到全部槽位收尾（或超时）。
+ * 详情接口本身会对账，因此轮询即可拿到最新状态。
+ */
+export async function waitForEcommerceProduct(
+    id: string,
+    options?: { intervalMs?: number; timeoutMs?: number; onTick?: (detail: EcommerceProductDetail) => void },
+): Promise<EcommerceProductDetail> {
+    const intervalMs = options?.intervalMs ?? 3000;
+    const timeoutMs = options?.timeoutMs ?? 15 * 60 * 1000;
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        const detail = await getEcommerceProductDetail(id);
+        options?.onTick?.(detail);
+        const status = detail.product.status;
+        if (status === "completed" || status === "completed_with_warnings" || status === "failed" || status === "uncertain" || status === "paused") {
+            return detail;
+        }
+        if (Date.now() > deadline) return detail;
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
 }
 
 // 状态中文映射（与桌面版逐字一致）。

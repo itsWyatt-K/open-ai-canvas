@@ -100,6 +100,19 @@ func builtinCatalogID(key string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("yingce/workbench/"+key)).String()
 }
 
+// BuiltinToolID 返回内置工具的确定性 UUID（同一 key 永远同 ID）。
+// 供外部域（如电商编排器）按 key 引用上游 54 号表的工具与预设铁律段，
+// 无需依赖「种子是否已写入数据库」这一时序。
+func BuiltinToolID(toolKey string) string {
+	return builtinCatalogID("tool/" + strings.TrimSpace(toolKey))
+}
+
+// BuiltinPresetID 返回内置预设的确定性 UUID（toolKey + 变体 key，
+// 变体取值 standard / composition / detail（image）或 standard / emotion / continuity（video））。
+func BuiltinPresetID(toolKey, variantKey string) string {
+	return builtinCatalogID("preset/" + strings.TrimSpace(toolKey) + "/" + strings.TrimSpace(variantKey))
+}
+
 func builtinToolConfig(entry builtinToolSeed, index int) (json.RawMessage, json.RawMessage, error) {
 	contract := InputContract{PromptRequired: true, Slots: []ReferenceSlot{}}
 	for i, name := range []string{entry.InputOne, entry.InputTwo} {

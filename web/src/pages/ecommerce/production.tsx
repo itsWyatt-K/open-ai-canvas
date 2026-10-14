@@ -1,9 +1,17 @@
-import { Download, FileImage, Layers3, Loader2, Play, RefreshCw } from "lucide-react";
+import { Download, FileImage, Layers3, Loader2, Play, RefreshCw, Server } from "lucide-react";
 import { Button, Empty, Input, Select, Slider, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { batchStyleForge, buildEcommercePsdLayers, exportLayeredPsd, renderCopyLayer, synthesizeStyleForge, type StyleForgePrompt, type StyleForgeScene } from "@/services/api/visual-dna";
+import {
+    importEcommerceProducts,
+    listEcommerceProducts,
+    startEcommerceProduct,
+    waitForEcommerceProduct,
+    type EcommerceProductDetail,
+} from "@/services/api/ecommerce";
 import { createGenerationTask, waitForGenerationTask } from "@/services/api/task-center";
+import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import { uploadImage } from "@/services/image-storage";
 import { useBrandKitStore } from "@/stores/canvas/use-brand-kit-store";
 import { useEcommerceStore } from "@/stores/canvas/use-ecommerce-store";
@@ -14,7 +22,7 @@ import { useConfigStore } from "@/stores/use-config-store";
  * 画廊四动作：下载 / 导出分层PSD / 存为技能 / 送画布精修。
  */
 
-type QueueItem = { id: string; variant: string; prompt: string; aspect: string; taskId?: string; status: "queued" | "running" | "succeeded" | "failed"; imageUrl?: string; error?: string };
+type QueueItem = { id: string; variant: string; prompt: string; aspect: string; taskId?: string; status: "queued" | "running" | "succeeded" | "failed"; imageUrl?: string; error?: string; negative?: string };
 
 const MAX_CONCURRENT = 5;
 
@@ -56,6 +64,8 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
                 input: {
                     mode: "image",
                     prompt: item.prompt,
+                    // M1 起契约支持 negativePrompt：把 nxf 合成的负向词真正下发（此前被丢弃）。
+                    ...(item.negative ? { negativePrompt: item.negative } : {}),
                     config: { channelId: requestConfig.channelId, model: bareModel, size: item.aspect, quality: "auto", count: "1" },
                     referenceImages: productReference,
                     metadata: { source: "ecommerce-production", variant: item.variant },
@@ -117,6 +127,7 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
                 prompt: prompt.prompt,
                 aspect: prompt.aspect || size,
                 status: "queued",
+                negative: prompt.negative,
             }));
             setQueue(items);
             // 分批并发（≤5，间隔 2.5s 降低 SQLite 写锁概率），参考图=产品图（resource: 存储键）
@@ -140,6 +151,70 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
 
     const succeeded = queue.filter((item) => item.status === "succeeded");
     const failed = queue.filter((item) => item.status === "failed");
+
+    /** 后端对账结果 → 画廊条目（槽位终态回填产物）。 */
+    const applyBackendDetail = useCallback((detail: EcommerceProductDetail) => {
+        setQueue((current) =>
+            current.map((entry) => {
+                const slot = detail.slots.find((item) => item.title === entry.variant);
+                if (!slot) return entry;
+                const mapped: QueueItem["status"] =
+                    slot.status === "completed" ? "succeeded" : slot.status === "failed" || slot.status === "uncertain" ? "failed" : "running";
+                return {
+                    ...entry,
+                    status: mapped,
+                    imageUrl: slot.resourceId ? resourceFileUrl(slot.resourceId) : entry.imageUrl,
+                    error: mapped === "failed" ? entry.error || "槽位未产出成品" : undefined,
+                };
+            }),
+        );
+    }, []);
+
+    /** 后端编排（M3）：服务端合成提示词 + 派发槽位任务 + 对账回写。 */
+    const runOrchestrated = async () => {
+        const product = products.find((item) => item.id === productId);
+        if (!product) return message.warning("请先选择产品");
+        const imageModel = config.imageModel;
+        if (!imageModel) return message.error("未配置生图模型，请到设置选择");
+        const resourceId = resourceIdFromStorageKey(product.imageStorageKey);
+        if (!resourceId) return message.error("产品图尚未上传为资源（需 resource: 存储键），无法走后端编排");
+        setSubmitting(true);
+        try {
+            const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
+            const requestConfig = resolveModelRequestConfig(config, imageModel);
+            const bareModel = modelOptionName(imageModel);
+            const backendId = await ensureBackendProduct(product.name, resourceId);
+            const started = await startEcommerceProduct(backendId, {
+                channelId: requestConfig.channelId,
+                model: bareModel,
+                size,
+                quality: "auto",
+                sellingPoints: (product.sellingPoints || []).join("、"),
+                extraRequirements: product.anchors || "",
+                projectId: canvasId || undefined,
+            });
+            if (started.degraded?.length) message.warning(started.degraded.join("；"));
+            setQueue(
+                started.slots.map((slot, index) => ({
+                    id: `s-${slot.slotId || index}`,
+                    variant: slot.title,
+                    prompt: slot.prompt,
+                    aspect: size,
+                    status: slot.status === "failed" ? "failed" : "running",
+                    taskId: slot.childTaskId,
+                    error: slot.error,
+                })),
+            );
+            message.success(`已派发 ${started.dispatched} 个槽位任务${started.failed ? `（失败 ${started.failed}）` : ""}`);
+            const detail = await waitForEcommerceProduct(backendId, { onTick: applyBackendDetail });
+            applyBackendDetail(detail);
+            message.success("后端编排完成");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "后端编排失败");
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     // 失败自动补交（SQLITE_BUSY 等瞬时错误）：无在跑任务时重交失败项，每项最多重试 2 次。
     const retryingRef = useRef(false);
@@ -193,6 +268,12 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
                 <Button type="primary" block loading={submitting} icon={<Play className="size-4" />} onClick={() => void runProduction()}>
                     开始批量生产
                 </Button>
+                <Button block loading={submitting} icon={<Server className="size-4" />} onClick={() => void runOrchestrated()}>
+                    后端编排生成（独乐岛 7 屏 + 透明主体层）
+                </Button>
+                <p className="m-0 text-xs leading-relaxed opacity-55">
+                    前端直连：浏览器合成提示词并逐张排队；后端编排：服务端融合上游预设铁律、下发负向词与主体强控，产出可三层导出的成品。
+                </p>
             </section>
 
             <section className="ecommerce-production-result">
@@ -243,6 +324,20 @@ function downloadDataUrl(url: string, name: string) {
     anchor.href = url;
     anchor.download = `ecom-${name}-${new Date().toISOString().slice(0, 10)}.png`;
     anchor.click();
+}
+
+/**
+ * 确保后端存在对应商品任务（本地产品库与后端 55 号表解耦）。
+ * 导入接口同源去重：已导入时返回 skipped，此时按名称回查已有任务。
+ */
+async function ensureBackendProduct(name: string, resourceId: string): Promise<string> {
+    const imported = await importEcommerceProducts([{ resourceId, name }]);
+    const created = imported.items?.[0]?.id;
+    if (created) return created;
+    const listed = await listEcommerceProducts(name);
+    const matched = listed.items.find((item) => item.name === name);
+    if (!matched) throw new Error("后端商品任务导入失败，请重试");
+    return matched.id;
 }
 
 async function exportPsd(imageUrl: string, name: string, slotIndex = 1, copyLines: string[] = [], subjectUrl?: string) {
