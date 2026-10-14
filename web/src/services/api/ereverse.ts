@@ -31,6 +31,12 @@ export type EreverseScene = {
     keyframe_path?: string;
     semantic_tags?: string[];
     tag_provider?: string;
+    // ---- M3 结构化导演字段（可选；VLM 未产出时为空，不臆造）----
+    shot_type?: string;
+    camera_movement?: string;
+    visual_prompt?: string;
+    compliance_prompt?: string;
+    negative_prompt?: string;
 };
 
 export type EreversePft = {

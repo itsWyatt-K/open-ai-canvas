@@ -50,6 +50,8 @@ import { createStyleProfileSnapshot, resolveStyleProfile, serializeStyleProfile 
 import { CanvasNodeToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-toolbar";
 import { CanvasSubtitleDialog } from "@/components/canvas/canvas-subtitle-dialog";
 import { CanvasEreverseDialog } from "@/components/canvas/canvas-ereverse-dialog";
+import { buildStoryboardShots } from "@/lib/canvas/ereverse-view";
+import { buildEreverseStoryboardGraph } from "@/lib/canvas/ereverse-storyboard-builder";
 import { CanvasVideoFrameDialog } from "@/components/canvas/canvas-video-frame-dialog";
 import { CanvasVideoSegmentDialog } from "@/components/canvas/canvas-video-segment-dialog";
 import { CanvasTimelineDialog } from "@/components/canvas/canvas-timeline-dialog";
@@ -1490,6 +1492,11 @@ function CanvasViewportPage() {
     const subtitleNode = subtitleNodeId ? nodeById.get(subtitleNodeId) || null : null;
     const timelineNode = timelineNodeId ? nodeById.get(timelineNodeId) || null : null;
     const ereverseNode = ereverseNodeId ? nodeById.get(ereverseNodeId) || null : null;
+    // 可绑定为「商品资产」的画布节点：有图且未锁定的图片节点（分镜资产目录的 image 类）。
+    const ereverseAssetNodes = useMemo(
+        () => nodes.filter((node) => node.type === CanvasNodeType.Image && Boolean(node.metadata?.content) && !node.metadata?.locked),
+        [nodes],
+    );
     const frameNode = frameDialogNodeId ? nodeById.get(frameDialogNodeId) || null : null;
     const segmentNode = segmentDialogNodeId ? nodeById.get(segmentDialogNodeId) || null : null;
     const textEditorNode = textEditorNodeId ? nodeById.get(textEditorNodeId) || null : null;
@@ -3208,6 +3215,7 @@ function CanvasViewportPage() {
                                     node={ereverseNode}
                                     open={Boolean(ereverseNode)}
                                     onClose={() => setEreverseNodeId(null)}
+                                    assetNodes={ereverseAssetNodes}
                                     onApplySubtitles={(nodeId, entries) => {
                                         handleConfigNodeChange(nodeId, {
                                             subtitleEntries: entries,
@@ -3219,6 +3227,21 @@ function CanvasViewportPage() {
                                             const next = syncNodeSubtitlesToTimeline(currentTimeline, nodeId, entries);
                                             if (next !== currentTimeline) updateProject(projectId, { timeline: next });
                                         }
+                                    }}
+                                    onCreateStoryboard={(view, options) => {
+                                        // 逆向结果 → 分镜 DAG：一次写入（同步层组为单个原子 PATCH）。
+                                        const shots = buildStoryboardShots(view, options);
+                                        if (!shots.length) return;
+                                        const graph = buildEreverseStoryboardGraph({
+                                            view,
+                                            shots,
+                                            options,
+                                            origin: getCanvasCenter(),
+                                        });
+                                        setNodes([...nodesRef.current, ...graph.nodes]);
+                                        setConnections([...connectionsRef.current, ...graph.connections]);
+                                        message.success(`已铺开 ${graph.shotCount} 镜分镜组（含关键帧与商品资产连线）`);
+                                        setEreverseNodeId(null);
                                     }}
                                 />
                             ) : null}

@@ -74,31 +74,33 @@ type EcommerceSlotDispatch struct {
 	Status      string `json:"status"`
 	Prompt      string `json:"prompt"`
 	Negative    string `json:"negative,omitempty"`
-	Error       string `json:"error,omitempty"`
+	// GateHits S5 门禁命中清单（剥离的规则 ID / 改写的红线词；空 = 未触发）。
+	GateHits []string `json:"gateHits,omitempty"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // EcommerceStartResult 启动结果。
 type EcommerceStartResult struct {
-	ProductID  string                   `json:"productId"`
-	Status     string                   `json:"status"`
-	PresetKey  string                   `json:"presetKey,omitempty"`
-	PresetName string                   `json:"presetName,omitempty"`
-	AnchorCard string                   `json:"anchorCard,omitempty"`
-	Degraded   []string                 `json:"degraded,omitempty"`
-	Slots      []EcommerceSlotDispatch  `json:"slots"`
-	Dispatched int                      `json:"dispatched"`
-	Failed     int                      `json:"failed"`
+	ProductID  string                  `json:"productId"`
+	Status     string                  `json:"status"`
+	PresetKey  string                  `json:"presetKey,omitempty"`
+	PresetName string                  `json:"presetName,omitempty"`
+	AnchorCard string                  `json:"anchorCard,omitempty"`
+	Degraded   []string                `json:"degraded,omitempty"`
+	Slots      []EcommerceSlotDispatch `json:"slots"`
+	Dispatched int                     `json:"dispatched"`
+	Failed     int                     `json:"failed"`
 }
 
 // ecommercePlanSnapshot 落 product.plan_json 的编排快照。
 type ecommercePlanSnapshot struct {
-	PresetKey             string                  `json:"presetKey,omitempty"`
-	PresetName            string                  `json:"presetName,omitempty"`
-	AnchorCard            string                  `json:"anchorCard,omitempty"`
-	Degraded              []string                `json:"degraded,omitempty"`
-	SubjectLayerResourceID string                 `json:"subjectLayerResourceId,omitempty"`
-	Slots                 []EcommerceSlotDispatch `json:"slots"`
-	GeneratedAt           string                  `json:"generatedAt"`
+	PresetKey              string                  `json:"presetKey,omitempty"`
+	PresetName             string                  `json:"presetName,omitempty"`
+	AnchorCard             string                  `json:"anchorCard,omitempty"`
+	Degraded               []string                `json:"degraded,omitempty"`
+	SubjectLayerResourceID string                  `json:"subjectLayerResourceId,omitempty"`
+	Slots                  []EcommerceSlotDispatch `json:"slots"`
+	GeneratedAt            string                  `json:"generatedAt"`
 }
 
 // StartEcommerceProduct 启动商品任务编排（消灭 501）。
@@ -265,6 +267,15 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 	if strings.TrimSpace(prompt) == "" {
 		return dispatch, errors.New("槽位提示词为空：nxf 与上游预设均不可用")
 	}
+	// S5 出口门禁（M4）：下发前强制执行确定性过滤 + 通感改写；比例冲突直接拒绝该槽位。
+	gate := ecommerce.ComplianceGate(prompt)
+	if gate.Rejected {
+		return dispatch, errors.New("S5 门禁拒绝：" + gate.RejectReason)
+	}
+	prompt = gate.Filtered
+	if len(gate.Hits) > 0 {
+		dispatch.GateHits = gate.Hits
+	}
 	negative = ecommerce.MergeNegative(negative, preset.Negative)
 	dispatch.Prompt = prompt
 	dispatch.Negative = negative
@@ -302,11 +313,11 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 				"controlMode": "canny",
 			}},
 			"metadata": map[string]any{
-				"source":                  "ecommerce-orchestrator",
-				"ecommerceProductId":      product.ID,
-				"ecommerceSlotId":         slot.ID,
-				"ecommerceSlotKey":        plan.SlotKey,
-				"ecommerceSlotVersionId":  version.ID,
+				"source":                   "ecommerce-orchestrator",
+				"ecommerceProductId":       product.ID,
+				"ecommerceSlotId":          slot.ID,
+				"ecommerceSlotKey":         plan.SlotKey,
+				"ecommerceSlotVersionId":   version.ID,
 				"ecommerceUpstreamToolKey": plan.UpstreamToolKey,
 			},
 		},
@@ -348,6 +359,12 @@ func (s *Service) dispatchEcommerceSubjectLayer(userID string, product *model.Ec
 		"商品实拍图去背景：保留商品本体的轮廓、颜色、材质与可见细节，纯净棚拍光，边缘干净无白边。",
 		s.upstreamTemplateFor("product-white-hero", ecommerce.UpstreamVariantStandard),
 	)
+	// S5 出口门禁：主体层任务同样过检（拒绝时不上传无背景图）。
+	gate := ecommerce.ComplianceGate(prompt)
+	if gate.Rejected {
+		return "", errors.New("S5 门禁拒绝：" + gate.RejectReason)
+	}
+	prompt = gate.Filtered
 	negative := ecommerce.MergeNegative(ecommerce.SoloIslandNegative)
 	task, err := s.CreateTask(userID, CreateTaskRequest{
 		ProjectID: input.ProjectID,
@@ -664,7 +681,7 @@ func truncateError(err error) string {
 
 // nxfBatchResult 是 :8823 /api/nxf/visual-dna/batch 的响应子集。
 type nxfBatchResult struct {
-	AnchorCard string         `json:"anchor_card"`
+	AnchorCard string          `json:"anchor_card"`
 	Prompts    []nxfPromptItem `json:"prompts"`
 	Groups     []struct {
 		Scene string `json:"scene"`
@@ -742,8 +759,8 @@ func (s *Service) synthesizeEcommercePrompts(preset ecommerce.PresetConfig, prod
 		return nil, fmt.Errorf("引擎返回 %d", response.StatusCode)
 	}
 	var decoded struct {
-		OK    bool           `json:"ok"`
-		Error string         `json:"error"`
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
 		nxfBatchResult
 	}
 	if err := json.Unmarshal(payload, &decoded); err != nil {

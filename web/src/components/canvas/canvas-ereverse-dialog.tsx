@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, App, Button, Progress, Select, Switch, Tag, Tooltip } from "antd";
-import { Captions, Database, PlayCircle, RefreshCw } from "lucide-react";
+import { Captions, Database, PlayCircle, RefreshCw, Workflow } from "lucide-react";
 
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import type { CanvasNodeData } from "@/types/canvas";
@@ -55,15 +55,19 @@ type Props = {
     onClose: () => void;
     /** 把词级结果写回节点字幕（获得画布字幕叠层 + 时间线字幕轨） */
     onApplySubtitles: (nodeId: string, entries: SrtEntry[]) => void;
+    /** 画布上可绑定的商品资产节点（asset / reference；供一键分镜组连线） */
+    assetNodes?: CanvasNodeData[];
+    /** 一键生成画布分镜组（M3：Frame 容器 + 关键帧图 + 连续分镜卡 + 商品资产连线） */
+    onCreateStoryboard?: (view: EreverseView, options: { productAssetNodeId: string; useCompliancePrompt: boolean }) => void | Promise<void>;
 };
 
 /**
  * E-Reverse 视频事实表对话框——挂在视频节点的悬停工具栏上。
  * 打开即自动把节点视频送入本地侧车（127.0.0.1:8790）跑逆向管线，
  * 产出 pft/v1：词级时间轴 + 场景关键帧 + 语义标签，点词跳转播放；
- * 可一键把词块写入节点字幕。
+ * 可一键把词块写入节点字幕，或一键铺成画布分镜组（绑定商品资产）。
  */
-export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles }: Props) {
+export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles, assetNodes = [], onCreateStoryboard }: Props) {
     const { message } = App.useApp();
     const [health, setHealth] = useState<EreverseHealth | null>(null);
     const [healthError, setHealthError] = useState<string | null>(null);
@@ -75,6 +79,8 @@ export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles }: 
     const [vlmBackend, setVlmBackend] = useState<EreverseVlmBackend>("auto");
     const [runNonce, setRunNonce] = useState(0);
     const [applying, setApplying] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [assetNodeId, setAssetNodeId] = useState("");
     const videoRef = useRef<HTMLVideoElement>(null);
 
     const storageKey = node.metadata?.storageKey || "";
@@ -182,6 +188,25 @@ export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles }: 
             setApplying(false);
         }
     }, [view, node.id, onApplySubtitles, message]);
+
+    /** 一键铺成画布分镜组：默认用防封改写版提示词，负向词经 M1 的 negativePrompt 字段下发。 */
+    const createStoryboard = useCallback(async () => {
+        if (!view || !onCreateStoryboard) return;
+        const directed = view.scenes.filter((scene) => scene.compliancePrompt || scene.visualPrompt || scene.tags.length);
+        if (!directed.length) {
+            message.warning("这一版还没产出结构化导演字段——请勾选 VLM 打标后重新运行");
+            return;
+        }
+        setCreating(true);
+        try {
+            await onCreateStoryboard(view, { productAssetNodeId: assetNodeId, useCompliancePrompt: true });
+            message.success(`已在画布铺开 ${view.scenes.length} 个分镜节点`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "分镜组生成失败");
+        } finally {
+            setCreating(false);
+        }
+    }, [view, onCreateStoryboard, assetNodeId, message]);
 
     const progressPct = !stage ? 2 : stage === "done" ? 100 : stage === "error" ? 100 : STAGE_PCT[stage] ?? 5;
 
@@ -342,7 +367,16 @@ export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles }: 
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+                            <Select
+                                size="small"
+                                allowClear
+                                placeholder="绑定画布商品资产（可选）"
+                                value={assetNodeId || undefined}
+                                onChange={(value) => setAssetNodeId(value ?? "")}
+                                options={assetNodes.map((node) => ({ value: node.id, label: node.title || node.id }))}
+                                style={{ minWidth: 200 }}
+                            />
                             <Button
                                 icon={<Captions className="size-4" />}
                                 disabled={view.chunks.length === 0}
@@ -350,6 +384,15 @@ export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles }: 
                                 onClick={applySubtitles}
                             >
                                 写入节点字幕（{view.chunks.length} 条）
+                            </Button>
+                            <Button
+                                type="primary"
+                                icon={<Workflow className="size-4" />}
+                                disabled={view.scenes.length === 0}
+                                loading={creating}
+                                onClick={createStoryboard}
+                            >
+                                一键生成画布分镜组（{view.scenes.length} 镜）
                             </Button>
                             <Button icon={<PlayCircle className="size-4" />} onClick={onClose}>完成</Button>
                         </div>
