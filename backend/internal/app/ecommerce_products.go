@@ -9,6 +9,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -56,6 +57,11 @@ type SlotSummary struct {
 type ProductDetail struct {
 	Product *model.EcommerceProduct `json:"product"`
 	Slots   []SlotSummary           `json:"slots"`
+	// SubjectLayerResourceID 商品透明主体层资源（三层 PSD 的商品主体层）；
+	// 取自编排快照 plan_json，为空表示尚未产出（前端回退两层导出）。
+	SubjectLayerResourceID string `json:"subjectLayerResourceId,omitempty"`
+	// PlanDegraded 编排降级标记（如 nxf 不可用已回落上游模板）。
+	PlanDegraded []string `json:"planDegraded,omitempty"`
 }
 
 // ImportItem 导入项（前端上传时知道文件名，随 resourceId 一起传——
@@ -185,6 +191,7 @@ func (s *Service) EcommerceProductDetail(userID, productID string) (*ProductDeta
 	if err != nil {
 		return nil, err
 	}
+	snapshot := planSnapshotOf(product)
 	summaries := make([]SlotSummary, 0, len(slots))
 	for _, slot := range slots {
 		summary := SlotSummary{
@@ -207,7 +214,24 @@ func (s *Service) EcommerceProductDetail(userID, productID string) (*ProductDeta
 		}
 		summaries = append(summaries, summary)
 	}
-	return &ProductDetail{Product: product, Slots: summaries}, nil
+	return &ProductDetail{
+		Product:                product,
+		Slots:                  summaries,
+		SubjectLayerResourceID: snapshot.SubjectLayerResourceID,
+		PlanDegraded:           snapshot.Degraded,
+	}, nil
+}
+
+// planSnapshotOf 解析商品编排快照（plan_json）；损坏时返回零值，不阻断详情读取。
+func planSnapshotOf(product *model.EcommerceProduct) ecommercePlanSnapshot {
+	var snapshot ecommercePlanSnapshot
+	if product == nil || strings.TrimSpace(product.PlanJSON) == "" {
+		return snapshot
+	}
+	if err := json.Unmarshal([]byte(product.PlanJSON), &snapshot); err != nil {
+		return ecommercePlanSnapshot{}
+	}
+	return snapshot
 }
 
 // RenameEcommerceProduct 改名（已开始任务禁止改名，返回 400 name_locked）。

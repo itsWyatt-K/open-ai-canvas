@@ -136,36 +136,59 @@ export type PsdLayerInput = {
     data_url: string;
     /** 图层不透明度 0-255，默认 255。 */
     opacity?: number;
+    /** 图层可见性，默认 true。 */
+    visible?: boolean;
 };
 
 /** 电商详情页分层 PSD 的标准图层名：`01_情绪首屏_商品主体`（保留中文语义）。 */
-export function psdLayerName(slotIndex: number, slotLabel: string, role: "背景" | "商品主体" | "文案" | "成图"): string {
+export function psdLayerName(slotIndex: number, slotLabel: string, role: "背景成图" | "背景" | "商品主体" | "文案" | "成图"): string {
     const order = String(Math.max(1, slotIndex)).padStart(2, "0");
     const label = slotLabel.trim().slice(0, 20) || "未命名";
     return `${order}_${label}_${role}`;
 }
 
 /**
- * 组装电商详情页分层 PSD（自底向上：背景环境 → 商品透明主体 → 文案标题）。
- * 空层自动跳过；无任何有效层时返回空数组，由调用方决定是否回退为整图单层导出。
+ * 组装电商详情页分层 PSD（自底向上）。
+ *
+ * 两种形态：
+ *  1. **有商品透明主体层**（后端编排产出）→
+ *     [背景成图(可见) · 商品主体(隐藏) · 文案(隐藏)]：
+ *     成图与生成结果一致，美工点亮「商品主体」即可替换/挪动商品，点亮「文案」即可改字。
+ *  2. **无抠图层** → [背景(可见) · 成图(可见)] 或 [背景成图]：
+ *     回退为整图分层，不叠加文案层（成图已含烧入文案，避免双影）。
+ *
+ * 空层自动跳过；无任何有效层时返回空数组，由调用方决定是否报错。
  */
 export function buildEcommercePsdLayers(input: {
     slotIndex?: number;
     slotLabel?: string;
-    backgroundDataUrl?: string;
-    subjectDataUrl?: string;
-    copyDataUrl?: string;
+    /** 生成成图（含背景 + 商品 + 可能的烧入文案）→ 作为最底「背景成图」层。 */
     compositeDataUrl?: string;
+    /** 纯背景环境层（无商品）；有抠图层时可选。 */
+    backgroundDataUrl?: string;
+    /** 商品透明主体层（默认隐藏）。 */
+    subjectDataUrl?: string;
+    /** 文案层（默认隐藏）。 */
+    copyDataUrl?: string;
 }): PsdLayerInput[] {
     const index = input.slotIndex ?? 1;
     const label = input.slotLabel ?? "详情页";
     const layers: PsdLayerInput[] = [];
-    if (input.backgroundDataUrl) layers.push({ name: psdLayerName(index, label, "背景"), data_url: input.backgroundDataUrl });
-    if (input.subjectDataUrl) layers.push({ name: psdLayerName(index, label, "商品主体"), data_url: input.subjectDataUrl });
-    if (input.copyDataUrl) layers.push({ name: psdLayerName(index, label, "文案"), data_url: input.copyDataUrl });
-    // 只有整图时才作为「成图」层收底；有拆层时不叠加整图，避免商品/文案双影。
-    if (!layers.length && input.compositeDataUrl) {
-        layers.push({ name: psdLayerName(index, label, "成图"), data_url: input.compositeDataUrl });
+    const hasSubject = Boolean(input.subjectDataUrl);
+    // 底层：优先用「背景环境层」；无独立背景时用生成成图兜底。
+    if (input.backgroundDataUrl) {
+        layers.push({ name: psdLayerName(index, label, "背景"), data_url: input.backgroundDataUrl });
+    }
+    if (input.compositeDataUrl) {
+        layers.push({ name: psdLayerName(index, label, "背景成图"), data_url: input.compositeDataUrl });
+    }
+    if (!layers.length && !hasSubject) return [];
+    // 拆层：商品主体 + 文案默认隐藏，成图观感与生成结果一致。
+    if (hasSubject) {
+        layers.push({ name: psdLayerName(index, label, "商品主体"), data_url: input.subjectDataUrl!, visible: false });
+    }
+    if (input.copyDataUrl) {
+        layers.push({ name: psdLayerName(index, label, "文案"), data_url: input.copyDataUrl, visible: !hasSubject && !input.compositeDataUrl });
     }
     return layers;
 }

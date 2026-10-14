@@ -125,6 +125,10 @@ export type EcommerceProductDetail = {
         updatedAt: string;
     };
     slots: EcommerceSlotSummary[];
+    /** 商品透明主体层资源（三层 PSD 的商品主体层）；为空时前端回退两层导出。 */
+    subjectLayerResourceId?: string;
+    /** 编排降级标记（如 nxf 不可用已回落上游模板）。 */
+    planDegraded?: string[];
 };
 
 /** M3 编排器启动参数（channelId + model 必填，服务端不猜测模型）。 */

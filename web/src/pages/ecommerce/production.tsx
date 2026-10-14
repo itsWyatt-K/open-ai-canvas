@@ -40,6 +40,8 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
     const [textOverlay, setTextOverlay] = useState("");
     const [queue, setQueue] = useState<QueueItem[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    /** 后端编排产出的商品透明主体层资源（三层 PSD 的商品主体层）。 */
+    const [subjectLayerResourceId, setSubjectLayerResourceId] = useState("");
     const runningRef = useRef(0);
     const lastModelRef = useRef("");
     const lastProductRef = useRef<Array<{ storageKey: string }>>([]);
@@ -152,8 +154,9 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
     const succeeded = queue.filter((item) => item.status === "succeeded");
     const failed = queue.filter((item) => item.status === "failed");
 
-    /** 后端对账结果 → 画廊条目（槽位终态回填产物）。 */
+    /** 后端对账结果 → 画廊条目（槽位终态回填产物 + 记录透明主体层）。 */
     const applyBackendDetail = useCallback((detail: EcommerceProductDetail) => {
+        if (detail.subjectLayerResourceId) setSubjectLayerResourceId(detail.subjectLayerResourceId);
         setQueue((current) =>
             current.map((entry) => {
                 const slot = detail.slots.find((item) => item.title === entry.variant);
@@ -300,7 +303,7 @@ export function ProductionView({ canvasId }: { canvasId: string }) {
                                     {item.imageUrl ? (
                                         <div className="flex gap-1">
                                             <Button size="small" type="text" title="下载" icon={<Download className="size-3.5" />} onClick={() => downloadDataUrl(item.imageUrl!, item.variant)} />
-                                            <Button size="small" type="text" title="导出分层PSD" icon={<Layers3 className="size-3.5" />} onClick={() => void exportPsd(item.imageUrl!, item.variant, queue.indexOf(item) + 1, textOverlay.split("\n").map((line) => line.trim()).filter(Boolean))} />
+                                            <Button size="small" type="text" title={subjectLayerResourceId ? "导出三层PSD（背景/商品主体/文案）" : "导出分层PSD"} icon={<Layers3 className="size-3.5" />} onClick={() => void exportPsd(item.imageUrl!, item.variant, queue.indexOf(item) + 1, textOverlay.split("\n").map((line) => line.trim()).filter(Boolean), subjectLayerResourceId ? resourceFileUrl(subjectLayerResourceId) : undefined)} />
                                             <Button size="small" type="text" title="存入资产库" icon={<FileImage className="size-3.5" />} onClick={() => void saveToAssets(item.imageUrl!, item.variant)} />
                                             <Button size="small" type="text" title="送画布精修" disabled={!canvasId} onClick={() => void sendToCanvas(item.imageUrl!, item.variant, canvasId)} />
                                         </div>
@@ -345,25 +348,24 @@ async function exportPsd(imageUrl: string, name: string, slotIndex = 1, copyLine
         message.loading({ content: "正在合成 layered PSD…", key: "psd" });
         const dataUrl = await fetchAsDataUrl(imageUrl);
         const size = await readDataUrlSize(dataUrl);
-        const background = await solidLayer(size.width, size.height, "#ffffff");
         let layers;
         if (subjectUrl) {
-            // 有商品透明抠图层 → 美工级三层：背景环境 → 商品主体 → 文案标题。
+            // 后端编排产出透明主体层 → 美工级三层：背景成图(可见) + 商品主体(隐藏) + 文案(隐藏)。
             const subject = await fetchAsDataUrl(subjectUrl);
             const copy = await renderCopyLayer(copyLines, size.width, size.height);
             layers = buildEcommercePsdLayers({
                 slotIndex,
                 slotLabel: name,
-                backgroundDataUrl: background,
+                compositeDataUrl: dataUrl,
                 subjectDataUrl: subject,
                 copyDataUrl: copy ?? undefined,
             });
         } else {
-            // 无抠图层 → 回退两层（背景 + 成图）；成图已含烧入文案，不再叠加文案层以免双影。
+            // 无抠图层 → 回退两层（纯白底 + 成图）；成图已含烧入文案，不再叠加文案层以免双影。
             layers = buildEcommercePsdLayers({
                 slotIndex,
                 slotLabel: name,
-                backgroundDataUrl: background,
+                backgroundDataUrl: await solidLayer(size.width, size.height, "#ffffff"),
                 compositeDataUrl: dataUrl,
             });
         }
