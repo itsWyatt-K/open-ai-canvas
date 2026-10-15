@@ -1,3 +1,11 @@
+// ⚠️⚠️ 未挂载组件（防呆警告 · 2026-10-15）⚠️⚠️
+// 本文件当前【没有任何路由或组件引用】——`/ecommerce/:view` 的 index.tsx 不读 view 参数，
+// 因此即使访问 /ecommerce/{name} 渲染的仍是同一个三栏页，本组件永不显示。
+// 2026-10-15 事故：M2 曾把「后端编排生成」按钮加在本文件，导致主人实测看不到任何入口。
+// 铁律：**不要在本文件新增任何用户功能**。要加功能请改真实渲染路径上的组件：
+//   router.tsx → pages/ecommerce/index.tsx → { task-list, task-detail, config-panel }
+// 若要让本组件真正可用，必须先改 index.tsx 读取 view 参数并挂载，然后删掉这段警告。
+
 import { Loader2, Sparkles } from "lucide-react";
 import { Button, Empty, Input, Popconfirm, Select, Tag, message } from "antd";
 import { useState } from "react";
