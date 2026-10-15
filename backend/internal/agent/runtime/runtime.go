@@ -84,13 +84,26 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 	if err != nil {
 		return fmt.Errorf("encode Agent runtime request: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, "node", "--max-old-space-size="+nodeMemoryMB(), filepath.Join(runtimeDir, "agent-runtime.mjs"))
+	// node 可执行定位：优先 YINGCE_AGENT_NODE 显式指定（绝对路径或命令名），
+	// 否则从 PATH 查找 "node"。桌面启动器会把 managed node 目录注入 PATH；
+	// 直接跑后端（未注入 PATH）时用 YINGCE_AGENT_NODE 指定，避免
+	// exec: "node": executable file not found in %PATH%。
+	nodeBinary := strings.TrimSpace(os.Getenv("YINGCE_AGENT_NODE"))
+	if nodeBinary == "" {
+		nodeBinary = "node"
+	}
+	cmd := exec.CommandContext(ctx, nodeBinary, "--max-old-space-size="+nodeMemoryMB(), filepath.Join(runtimeDir, "agent-runtime.mjs"))
 	cmd.Dir = runtimeDir
 	cmd.Stdin = strings.NewReader(string(payload))
 	// 环境变量白名单：只传 Node 运行所需的最少变量。HOME 与会话、工作目录
 	// 由运行时自己建的临时隔离目录提供，不使用服务端数据目录。
+	// 指定了绝对路径的 node 时，把其目录并入 PATH，供 node 子进程再派生子进程使用。
+	nodePath := os.Getenv("PATH")
+	if dir := filepath.Dir(nodeBinary); dir != "" && dir != "." {
+		nodePath = dir + string(os.PathListSeparator) + nodePath
+	}
 	cmd.Env = []string{
-		"PATH=" + os.Getenv("PATH"),
+		"PATH=" + nodePath,
 		"NODE_ENV=production",
 		"PI_OFFLINE=1",
 	}

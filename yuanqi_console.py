@@ -64,6 +64,17 @@ def _resolve_managed_node() -> str:
 
 NODE = _resolve_managed_node()
 
+
+def _node_path_prefix() -> str:
+    """managed node 所在目录 + 路径分隔符；回退到裸 "node" 时返回空串。
+
+    供后端服务的 PATH 注入使用：后端（Go）exec "node" 启动 canvas-agent
+    子进程时从 PATH 查找，而前端是用绝对路径 NODE 起的，不受影响。
+    """
+    node_dir = os.path.dirname(NODE)
+    return node_dir + os.pathsep if node_dir else ""
+
+
 # E-Reverse 侧车：独立 venv（py3.12 + torch/whisperx/transformers），与控制台解释器解耦
 EREVERSE_DIR = r"D:\AlcheMvision\工具\e-reverse"
 EREVERSE_PYTHON = os.path.join(EREVERSE_DIR, ".venv", "Scripts", "python.exe")
@@ -100,6 +111,10 @@ SERVICES = [
             "CANVAS_DESKTOP_LOCAL_CHANNELS_ENABLED": "true",
             "CANVAS_CORS_ORIGINS": "http://localhost:3000",
             "CANVAS_DATA_PATH": "./data",
+            # 后端 exec "node" 启动 canvas-agent 子进程时从 PATH 查找（runtime.go 的
+            # 环境白名单会显式透传 PATH）。前端用绝对路径 NODE 起得来，后端不行，
+            # 故这里把 managed node 所在目录注入 PATH。
+            "PATH": _node_path_prefix() + os.environ.get("PATH", ""),
         },
         "log": "backend.log",
         "wait": 20,
