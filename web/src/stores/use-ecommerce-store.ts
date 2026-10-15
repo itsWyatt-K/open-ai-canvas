@@ -46,6 +46,8 @@ type EcommerceWorkspaceState = {
     clearSelected: () => void;
 
     openProduct: (id: string) => Promise<void>;
+    /** 强制刷新单个商品详情（绕过缓存，供编排轮询/对账）。 */
+    refreshDetail: (id: string) => Promise<void>;
 
     refreshConfig: () => Promise<void>;
     saveConfig: (config: EcommerceConfig) => Promise<boolean>;
@@ -107,6 +109,17 @@ export const useEcommerceWorkspaceStore = create<EcommerceWorkspaceState>((set, 
             set((current) => ({ detailById: { ...current.detailById, [id]: detail }, detailLoading: false }));
         } catch (reason) {
             set({ detailLoading: false, error: errorMessage(reason, "读取商品详情失败") });
+        }
+    },
+
+    // 强制刷新单个商品详情：绕过 openProduct 的缓存短路，供编排轮询与对账使用。
+    refreshDetail: async (id) => {
+        set({ detailLoading: true, error: "" });
+        try {
+            const detail = await getEcommerceProductDetail(id);
+            set((current) => ({ detailById: { ...current.detailById, [id]: detail }, detailLoading: false }));
+        } catch (reason) {
+            set({ detailLoading: false, error: errorMessage(reason, "刷新商品详情失败") });
         }
     },
 

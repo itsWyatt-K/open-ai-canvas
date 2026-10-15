@@ -1,11 +1,13 @@
 // 生成配置栏（核心配置版）：并发/执行模式/质量/三模型/主图详情页规格/标题参数
 // + 预设（保存/应用/删除）+「保存并应用」。桌面版 1:1 全字段面板由 F7 细排。
-import { useEffect } from "react";
-import { App, Button, Input, InputNumber, Segmented, Select } from "antd";
+import { useEffect, useMemo } from "react";
+import { App, Button, InputNumber, Segmented, Select } from "antd";
 import { PanelRightClose, PanelRightOpen, Plus, Trash2 } from "lucide-react";
 
 import type { EcommerceConfig } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
+import { modelDisplayName, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
+import type { AiConfig } from "@/stores/use-config-store";
 
 const RATIO_OPTIONS = ["1:1", "2:3", "3:2", "3:4", "9:16"];
 const TEXT_MODE_OPTIONS = [
@@ -29,6 +31,18 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
     const saveConfig = useEcommerceWorkspaceStore((state) => state.saveConfig);
     const savePreset = useEcommerceWorkspaceStore((state) => state.savePreset);
     const removePreset = useEcommerceWorkspaceStore((state) => state.removePreset);
+    // 模型目录只从当前有效渠道重建（沿用 selectableModelsByCapability 的既有口径，
+    // 不信任旧快照里残留的 config.models）。
+    const aiConfig = useConfigStore((state) => state.config) as AiConfig | undefined;
+
+    const modelOptions = useMemo(() => selectableModelsByCapability(aiConfig ?? ({} as AiConfig)).map((model) => ({ label: modelDisplayName(aiConfig ?? ({} as AiConfig), model), value: model })), [aiConfig]);
+    const imageModelOptions = useMemo(() => selectableModelsByCapability(aiConfig ?? ({} as AiConfig), "image").map((model) => ({ label: modelDisplayName(aiConfig ?? ({} as AiConfig), model), value: model })), [aiConfig]);
+    // 策划/标题需要"看图"：优先多模态模型名（vision/vl/gemini/glm/step），取不到时退回全量，不空窗。
+    const visionModelOptions = useMemo(() => {
+        const vision = (aiConfig?.models || []).filter((model) => /vision|vl|gemini|glm|step/i.test(model));
+        const pool = vision.length ? vision : (aiConfig?.models || []);
+        return pool.map((model) => ({ label: modelDisplayName(aiConfig ?? ({} as AiConfig), model), value: model }));
+    }, [aiConfig]);
 
     useEffect(() => {
         void refreshConfig();
@@ -119,13 +133,39 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
                             </label>
                         </section>
 
-                        {/* 模型 */}
+                        {/* 模型（M2.6：手贴 ID → 下拉选择器，选项来自当前有效渠道） */}
                         <section className="flex flex-col gap-3">
-                            <span className="font-medium opacity-75">模型（逻辑模型 ID）</span>
-                            <Input size="small" placeholder="策划模型 ID" value={config.plannerModelId} onChange={(event) => patch({ plannerModelId: event.target.value })} />
-                            <Input size="small" placeholder="生图模型 ID" value={config.imageModelId} onChange={(event) => patch({ imageModelId: event.target.value })} />
-                            <Input size="small" placeholder="标题模型 ID（留空同策划）" value={config.titleModelId} onChange={(event) => patch({ titleModelId: event.target.value })} />
-                            <p className="text-xs text-foreground/45">模型下拉选择器施工中（F7），当前可直接粘贴模型 ID；策划/标题需支持看图，生图需支持参考图</p>
+                            <span className="font-medium opacity-75">模型</span>
+                            <label className="flex flex-col gap-1">
+                                <span className="text-xs text-foreground/55">策划（需支持看图）</span>
+                                <ModelSelect
+                                    value={config.plannerModelId}
+                                    options={visionModelOptions}
+                                    onChange={(value) => patch({ plannerModelId: value })}
+                                />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                                <span className="text-xs text-foreground/55">生图（需支持参考图）</span>
+                                <ModelSelect
+                                    value={config.imageModelId}
+                                    options={imageModelOptions}
+                                    onChange={(value) => patch({ imageModelId: value })}
+                                />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                                <span className="text-xs text-foreground/55">标题（需支持看图，留空同策划）</span>
+                                <ModelSelect
+                                    value={config.titleModelId}
+                                    options={visionModelOptions}
+                                    allowClear
+                                    onChange={(value) => patch({ titleModelId: value })}
+                                />
+                            </label>
+                            {modelOptions.length === 0 ? (
+                                <p className="text-xs text-amber-600/80">当前渠道下没有可用模型——请先到「设置」配置并启用模型渠道</p>
+                            ) : (
+                                <p className="text-xs text-foreground/45">下拉只列当前有效渠道的模型；策划/标题需支持看图，生图需支持参考图。</p>
+                            )}
                         </section>
 
                         {/* 主图规格 */}
@@ -163,6 +203,26 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
                 <p className="mt-2 text-xs leading-5 text-foreground/45">保存后立即用于所有任务的后续请求；已发请求正常收尾，成品保留。</p>
             </footer>
         </aside>
+    );
+}
+
+/**
+ * 模型下拉选择器（M2.6：替代手贴模型 ID）。
+ * value 可能是历史遗留的裸 ID（不在当前选项里）——此时保留原值并提示，不清空用户配置。
+ */
+function ModelSelect({ value, options, allowClear, onChange }: { value: string; options: Array<{ label: string; value: string }>; allowClear?: boolean; onChange: (value: string) => void }) {
+    const known = options.some((option) => option.value === value);
+    return (
+        <Select
+            size="small"
+            showSearch
+            optionFilterProp="label"
+            allowClear={allowClear}
+            placeholder="选择模型"
+            value={value || undefined}
+            options={known || !value ? options : [{ label: `${value}（当前渠道不可用）`, value }, ...options]}
+            onChange={(next) => onChange(next ?? "")}
+        />
     );
 }
 

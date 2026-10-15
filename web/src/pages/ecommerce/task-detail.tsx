@@ -1,14 +1,21 @@
 // 任务详情栏：面包屑 + 头部（名称/状态徽章/轮次）+ 槽位网格（主图/详情页分区）
-// + 标题面板 + 底部打包下载/历史轮次入口（编排器施工中，先呈现数据与占位）。
-import { App, Button, Empty } from "antd";
-import { ArrowLeft, Download, History } from "lucide-react";
+// + 标题面板 + 底部打包下载/历史轮次入口。
+// M2.6 补：接入 M3 编排器——「开始生成」派发槽位任务并轮询对账（不再是占位）；
+//           接入电商 Agent 面板（原 agent-panel-adapter 为孤儿组件，现由「Agent 精修」抽屉挂载）。
+import { useCallback, useEffect, useState } from "react";
+import { App, Button, Drawer, Empty } from "antd";
+import { ArrowLeft, Bot, Download, History, Loader2, Play } from "lucide-react";
 
 import {
     ECOMMERCE_SLOT_STATUS_LABELS,
     ECOMMERCE_STATUS_LABELS,
+    getEcommerceProductDetail,
+    startEcommerceProduct,
     type EcommerceProductDetail,
 } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
+import { useConfigStore } from "@/stores/use-config-store";
+import { AgentWorkbenchPanel, useEcommerceWorkbenchCanvas } from "./agent-panel-adapter";
 
 const SLOT_STATUS_TONE: Record<string, string> = {
     pending: "bg-foreground/10 text-foreground/55",
@@ -32,6 +39,57 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const { message } = App.useApp();
     const detail = useEcommerceWorkspaceStore((state) => (productId ? state.detailById[productId] : undefined));
     const loading = useEcommerceWorkspaceStore((state) => state.detailLoading);
+    const refreshDetail = useEcommerceWorkspaceStore((state) => state.refreshDetail);
+    const refreshProducts = useEcommerceWorkspaceStore((state) => state.refreshProducts);
+    const config = useConfigStore((state) => state.config);
+    const [starting, setStarting] = useState(false);
+    // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
+    const { canvasId: agentCanvasId, ensureCanvas, canvasState: agentCanvasState } = useEcommerceWorkbenchCanvas();
+    const [agentOpen, setAgentOpen] = useState(false);
+
+    useEffect(() => {
+        if (agentOpen && !agentCanvasId) void ensureCanvas();
+    }, [agentOpen, agentCanvasId, ensureCanvas]);
+
+    // M3 编排器：派发槽位任务 → 轮询对账直至终态（详情接口本身会对账）。
+    const handleStart = useCallback(async () => {
+        if (!productId || !detail) return;
+        if (!config.imageModel) {
+            message.error("未配置生图模型，请到「设置」选择");
+            return;
+        }
+        setStarting(true);
+        try {
+            const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
+            const requestConfig = resolveModelRequestConfig(config, config.imageModel);
+            const bareModel = modelOptionName(config.imageModel);
+            const started = await startEcommerceProduct(productId, {
+                channelId: requestConfig.channelId,
+                model: bareModel,
+                size: "1:1",
+                quality: "auto",
+                sellingPoints: detail.product.sellingPoints || "",
+                extraRequirements: detail.product.extraRequirements || "",
+            });
+            if (started.degraded?.length) message.warning(started.degraded.join("；"));
+            message.success(`已派发 ${started.dispatched} 个槽位任务${started.failed ? `（失败 ${started.failed}）` : ""}`);
+            // 轮询：详情接口隐式对账，终态后停止。
+            const deadline = Date.now() + 15 * 60 * 1000;
+            for (;;) {
+                await refreshDetail(productId);
+                const latest = useEcommerceWorkspaceStore.getState().detailById[productId];
+                const status = latest?.product.status;
+                if (!status || status === "completed" || status === "completed_with_warnings" || status === "failed" || status === "uncertain" || status === "paused") break;
+                if (Date.now() > deadline) break;
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+            }
+            await refreshProducts();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "启动编排失败");
+        } finally {
+            setStarting(false);
+        }
+    }, [productId, detail, config, message, refreshDetail, refreshProducts]);
 
     if (!productId) {
         return (
@@ -84,7 +142,22 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                         </Button>
                         <Button
                             size="small"
+                            icon={<Bot className="size-3.5" />}
+                            onClick={() => setAgentOpen(true)}
+                        >
+                            Agent 精修
+                        </Button>
+                        <Button
+                            size="small"
                             type="primary"
+                            icon={starting ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+                            loading={starting}
+                            onClick={() => void handleStart()}
+                        >
+                            {starting ? "编排生成中…" : "开始生成"}
+                        </Button>
+                        <Button
+                            size="small"
                             icon={<Download className="size-3.5" />}
                             onClick={() => message.info("打包下载施工中（M5）")}
                         >
@@ -102,7 +175,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 {detail.slots.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 py-16 text-center">
                         <p className="text-sm text-foreground/65">该商品还没有生成任何槽位</p>
-                        <p className="text-xs text-foreground/50">策划编排器施工中（M3）——配置保存后即可派发生成</p>
+                        <p className="text-xs text-foreground/50">点右上角「开始生成」：服务端会合成各槽位提示词（含负向词与商品主体强控）并派发生图任务</p>
                     </div>
                 ) : (
                     <div className="flex flex-col gap-6">
@@ -112,6 +185,17 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                     </div>
                 )}
             </div>
+
+            {/* Agent 精修抽屉：复用电商工作台画布与 Cloud Agent 面板 */}
+            <Drawer
+                title="Agent 精修 · 电商工作台"
+                open={agentOpen}
+                onClose={() => setAgentOpen(false)}
+                width={420}
+                destroyOnHidden
+            >
+                <AgentWorkbenchPanel canvasId={agentCanvasId} canvasState={agentCanvasState} productCount={1} />
+            </Drawer>
         </section>
     );
 }
