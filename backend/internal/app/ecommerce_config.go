@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -86,7 +87,14 @@ func (s *Service) validateEcommerceModels(cfg ecommerce.ConfigView) error {
 }
 
 // ListEcommercePresets 用户创作预设列表（按创建时间倒序）。
+//
+// 阶段 0 修复：读取前先幂等确保内置预设（独乐岛 7 屏）已落库，
+// 否则首次打开「生成配置」栏时列表为空（原逻辑只在 start 编排时才落库）。
+// ensure 失败不阻断用户自定义预设的读取——降级为仅返回用户预设。
 func (s *Service) ListEcommercePresets(userID string) ([]model.EcommercePreset, error) {
+	if err := s.ensureBuiltinEcommercePresets(userID); err != nil {
+		log.Printf("[ecommerce] ensure builtin presets failed user=%s: %v", userID, err)
+	}
 	return s.repo.ListEcommercePresets(userID)
 }
 

@@ -559,7 +559,10 @@ func (s *Service) resolveEcommercePreset(userID, presetID string) (ecommerce.Pre
 		}
 		return config, nil
 	}
-	// 未指定 → 找内置独乐岛预设（按 config_json.key 匹配），不存在则写入。
+	// 未指定 → 确保内置独乐岛预设已落库，再读取。
+	if err := s.ensureBuiltinEcommercePresets(userID); err != nil {
+		return ecommerce.PresetConfig{}, err
+	}
 	presets, err := s.repo.ListEcommercePresets(userID)
 	if err != nil {
 		return ecommerce.PresetConfig{}, err
@@ -573,14 +576,34 @@ func (s *Service) resolveEcommercePreset(userID, presetID string) (ecommerce.Pre
 			return config, nil
 		}
 	}
+	// 落库后仍未找到（写入竞态等极端情况）→ 直接返回默认预设，不阻断编排。
+	return ecommerce.DefaultSoloIslandPreset(), nil
+}
+
+// ensureBuiltinEcommercePresets 幂等确保内置预设（独乐岛 7 屏）已写入用户预设表。
+//
+// 阶段 0 修复：原逻辑只在 start 编排时才落库，导致用户首次打开「生成配置」栏时
+// 预设列表为空。现在 ListEcommercePresets 读取前也调用本函数，保证入口可见。
+// 幂等：已存在（按 config_json.key 匹配）则跳过，不重复写入。
+func (s *Service) ensureBuiltinEcommercePresets(userID string) error {
+	presets, err := s.repo.ListEcommercePresets(userID)
+	if err != nil {
+		return err
+	}
+	for _, preset := range presets {
+		config, err := ecommerce.NormalizePresetConfig(preset.ConfigJSON)
+		if err != nil {
+			continue
+		}
+		if config.Key == ecommerce.SoloIslandPresetKey {
+			return nil // 已存在
+		}
+	}
 	defaults := ecommerce.DefaultSoloIslandPreset()
 	raw, _ := json.Marshal(defaults)
-	if err := s.repo.UpsertEcommercePreset(&model.EcommercePreset{
+	return s.repo.UpsertEcommercePreset(&model.EcommercePreset{
 		UserID: userID, Name: defaults.Name, ConfigJSON: string(raw),
-	}); err != nil {
-		return ecommerce.PresetConfig{}, err
-	}
-	return defaults, nil
+	})
 }
 
 // upstreamRuleSegments 取各槽位对应的上游预设铁律段（供料）。

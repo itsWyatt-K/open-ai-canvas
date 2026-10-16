@@ -42,6 +42,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const refreshDetail = useEcommerceWorkspaceStore((state) => state.refreshDetail);
     const refreshProducts = useEcommerceWorkspaceStore((state) => state.refreshProducts);
     const config = useConfigStore((state) => state.config);
+    const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const [starting, setStarting] = useState(false);
     // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
     const { canvasId: agentCanvasId, ensureCanvas, canvasState: agentCanvasState } = useEcommerceWorkbenchCanvas();
@@ -54,13 +55,15 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     // M3 编排器：派发槽位任务 → 轮询对账直至终态（详情接口本身会对账）。
     const handleStart = useCallback(async () => {
         if (!productId || !detail) return;
-        if (!config.imageModel) {
-            message.error("未配置生图模型，请到「设置」选择");
+        // 阶段 0 修复（移植自 pr(1) use-commerce-workflow.ts:127,205 的 isAiConfigReady 守卫）：
+        // 派发前强制校验生图模型「已选且可用」，杜绝无模型请求导致 7 张卡静默变红。
+        const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
+        if (!config.imageModel || !isAiConfigReady(config, config.imageModel)) {
+            message.error("请先在右侧「生成配置」选择可用的生图模型，再开始生成");
             return;
         }
         setStarting(true);
         try {
-            const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
             const requestConfig = resolveModelRequestConfig(config, config.imageModel);
             const bareModel = modelOptionName(config.imageModel);
             const started = await startEcommerceProduct(productId, {
@@ -186,7 +189,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 )}
             </div>
 
-            {/* Agent 精修抽屉：复用电商工作台画布与 Cloud Agent 面板 */}
+            {/* Agent 精修抽屉：复用电商工作台画布与 Cloud Agent 面板；阶段 0 注入商品上下文 */}
             <Drawer
                 title="Agent 精修 · 电商工作台"
                 open={agentOpen}
@@ -194,7 +197,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 width={420}
                 destroyOnHidden
             >
-                <AgentWorkbenchPanel canvasId={agentCanvasId} canvasState={agentCanvasState} productCount={1} />
+                <AgentWorkbenchPanel canvasId={agentCanvasId} canvasState={agentCanvasState} productCount={1} detail={detail} />
             </Drawer>
         </section>
     );

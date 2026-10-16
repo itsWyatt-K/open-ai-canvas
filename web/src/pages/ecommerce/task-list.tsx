@@ -1,7 +1,7 @@
 // 任务列表栏：顶部工具栏（计数/全选/搜索/筛选/删除/导入）+ 任务卡。
 // 交互原则：状态徽章一眼懂、进度摘要一行明、危险操作必确认、空态有引导。
 import { useMemo, useState } from "react";
-import { App, Button, Checkbox, Input, Segmented } from "antd";
+import { App, Button, Checkbox, Input, Select } from "antd";
 import { Plus, Trash2 } from "lucide-react";
 
 import { ECOMMERCE_STATUS_LABELS, summarizeProgress, type EcommerceProductSummary } from "@/services/api/ecommerce";
@@ -71,40 +71,41 @@ export function EcommerceTaskList({ activeId, onOpen }: { activeId: string | nul
     };
 
     return (
-        <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-border/60 bg-surface">
-            {/* 顶部工具栏 */}
-            <div className="flex flex-col gap-3 border-b border-border/60 p-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Checkbox
-                            checked={allChecked}
-                            indeterminate={selectedIds.length > 0 && !allChecked}
-                            onChange={(event) => (event.target.checked ? selectAll(products.map((item) => item.id)) : clearSelected())}
-                            aria-label="全选商品任务"
-                        />
-                        <span className="text-sm font-medium">商品任务 {products.length > 0 ? products.length : ""}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <Button size="small" type="text" danger disabled={selectedIds.length === 0} onClick={handleDeleteSelected} icon={<Trash2 className="size-3.5" />}>
-                            删除勾选{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
-                        </Button>
-                        <Button size="small" type="primary" onClick={() => setImportOpen(true)} icon={<Plus className="size-3.5" />}>
-                            导入商品
-                        </Button>
-                    </div>
+        <aside className="flex h-full w-[320px] shrink-0 flex-col border-r border-border/60 bg-surface">
+            {/* 顶部工具栏：标题禁止换行，按钮紧凑排布，避免 300px 下被压成竖排 */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 p-4">
+                <div className="flex shrink-0 items-center gap-2">
+                    <Checkbox
+                        checked={allChecked}
+                        indeterminate={selectedIds.length > 0 && !allChecked}
+                        onChange={(event) => (event.target.checked ? selectAll(products.map((item) => item.id)) : clearSelected())}
+                        aria-label="全选商品任务"
+                    />
+                    <span className="whitespace-nowrap text-sm font-medium">商品任务 {products.length > 0 ? `(${products.length})` : ""}</span>
                 </div>
-                <Input.Search
-                    allowClear
-                    placeholder="搜索商品名称"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    onSearch={() => void useEcommerceWorkspaceStore.getState().refreshProducts()}
-                />
-                <Segmented
-                    block
+                <div className="flex shrink-0 items-center gap-1">
+                    <Button size="small" type="text" danger disabled={selectedIds.length === 0} onClick={handleDeleteSelected} icon={<Trash2 className="size-3.5" />} aria-label="删除勾选商品">
+                        删除{selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
+                    </Button>
+                    <Button size="small" type="primary" onClick={() => setImportOpen(true)} icon={<Plus className="size-3.5" />}>
+                        导入商品
+                    </Button>
+                </div>
+            </div>
+            <Input.Search
+                allowClear
+                placeholder="搜索商品名称"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onSearch={() => void useEcommerceWorkspaceStore.getState().refreshProducts()}
+            />
+            {/* 状态筛选：改为全宽 Select，彻底消除 7 项状态在 Segmented 中的文字截断 */}
+            <div className="shrink-0 border-b border-border/60 px-3 py-2">
+                <Select
+                    className="w-full"
                     size="small"
                     value={status}
-                    options={STATUS_FILTERS.map((item) => ({ label: item.label, value: item.value }))}
+                    options={STATUS_FILTERS}
                     onChange={(value) => {
                         setStatus(String(value));
                         void useEcommerceWorkspaceStore.getState().refreshProducts();
@@ -157,8 +158,16 @@ function TaskCard({ product, active, selected, onToggle, onOpen }: { product: Ec
             }`}
             onClick={onOpen}
         >
-            <div onClick={(event) => event.stopPropagation()} className="flex items-start pt-1">
-                <Checkbox checked={selected} onChange={onToggle} aria-label={`选择 ${product.name}`} />
+            <div className="flex items-start pt-1">
+                {/* 阶段 0 修复：勾选商品时同步在中间栏打开该商品详情，消除勾选与预览割裂 */}
+                <Checkbox
+                    checked={selected}
+                    onChange={(event) => {
+                        onToggle();
+                        if (event.target.checked) onOpen();
+                    }}
+                    aria-label={`选择 ${product.name}`}
+                />
             </div>
             {product.thumbnailUrl ? (
                 <img src={product.thumbnailUrl} alt="" className="size-12 shrink-0 rounded-md object-cover" />

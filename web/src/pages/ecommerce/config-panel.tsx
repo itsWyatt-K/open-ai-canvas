@@ -69,13 +69,15 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
     };
 
     return (
-        <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-border/60 bg-surface">
-            <header className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+        // overflow-hidden + 各区块 shrink-0：高度受限时底部操作栏不再被压缩溢出，
+        // 也不会遮挡滚动区底部内容（阶段 0 修复：原 footer 缺 shrink-0 且 sticky bottom-0 无效）。
+        <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-surface">
+            <header className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3">
                 <strong className="text-sm">生成配置</strong>
                 <Button size="small" type="text" onClick={onToggle} icon={collapsed ? <PanelRightOpen className="size-4" /> : <PanelRightClose className="size-4" />} aria-label={collapsed ? "展开配置" : "收起配置"} />
             </header>
 
-            <div className="flex-1 overflow-y-auto px-4 py-3">
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 pb-6">
                 {!config ? (
                     <p className="text-sm text-foreground/55">正在读取配置…</p>
                 ) : (
@@ -196,7 +198,7 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
                 )}
             </div>
 
-            <footer className="sticky bottom-0 border-t border-border/60 bg-surface px-4 py-3">
+            <footer className="z-10 shrink-0 border-t border-border/60 bg-surface px-4 py-3">
                 <Button type="primary" block loading={saving} onClick={() => void refreshConfig().then(() => message.success("配置已读取最新值"))}>
                     刷新配置
                 </Button>
