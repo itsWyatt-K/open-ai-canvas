@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -140,6 +141,9 @@ func (s *Service) ApplyEcommercePlan(ctx context.Context, userID, productID, raw
 	if len(slots) != want {
 		want = len(slots)
 	}
+	// 关键：策划屏序是「先主图后详情页」，而 ListEcommerceSlots 按 kind 字母序返回
+	// （detail 排在 hero 前）。必须按预设语义重排，否则第 1 屏会被写到详情页槽位。
+	slots = sortEcommerceSlotsForPlan(slots)
 	compiled, compileErr := ecommerce.CompileDetailPlan(raw, want)
 	if compileErr != nil {
 		// 可恢复错误：落失败原因，不写槽位、不派发生图。
@@ -231,4 +235,87 @@ func ecommerceTruncateRunes(value string, limit int) string {
 		return value
 	}
 	return string(runes[:limit])
+}
+
+// EcommercePlanResponse 策划原始响应视图（供人工查看/修正）。
+type EcommercePlanResponse struct {
+	ProductID    string `json:"productId"`
+	Raw          string `json:"raw"`
+	ScreenCount  int    `json:"screenCount"`
+	PlanRevision int    `json:"planRevision"`
+	// ValidationError 上一次校验失败原因（无错误为空）。
+	ValidationError string `json:"validationError,omitempty"`
+	// Status 商品当前状态，前端据此决定是否允许修正。
+	Status    string `json:"status"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+// GetEcommercePlanResponse 返回最近一次 AI 策划的原始 JSON 文本与校验错误。
+func (s *Service) GetEcommercePlanResponse(ctx context.Context, userID, productID string) (*EcommercePlanResponse, error) {
+	product, err := s.repo.GetEcommerceProduct(userID, productID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, kernel.NotFound("商品任务不存在")
+		}
+		return nil, err
+	}
+	view := &EcommercePlanResponse{
+		ProductID: product.ID, ScreenCount: len(ecommerce.GeneralSlots()),
+		PlanRevision: product.PlanRevision, Status: product.Status,
+		UpdatedAt: product.UpdatedAt.Format(time.RFC3339),
+		Raw:       product.PlanJSON,
+	}
+	if strings.HasPrefix(strings.TrimSpace(product.StatusReason), "PLAN_VALIDATION_FAILED") {
+		view.ValidationError = strings.TrimSpace(strings.TrimPrefix(product.StatusReason, "PLAN_VALIDATION_FAILED:"))
+	}
+	slots, listErr := s.repo.ListEcommerceSlots(productID)
+	if listErr == nil && len(slots) > 0 {
+		view.ScreenCount = len(slots)
+	}
+	return view, nil
+}
+
+// UpdateEcommercePlanResponse 人工修正策划 JSON：本地校验 + 编译回写（不调模型、不扣费）。
+func (s *Service) UpdateEcommercePlanResponse(ctx context.Context, userID, productID, raw string) (*ProductDetail, error) {
+	product, err := s.repo.GetEcommerceProduct(userID, productID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, kernel.NotFound("商品任务不存在")
+		}
+		return nil, err
+	}
+	if product.Status == ecommerce.ProductStatusRunning {
+		return nil, NewAppError(http.StatusConflict, "商品正在生成中，请等收尾后再修正方案")
+	}
+	// 先把修正稿落到 PlanJSON，便于失败后再次打开继续改。
+	if err := s.repo.UpdateEcommerceProductPlanJSON(userID, productID, raw); err != nil {
+		return nil, err
+	}
+	return s.ApplyEcommercePlan(ctx, userID, productID, raw)
+}
+
+// sortEcommerceSlotsForPlan 按策划屏序重排槽位：主图在前、详情页在后，同类按 slotNo 升序。
+//
+// 策划输出顺序与预设 SlotPlan 顺序一致（预设里主图 slotNo 1..3 在前、详情页随后），
+// 因此不能直接依赖 DB 的 "kind, slot_no" 字母序（detail < hero 会把详情页提到前面）。
+func sortEcommerceSlotsForPlan(slots []model.EcommerceSlot) []model.EcommerceSlot {
+	priority := func(kind string) int {
+		if kind == ecommerce.SlotKindHero {
+			return 0
+		}
+		if kind == ecommerce.SlotKindDetail {
+			return 1
+		}
+		return 2
+	}
+	ordered := make([]model.EcommerceSlot, len(slots))
+	copy(ordered, slots)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		left, right := priority(ordered[i].Kind), priority(ordered[j].Kind)
+		if left != right {
+			return left < right
+		}
+		return ordered[i].SlotNo < ordered[j].SlotNo
+	})
+	return ordered
 }

@@ -331,3 +331,71 @@ export function summarizeProgress(product: EcommerceProductSummary): string {
     else if (product.titleStatus === "uncertain") parts.push("标题 ？");
     return parts.join(" · ") || "尚未生成";
 }
+
+/** 导出清单（不下载字节）。 */
+export type EcommerceExportEntry = {
+    path: string;
+    slotKey?: string;
+    title?: string;
+    kind?: string;
+    version?: number;
+    resourceId?: string;
+    contentType?: string;
+    bytes?: number;
+};
+
+export type EcommerceExportManifest = {
+    productId: string;
+    productName: string;
+    round: number;
+    title?: string;
+    entries: EcommerceExportEntry[];
+    generatedAt: string;
+};
+
+export function getEcommerceExportManifest(id: string) {
+    return http.get<EcommerceExportManifest>(`/ecommerce/products/${encodeURIComponent(id)}/export`);
+}
+
+/** 打包下载 ZIP（原始二进制，不走 JSON 信封）。 */
+export async function getEcommerceExportZip(id: string) {
+    const response = await http.raw<Blob>({
+        method: "get",
+        url: `/ecommerce/products/${encodeURIComponent(id)}/export.zip`,
+        responseType: "blob",
+    });
+    return response.data;
+}
+
+/** 整组重试（round+1，必须 confirmCost=true）。 */
+export function retryEcommerceProducts(productIds: string[]) {
+    return http.post<{ retried: string[]; refused: Record<string, string> }>("/ecommerce/products/retry", {
+        productIds,
+        confirmCost: true,
+    });
+}
+
+/** 复制任务（只带元信息，status=draft）。 */
+export function duplicateEcommerceProduct(id: string) {
+    return http.post<EcommerceProductSummary>(`/ecommerce/products/${encodeURIComponent(id)}/duplicate`);
+}
+
+/** 策划原始响应（查看）。 */
+export type EcommercePlanResponse = {
+    productId: string;
+    raw: string;
+    screenCount: number;
+    planRevision: number;
+    validationError?: string;
+    status: string;
+    updatedAt?: string;
+};
+
+export function getEcommercePlanResponse(id: string) {
+    return http.get<EcommercePlanResponse>(`/ecommerce/products/${encodeURIComponent(id)}/plan-response`);
+}
+
+/** 策划原始响应（人工修正，本地校验编译，不调模型不扣费）。 */
+export function updateEcommercePlanResponse(id: string, raw: string) {
+    return http.put<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/plan-response`, { raw });
+}

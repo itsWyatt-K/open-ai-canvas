@@ -295,6 +295,21 @@ func compileCloudAgentTools(req CloudAgentRequest, includeProfileTool bool) []ma
 		}, "mode", "prompt", "nodeId", "title", "referenceNodeIds")
 		cloudAgentRequireExplicitMediaModelSelection(tools[len(tools)-1])
 	}
+	// 电商工坊改稿工具：作用于 ecommerce_* 表，不碰画布节点（画布宿主零改动）。
+	// 只读工具始终可用；改稿工具在只读模式下不下发。
+	add("ecommerce_get_product_detail", "读取电商商品任务与全部槽位（主图/详情页）的最新状态、文案与提示词。用于在改稿前确认当前值；productId 见当前会话上下文（商品 ID）。", map[string]any{
+		"productId": str("商品任务 ID"),
+	}, "productId")
+	if req.PermissionMode != "read_only" {
+		add("ecommerce_update_slot_prompt", "修改电商某个槽位的文案与提示词（仅改文字参数，不触发生图、不扣费）。running 或 uncertain 状态的槽位会被拒绝；promptOverride 非空时优先级最高且不会被后续 AI 重策划覆盖。修改后需刷新商品详情才能看到。", map[string]any{
+			"productId":      str("商品任务 ID"),
+			"slotId":         str("槽位 ID，可从 ecommerce_get_product_detail 的 slots[].id 取得"),
+			"title":          str("屏主题（可空，空则保留原值）"),
+			"copy":           str("画面文案（可空字符串表示纯图无字）"),
+			"prompt":         str("画面描述/生图提示词（可空，空则保留原值）"),
+			"promptOverride": str("完整提示词覆盖（非空时最高优先；传空字符串表示清除覆盖）"),
+		}, "productId", "slotId")
+	}
 	return tools
 }
 

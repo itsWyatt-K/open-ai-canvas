@@ -3,8 +3,8 @@
 // M2.6 补：接入 M3 编排器——「开始生成」派发槽位任务并轮询对账（不再是占位）；
 //           接入电商 Agent 面板（原 agent-panel-adapter 为孤儿组件，现由「Agent 精修」抽屉挂载）。
 import { useCallback, useEffect, useState } from "react";
-import { App, Button, Drawer, Empty } from "antd";
-import { ArrowLeft, Bot, Download, History, Loader2, Play, Sparkles } from "lucide-react";
+import { App, Button, Drawer, Empty, Input } from "antd";
+import { ArrowLeft, Bot, CopyPlus, Download, FileArchive, History, Loader2, Play, RotateCcw, Sparkles } from "lucide-react";
 
 import {
     ECOMMERCE_SLOT_STATUS_LABELS,
@@ -14,6 +14,11 @@ import {
     startEcommerceProduct,
     startEcommercePlanning,
     applyEcommercePlan,
+    duplicateEcommerceProduct,
+    getEcommerceExportZip,
+    getEcommercePlanResponse,
+    retryEcommerceProducts,
+    updateEcommercePlanResponse,
     type EcommerceProductDetail,
 } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
@@ -43,7 +48,7 @@ const TITLE_STATUS_LABELS: Record<string, string> = {
 };
 
 export function EcommerceTaskDetail({ productId, onBack }: { productId: string | null; onBack: () => void }) {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     const detail = useEcommerceWorkspaceStore((state) => (productId ? state.detailById[productId] : undefined));
     const loading = useEcommerceWorkspaceStore((state) => state.detailLoading);
     const refreshDetail = useEcommerceWorkspaceStore((state) => state.refreshDetail);
@@ -54,6 +59,8 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const [confirming, setConfirming] = useState(false);
     const [downloading, setDownloading] = useState(false);
     const [planning, setPlanning] = useState(false);
+    const [zipping, setZipping] = useState(false);
+    const [duplicating, setDuplicating] = useState(false);
     const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
     const ecommerceConfig = useEcommerceWorkspaceStore((state) => state.config);
     // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
@@ -63,6 +70,18 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     useEffect(() => {
         if (agentOpen && !agentCanvasId) void ensureCanvas();
     }, [agentOpen, agentCanvasId, ensureCanvas]);
+
+    // Agent 改稿（ecommerce_update_slot_prompt）后需要刷新详情，让左侧槽位卡实时反映。
+    // 面板没有"回合结束"回调，故采用：打开即刷 + 打开期间轻量轮询 + 关闭再刷一次。
+    useEffect(() => {
+        if (!agentOpen || !productId) return;
+        void refreshDetail(productId);
+        const timer = window.setInterval(() => { void refreshDetail(productId); }, 6000);
+        return () => {
+            window.clearInterval(timer);
+            void refreshDetail(productId);
+        };
+    }, [agentOpen, productId, refreshDetail]);
 
     // M3 编排器：派发槽位任务 → 轮询对账直至终态（详情接口本身会对账）。
     const handleStart = useCallback(async () => {
@@ -201,6 +220,105 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         }
     }, [productId, detail, ecommerceConfig?.plannerModelId, config, isAiConfigReady, message, refreshDetail, refreshProducts]);
 
+    // 打包下载 ZIP：服务端流式打包（目录规范 商品名/主图|详情页/NN_主题.ext）。
+    const handleDownloadZip = useCallback(async () => {
+        if (!detail) return;
+        setZipping(true);
+        try {
+            const blob = await getEcommerceExportZip(detail.product.id);
+            downloadBlob(blob, `${detail.product.name || "电商工坊"}.zip`);
+            message.success("已打包下载（含主图/详情页/标题/清单）");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "打包下载失败");
+        } finally {
+            setZipping(false);
+        }
+    }, [detail, message]);
+
+    // 复制任务：只复制元信息，不带历史，status=draft。
+    const handleDuplicate = useCallback(async () => {
+        if (!productId) return;
+        setDuplicating(true);
+        try {
+            await duplicateEcommerceProduct(productId);
+            await refreshProducts();
+            message.success("已创建副本任务（未开始，可单独配置后生成）");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "复制任务失败");
+        } finally {
+            setDuplicating(false);
+        }
+    }, [productId, message, refreshProducts]);
+
+    // 从头重试：round+1，收费确认不可绕过。
+    const handleRetry = useCallback(() => {
+        if (!productId) return;
+        modal.confirm({
+            title: "从头重试该商品任务？",
+            content: "将开启新一轮（round + 1）并重新派发全部槽位，已完成的图会保留但会再次计费。运行中或结果待确认的任务不允许重试。",
+            okText: "确认重试（可能收费）",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: async () => {
+                try {
+                    const result = await retryEcommerceProducts([productId]);
+                    const refused = Object.values(result.refused || {});
+                    if (refused.length) message.warning(refused.join("；"));
+                    else message.success("已开启新一轮，请重新点「开始生成」派发");
+                    await refreshDetail(productId);
+                    await refreshProducts();
+                } catch (error) {
+                    message.error(error instanceof Error ? error.message : "重试失败");
+                }
+            },
+        });
+    }, [productId, modal, message, refreshDetail, refreshProducts]);
+
+    // 查看/修正原始策划响应：GET 拉原文 → 编辑 → PUT 本地校验编译（不调模型）。
+    const handleOpenPlanResponse = useCallback(async () => {
+        if (!productId) return;
+        try {
+            const view = await getEcommercePlanResponse(productId);
+            let draft = view.raw || "";
+            modal.confirm({
+                title: "查看 / 修正原始响应",
+                width: 780,
+                content: (
+                    <div className="flex flex-col gap-2">
+                        {view.validationError ? (
+                            <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                                上次校验失败：{view.validationError}
+                            </p>
+                        ) : null}
+                        <p className="text-xs text-foreground/55">
+                            期望 {view.screenCount} 屏。修正后点「校验并应用」：服务端本地校验 + 编译回写各屏，不调用模型、不扣费。
+                        </p>
+                        <Input.TextArea
+                            defaultValue={draft}
+                            rows={18}
+                            onChange={(event) => { draft = event.target.value; }}
+                            placeholder="粘贴或修改策划 JSON（含 productAnalysis / styleAnalysis / visualSystem / screens）"
+                        />
+                    </div>
+                ),
+                okText: "校验并应用",
+                cancelText: "取消",
+                onOk: async () => {
+                    try {
+                        await updateEcommercePlanResponse(productId, draft);
+                        await refreshDetail(productId);
+                        await refreshProducts();
+                        message.success("已校验并写入各屏");
+                    } catch (error) {
+                        message.error(error instanceof Error ? error.message : "校验失败，方案未写入");
+                    }
+                },
+            });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "读取原始响应失败");
+        }
+    }, [productId, modal, message, refreshDetail, refreshProducts]);
+
     if (!productId) {
         return (
             <section className="flex flex-1 items-center justify-center bg-surface">
@@ -277,6 +395,30 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                         </Button>
                         <Button
                             size="small"
+                            icon={<FileArchive className="size-3.5" />}
+                            loading={zipping}
+                            disabled={detail.slots.every((slot) => slot.status !== "completed")}
+                            onClick={() => void handleDownloadZip()}
+                        >
+                            打包下载 ZIP
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<CopyPlus className="size-3.5" />}
+                            loading={duplicating}
+                            onClick={() => void handleDuplicate()}
+                        >
+                            复制任务
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<RotateCcw className="size-3.5" />}
+                            onClick={() => void handleRetry()}
+                        >
+                            从头重试
+                        </Button>
+                        <Button
+                            size="small"
                             icon={<Download className="size-3.5" />}
                             loading={downloading}
                             disabled={detail.slots.every((slot) => !slot.resourceId)}
@@ -307,6 +449,20 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                         onClick={() => void handleConfirmPlan()}
                     >
                         确认方案并开始生图
+                    </Button>
+                </div>
+            ) : null}
+
+            {/* 阶段 3：策划失败/待确认时的手工兜底入口 */}
+            {product.status === "review" || product.status === "failed" ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-surface px-5 py-2">
+                    <span className="text-xs text-foreground/55">
+                        {product.status === "failed"
+                            ? "策划或出图失败：可打开原始响应手工修正后重新应用（本地校验，不调模型、不扣费）"
+                            : "可打开原始策划 JSON 手工微调后重新应用（不调模型、不扣费）"}
+                    </span>
+                    <Button size="small" onClick={() => void handleOpenPlanResponse()}>
+                        查看 / 修正原始响应
                     </Button>
                 </div>
             ) : null}

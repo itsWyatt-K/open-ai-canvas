@@ -52,7 +52,7 @@ func cloudAgentReadToolCacheable(name string) bool {
 // and search results are allowed to change between calls.
 func cloudAgentReadToolReadOnly(name string) bool {
 	switch name {
-	case "agent_profile_read", "canvas_get_state", "canvas_read_text", "canvas_read_storyboard", "previs_scene_read", "canvas_read_batch_table", "canvas_list_node_types", "skill_read_file", "skill_search", "model_list", "recall_lessons", "task_get":
+	case "agent_profile_read", "canvas_get_state", "canvas_read_text", "canvas_read_storyboard", "previs_scene_read", "canvas_read_batch_table", "canvas_list_node_types", "skill_read_file", "skill_search", "model_list", "recall_lessons", "task_get", "ecommerce_get_product_detail":
 		return true
 	default:
 		return false
@@ -275,6 +275,10 @@ func cloudAgentReadTool(repo *repository.Repository, userID string, state *cloud
 			return nil, cloudAgentJSONArgumentError(err)
 		}
 		return cloudAgentNodeTypes(), nil
+	case "ecommerce_get_product_detail":
+		return cloudAgentEcommerceGetProductDetail(services, userID, call)
+	case "ecommerce_update_slot_prompt":
+		return cloudAgentEcommerceUpdateSlotPrompt(services, userID, call)
 	case "canvas_get_state":
 		var args struct {
 			Offset           int      `json:"offset"`

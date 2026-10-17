@@ -267,6 +267,40 @@ func (r *Repository) UpdateEcommerceSlotPlan(slotID string, patch map[string]any
 	return r.db.Model(&model.EcommerceSlot{}).Where("id = ?", slotID).Updates(patch).Error
 }
 
+// UpdateEcommerceProductPlanJSON 只写方案原文（人工修正稿暂存，不改状态）。
+func (r *Repository) UpdateEcommerceProductPlanJSON(userID, productID, planJSON string) error {
+	return r.db.Model(&model.EcommerceProduct{}).Where("id = ? AND user_id = ?", productID, userID).
+		Updates(map[string]any{"plan_json": planJSON, "updated_at": time.Now()}).Error
+}
+
+// ResetEcommerceProductForRetry 整组重试：round+1、清空编排态、槽位回到待生成。
+//
+// 不物理删除历史：槽位与版本行保留（旧轮次的图仍在），只把编排视图重置，
+// 以便重新按最新配置派发。CurrentVersion 保留，新版本号在其上继续递增。
+func (r *Repository) ResetEcommerceProductForRetry(userID, productID string, nextRound int) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.EcommerceProduct{}).
+			Where("id = ? AND user_id = ?", productID, userID).
+			Updates(map[string]any{
+				"round":         nextRound,
+				"status":        "draft",
+				"status_reason": "",
+				"error_message": "",
+				"plan_json":     "",
+				"paused":        false,
+				"updated_at":    time.Now(),
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.EcommerceSlot{}).
+			Where("product_id = ?", productID).
+			Updates(map[string]any{
+				"status":     "pending",
+				"updated_at": time.Now(),
+			}).Error
+	})
+}
+
 // UpdateEcommerceProductRun 写商品编排态：状态 + 标题状态 + 方案快照与修订号。
 func (r *Repository) UpdateEcommerceProductRun(userID, productID, status, titleStatus, planJSON string, planRevision int) error {
 	updates := map[string]any{"status": status, "updated_at": time.Now()}

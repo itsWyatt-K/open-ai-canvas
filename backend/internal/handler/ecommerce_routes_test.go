@@ -39,6 +39,15 @@ func TestEcommerceRoutesAreRegistered(t *testing.T) {
 		// 阶段 2：AI 策划轨
 		"POST /api/ecommerce/products/:id/plan":       false,
 		"POST /api/ecommerce/products/:id/apply-plan": false,
+		// 阶段 3：导出闭环
+		"GET /api/ecommerce/products/:id/export":     false,
+		"GET /api/ecommerce/products/:id/export.zip": false,
+		// 阶段 3：整组重试与复制
+		"POST /api/ecommerce/products/retry":         false,
+		"POST /api/ecommerce/products/:id/duplicate": false,
+		// 阶段 3：策划原始响应
+		"GET /api/ecommerce/products/:id/plan-response": false,
+		"PUT /api/ecommerce/products/:id/plan-response": false,
 	}
 	for _, route := range router.Routes() {
 		key := route.Method + " " + route.Path
@@ -56,7 +65,7 @@ func TestEcommerceRoutesAreRegistered(t *testing.T) {
 	if missing > 0 {
 		t.Fatalf("%d 个电商路由缺失", missing)
 	}
-	if len(wanted) != 18 {
-		t.Fatalf("电商路由契约应为 18 条，实际断言 %d 条", len(wanted))
+	if len(wanted) != 24 {
+		t.Fatalf("电商路由契约应为 24 条，实际断言 %d 条", len(wanted))
 	}
 }

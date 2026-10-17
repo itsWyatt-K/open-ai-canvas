@@ -4,9 +4,11 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"yingce/backend/internal/ecommerce"
@@ -372,4 +374,125 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, detail)
 	})
+
+	// ---- 阶段 3：导出闭环 ----
+	group.GET("/products/:id/export", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		manifest, err := svc.EcommerceExportManifest(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, manifest)
+	})
+	group.GET("/products/:id/export.zip", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		// 先写内存缓冲：既能在失败时返回结构化错误，又避免半截 zip 污染下载。
+		buffer := &bytes.Buffer{}
+		if err := svc.EcommerceExportZip(user.ID, c.Param("id"), buffer); err != nil {
+			failService(c, err)
+			return
+		}
+		fileName := sanitizeExportFileName(c.Param("id")) + ".zip"
+		c.Header("Content-Disposition", "attachment; filename=\""+fileName+"\"")
+		c.DataFromReader(http.StatusOK, int64(buffer.Len()), "application/zip", buffer, nil)
+	})
+
+	// ---- 阶段 3：整组重试与复制 ----
+	group.POST("/products/retry", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var body struct {
+			ProductIDs  []string `json:"productIds"`
+			ConfirmCost bool     `json:"confirmCost"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+			return
+		}
+		result, err := svc.RetryEcommerceProducts(user.ID, body.ProductIDs, body.ConfirmCost)
+		if err != nil {
+			// 部分成功时也把结果带回，便于前端展示「哪些被拒」。
+			if result != nil && len(result.Retried) > 0 {
+				ok(c, result)
+				return
+			}
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
+	group.POST("/products/:id/duplicate", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		product, err := svc.DuplicateEcommerceProduct(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, product)
+	})
+
+	// ---- 阶段 3：策划原始响应查看 / 人工修正 ----
+	group.GET("/products/:id/plan-response", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		view, err := svc.GetEcommercePlanResponse(c.Request.Context(), user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, view)
+	})
+	group.PUT("/products/:id/plan-response", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var body struct {
+			Raw string `json:"raw"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+			return
+		}
+		detail, err := svc.UpdateEcommercePlanResponse(c.Request.Context(), user.ID, c.Param("id"), body.Raw)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, detail)
+	})
+}
+
+// sanitizeExportFileName 生成下载文件名（仅 ASCII 安全字符，避免 header 注入）。
+func sanitizeExportFileName(productID string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, productID)
+	if cleaned == "" {
+		return "ecommerce-export"
+	}
+	return "ecommerce-" + cleaned
 }
