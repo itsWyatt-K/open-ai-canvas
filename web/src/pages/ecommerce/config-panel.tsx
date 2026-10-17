@@ -26,6 +26,7 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
     const config = useEcommerceWorkspaceStore((state) => state.config);
     const presets = useEcommerceWorkspaceStore((state) => state.presets);
     const saving = useEcommerceWorkspaceStore((state) => state.saving);
+    const configDirty = useEcommerceWorkspaceStore((state) => state.configDirty);
     const refreshConfig = useEcommerceWorkspaceStore((state) => state.refreshConfig);
     const refreshPresets = useEcommerceWorkspaceStore((state) => state.refreshPresets);
     const saveConfig = useEcommerceWorkspaceStore((state) => state.saveConfig);
@@ -199,10 +200,28 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
             </div>
 
             <footer className="z-10 shrink-0 border-t border-border/60 bg-surface px-4 py-3">
-                <Button type="primary" block loading={saving} onClick={() => void refreshConfig().then(() => message.success("配置已读取最新值"))}>
-                    刷新配置
+                {/* 显式保存：patch 已是即存即用，但这里给用户一个可确认的落库动作，
+                    并保证「改完立刻去点开始生成」时配置已经写到服务端。 */}
+                <Button
+                    type="primary"
+                    block
+                    loading={saving}
+                    disabled={!config}
+                    onClick={() => {
+                        if (!config) return;
+                        void saveConfig(config).then((ok) => ok && message.success("配置已保存并生效"));
+                    }}
+                >
+                    保存并应用配置
                 </Button>
-                <p className="mt-2 text-xs leading-5 text-foreground/45">保存后立即用于所有任务的后续请求；已发请求正常收尾，成品保留。</p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs leading-5 text-foreground/45">
+                        {configDirty ? "有改动未落库，点上方按钮保存" : "改动即存即用；已发请求按派发时参数收尾"}
+                    </span>
+                    <Button size="small" type="text" loading={saving} onClick={() => void refreshConfig().then(() => message.success("已读取最新配置"))}>
+                        刷新
+                    </Button>
+                </div>
             </footer>
         </aside>
     );

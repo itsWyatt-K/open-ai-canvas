@@ -106,11 +106,14 @@ func TestMigrateSchemaNormalizesLegacyWorkbenchMigrationV51(t *testing.T) {
 	if err := MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Where("version IN ?", []int64{51, 52, 53}).Delete(&schemaMigration{}).Error; err != nil {
+	// 模拟「账本停在旧工作台 51」的历史库：清空 51 之后的所有记录。
+	// 本地在迁移计划尾部新增了 ecommerce 迁移（55），若保留它，归一化守卫会
+	// 正确地拒绝改写账本——那不是本用例要测的行为，故一并清除以还原历史现场。
+	if err := db.Where("version > ?", 51).Delete(&schemaMigration{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Model(&schemaMigration{}).Where("version = ?", 54).Updates(map[string]any{
-		"version":  51,
+	// 把 51 改写成旧工作台身份，等待 MigrateSchema 归一化回 54。
+	if err := db.Model(&schemaMigration{}).Where("version = ?", 51).Updates(map[string]any{
 		"name":     workbenchToolsMigrationName,
 		"checksum": legacyWorkbenchToolsMigrationChecksum,
 	}).Error; err != nil {

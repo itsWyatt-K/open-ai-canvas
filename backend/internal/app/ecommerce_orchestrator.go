@@ -676,7 +676,10 @@ func firstImageResourceID(value interface{}) string {
 	return ""
 }
 
-// resolveEcommercePreset 取预设：指定 ID 则按 ID，否则确保内置独乐岛预设存在。
+// resolveEcommercePreset 取预设：指定 ID 则按 ID；未指定则用**通用电商标准**预设。
+//
+// 阶段 2 修复：默认不再是独乐岛（成人用品品类专用），避免普通商品被套上
+// 情趣用品文案。独乐岛改为**显式选择**（presetID = solo_island_aesop）。
 func (s *Service) resolveEcommercePreset(userID, presetID string) (ecommerce.PresetConfig, error) {
 	if trimmed := strings.TrimSpace(presetID); trimmed != "" {
 		preset, err := s.repo.EcommercePresetByID(userID, trimmed)
@@ -692,51 +695,63 @@ func (s *Service) resolveEcommercePreset(userID, presetID string) (ecommerce.Pre
 		}
 		return config, nil
 	}
-	// 未指定 → 确保内置独乐岛预设已落库，再读取。
+	// 未指定 → 确保内置预设已落库，优先取通用预设；缺失则直接返回内存默认值。
 	if err := s.ensureBuiltinEcommercePresets(userID); err != nil {
-		return ecommerce.PresetConfig{}, err
+		return ecommerce.DefaultGeneralPreset(), nil
 	}
 	presets, err := s.repo.ListEcommercePresets(userID)
 	if err != nil {
-		return ecommerce.PresetConfig{}, err
+		return ecommerce.DefaultGeneralPreset(), nil
 	}
 	for _, preset := range presets {
 		config, err := ecommerce.NormalizePresetConfig(preset.ConfigJSON)
 		if err != nil {
 			continue
 		}
-		if config.Key == ecommerce.SoloIslandPresetKey {
+		if config.Key == ecommerce.GeneralPresetKey {
 			return config, nil
 		}
 	}
-	// 落库后仍未找到（写入竞态等极端情况）→ 直接返回默认预设，不阻断编排。
-	return ecommerce.DefaultSoloIslandPreset(), nil
+	return ecommerce.DefaultGeneralPreset(), nil
 }
 
-// ensureBuiltinEcommercePresets 幂等确保内置预设（独乐岛 7 屏）已写入用户预设表。
+// ensureBuiltinEcommercePresets 幂等确保两个内置预设已写入用户预设表：
+//  1. 通用电商标准（general_ecommerce_standard）—— 系统默认，品类中性；
+//  2. 独乐岛（solo_island_aesop）—— 成人用品/私享器物品类专用，需显式选择。
 //
-// 阶段 0 修复：原逻辑只在 start 编排时才落库，导致用户首次打开「生成配置」栏时
-// 预设列表为空。现在 ListEcommercePresets 读取前也调用本函数，保证入口可见。
-// 幂等：已存在（按 config_json.key 匹配）则跳过，不重复写入。
+// 阶段 0 修复：原逻辑只在 start 编排时才落库，导致首次打开「生成配置」栏时预设列表为空。
+// 阶段 2 修复：默认预设改为通用，独乐岛不再作为兜底（根治硬套情趣用品文案）。
 func (s *Service) ensureBuiltinEcommercePresets(userID string) error {
 	presets, err := s.repo.ListEcommercePresets(userID)
 	if err != nil {
 		return err
 	}
+	existing := make(map[string]bool, len(presets))
 	for _, preset := range presets {
 		config, err := ecommerce.NormalizePresetConfig(preset.ConfigJSON)
 		if err != nil {
 			continue
 		}
-		if config.Key == ecommerce.SoloIslandPresetKey {
-			return nil // 已存在
+		existing[config.Key] = true
+	}
+	for _, builtin := range []ecommerce.PresetConfig{
+		ecommerce.DefaultGeneralPreset(),
+		ecommerce.DefaultSoloIslandPreset(),
+	} {
+		if existing[builtin.Key] {
+			continue
+		}
+		raw, err := json.Marshal(builtin)
+		if err != nil {
+			return err
+		}
+		if err := s.repo.UpsertEcommercePreset(&model.EcommercePreset{
+			UserID: userID, Name: builtin.Name, ConfigJSON: string(raw),
+		}); err != nil {
+			return err
 		}
 	}
-	defaults := ecommerce.DefaultSoloIslandPreset()
-	raw, _ := json.Marshal(defaults)
-	return s.repo.UpsertEcommercePreset(&model.EcommercePreset{
-		UserID: userID, Name: defaults.Name, ConfigJSON: string(raw),
-	})
+	return nil
 }
 
 // upstreamRuleSegments 取各槽位对应的上游预设铁律段（供料）。

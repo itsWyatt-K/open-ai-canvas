@@ -290,6 +290,8 @@ type (
 	EcommerceStartResult                   = app.EcommerceStartResult
 	EcommerceSlotDispatch                  = app.EcommerceSlotDispatch
 	EcommerceSlotPromptPatch               = app.EcommerceSlotPromptPatch
+	EcommercePlanOptions                   = app.EcommercePlanOptions
+	EcommercePlanResult                    = app.EcommercePlanResult
 	ShotRevisionInput                      = app.ShotRevisionInput
 	SkillCategory                          = app.SkillCategory
 	SkillLibraryCategory                   = app.SkillLibraryCategory

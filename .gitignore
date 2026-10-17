@@ -78,3 +78,6 @@ backend/tmp_*
 # Keep the runtime in source control; its optional debug map is not deployed.
 /web/public/live2d/live2dcubismcore.min.js.map
 .zocde/
+
+# 本地临时取证材料（不入库）
+_work_tmp/

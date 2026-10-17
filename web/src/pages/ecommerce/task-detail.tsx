@@ -18,6 +18,8 @@ import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
 import { useConfigStore } from "@/stores/use-config-store";
 import { AgentWorkbenchPanel, useEcommerceWorkbenchCanvas } from "./agent-panel-adapter";
 import { EcommerceSlotEditorDialog } from "./slot-editor-dialog";
+import { downloadBlob, mergeSlotImagesToLongImage } from "./long-image";
+import { resourceFileUrl } from "@/services/api/resources";
 
 const SLOT_STATUS_TONE: Record<string, string> = {
     pending: "bg-foreground/10 text-foreground/55",
@@ -47,6 +49,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const [starting, setStarting] = useState(false);
     const [confirming, setConfirming] = useState(false);
+    const [downloading, setDownloading] = useState(false);
     const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
     // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
     const { canvasId: agentCanvasId, ensureCanvas, canvasState: agentCanvasState } = useEcommerceWorkbenchCanvas();
@@ -68,6 +71,13 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         }
         setStarting(true);
         try {
+            // 先 flush 在途配置保存：后端派发时冻结 ConfigSnapshotJSON，
+            // 若此时 PUT /config 还没回来，会冻结到旧模型/旧 mode（假保存问题）。
+            const flushed = await useEcommerceWorkspaceStore.getState().flushConfig();
+            if (!flushed) {
+                message.error("配置保存失败，已中止派发（避免用旧模型生成）");
+                return;
+            }
             const requestConfig = resolveModelRequestConfig(config, config.imageModel);
             const bareModel = modelOptionName(config.imageModel);
             const started = await startEcommerceProduct(productId, {
@@ -113,6 +123,28 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
             setConfirming(false);
         }
     }, [productId, message, refreshDetail, refreshProducts]);
+
+    // 长图下载：按屏序取已完成槽位的资源，浏览器本地栅格化（不上传、不改动原图）。
+    const handleDownloadLongImage = useCallback(async () => {
+        if (!detail) return;
+        const sources = detail.slots
+            .filter((slot) => slot.resourceId)
+            .map((slot) => ({ url: resourceFileUrl(slot.resourceId!), label: slot.title || slot.slotKey }));
+        if (!sources.length) {
+            message.warning("还没有已完成的成品图");
+            return;
+        }
+        setDownloading(true);
+        try {
+            const blob = await mergeSlotImagesToLongImage(sources);
+            downloadBlob(blob, `${detail.product.name || "详情页"}.png`);
+            message.success(`已合并 ${sources.length} 屏并下载`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "长图合并失败");
+        } finally {
+            setDownloading(false);
+        }
+    }, [detail, message]);
 
     if (!productId) {
         return (
@@ -182,9 +214,11 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                         <Button
                             size="small"
                             icon={<Download className="size-3.5" />}
-                            onClick={() => message.info("打包下载施工中（M5）")}
+                            loading={downloading}
+                            disabled={detail.slots.every((slot) => !slot.resourceId)}
+                            onClick={() => void handleDownloadLongImage()}
                         >
-                            打包下载
+                            下载长图
                         </Button>
                     </div>
                 </div>

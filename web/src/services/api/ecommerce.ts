@@ -261,6 +261,19 @@ export function pauseEcommerceProduct(id: string) {
     return http.post<{ id: string; status: string }>(`/ecommerce/products/${encodeURIComponent(id)}/pause`);
 }
 
+/** AI 策划轨：派发一次视觉文本策划任务（不直接出图）。 */
+export function startEcommercePlanning(id: string, options: { channelId: string; model: string; styleReferenceIds?: string[] }) {
+    return http.post<{ productId: string; taskId: string; screens: number; message?: string }>(
+        `/ecommerce/products/${encodeURIComponent(id)}/plan`,
+        options,
+    );
+}
+
+/** 把策划原始文本编译并写入各屏（结构不完整会被服务端拒绝，不产出半成品）。 */
+export function applyEcommercePlan(id: string, raw: string) {
+    return http.post<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/apply-plan`, { raw });
+}
+
 /**
  * 轮询商品详情直到全部槽位收尾（或超时）。
  * 详情接口本身会对账，因此轮询即可拿到最新状态。

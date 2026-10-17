@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,7 +98,7 @@ func (s *Service) ImportEcommerceProducts(userID string, items []ImportItem) ([]
 			}
 			return nil, nil, err
 		}
-		sourceName := sanitizeProductName(item.Name) // 空名清洗为「未命名商品」
+		sourceName := productNameFromFileName(item.Name) // 去扩展名 + 清洗 Windows 保留字符
 		now := time.Now()
 		product := &model.EcommerceProduct{
 			UserID:           userID,
@@ -160,19 +161,19 @@ func (s *Service) ListEcommerceProducts(userID, query, status string) ([]Product
 			counter = &[4]int{}
 		}
 		summaries = append(summaries, ProductSummary{
-			ID:            product.ID,
-			Name:          product.Name,
-			Status:        product.Status,
-			StatusReason:  product.StatusReason,
-			Round:         product.Round,
-			SourceName:    product.SourceName,
-			ThumbnailURL:  resourceFileURL(product.SourceResourceID),
-			TitleStatus:   product.TitleStatus,
-			HeroDone:      counter[0],
-			HeroTotal:     counter[1],
-			DetailDone:    counter[2],
-			DetailTotal:   counter[3],
-			CreatedAt:     product.CreatedAt,
+			ID:           product.ID,
+			Name:         product.Name,
+			Status:       product.Status,
+			StatusReason: product.StatusReason,
+			Round:        product.Round,
+			SourceName:   product.SourceName,
+			ThumbnailURL: resourceFileURL(product.SourceResourceID),
+			TitleStatus:  product.TitleStatus,
+			HeroDone:     counter[0],
+			HeroTotal:    counter[1],
+			DetailDone:   counter[2],
+			DetailTotal:  counter[3],
+			CreatedAt:    product.CreatedAt,
 		})
 	}
 	return summaries, len(summaries), nil
@@ -309,6 +310,22 @@ func inFlightReason(status string) string {
 }
 
 // sanitizeProductName 清洗 Windows 保留字符（桌面版导出与完成标准同规则）。
+// productNameFromFileName 从上传文件名派生商品名：剥离图片扩展名后再清洗。
+//
+// 前端 import-dialog 直接传 File.name（如「水杯主图.png」）；商品名不该带扩展名，
+// 否则列表展示与搜索都会被 ".png" 污染（M2 遗留缺陷，阶段 2 修复）。
+func productNameFromFileName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed != "" {
+		ext := strings.ToLower(filepath.Ext(trimmed))
+		switch ext {
+		case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif", ".heic", ".tif", ".tiff":
+			trimmed = strings.TrimSuffix(trimmed, filepath.Ext(trimmed))
+		}
+	}
+	return sanitizeProductName(trimmed)
+}
+
 func sanitizeProductName(name string) string {
 	replacer := strings.NewReplacer(`\`, "_", `/`, "_", `:`, "_", `*`, "_", `?`, "_", `"`, "_", `<`, "_", `>`, "_", `|`, "_")
 	cleaned := strings.TrimSpace(replacer.Replace(name))

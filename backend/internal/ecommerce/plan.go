@@ -17,6 +17,14 @@ import (
 // SoloIslandPresetKey 内置【独乐岛】预设标识（落 config_json.key）。
 const SoloIslandPresetKey = "solo_island_aesop"
 
+// GeneralPresetKey 内置【通用电商标准】预设标识 —— **默认预设**。
+// 中性品类无关：任何商品（家居/家电/服饰/食品/数码）都不会被套上成人用品文案。
+const GeneralPresetKey = "general_ecommerce_standard"
+
+// GeneralNegative 通用电商负向词（品类无关，无成人用品专属词）。
+const GeneralNegative = "文字、水印、logo 乱入、低质量、模糊、变形的产品、比例失真、" +
+	"廉价塑料反光、过度磨皮、虚假宣传元素、真人裸露、低俗场景"
+
 // SoloIslandSlogan 品牌主张（用于文案槽位与烧入文字）。
 const SoloIslandSlogan = "众乐乐，不如独乐乐"
 
@@ -108,6 +116,8 @@ func SnapshotMode(configJSON string) string {
 //  1. 蓝调时刻情绪首屏   2. 勿扰模式三宫格共鸣   3. 微距金色水波纹气旋科技
 //  4. 羽毛静水 38dB 静音与 40°C 恒温   5. 清澈水流冲刷 IPX7 防水硅胶
 //  6. 梳妆台香水旁艺术伪装   7. 牛皮纸盒与请勿打扰门牌绝密发货
+//
+// DefaultSoloIslandPreset 独乐岛预设（成人用品/私享器物品类专用，**需显式选择**）。
 func DefaultSoloIslandPreset() PresetConfig {
 	return PresetConfig{
 		Version:  1,
@@ -117,6 +127,83 @@ func DefaultSoloIslandPreset() PresetConfig {
 		DNA:      SoloIslandDNA(),
 		Negative: SoloIslandNegative,
 		Slots:    SoloIslandSlots(),
+	}
+}
+
+// DefaultGeneralPreset 通用电商标准预设 —— **系统默认**。
+//
+// 设计原则（根治「硬套情趣用品文案」）：
+//   - 文案槽位只写品类中性的电商结构词（首屏主视觉 / 卖点 / 细节 / 场景 / 规格 / 包装），
+//     不出现任何行业专属主张，任何商品套用都不会语义错位；
+//   - 负向词为通用质量与合规词，不含成人用品专属词；
+//   - 真正贴合商品的文案由 AI 策划轨（commerce-detail-plan 12 段编译）按实拍图生成。
+func DefaultGeneralPreset() PresetConfig {
+	return PresetConfig{
+		Version:  1,
+		Key:      GeneralPresetKey,
+		Name:     "通用电商标准｜7 屏主图+详情页",
+		Slogan:   "",
+		DNA:      GeneralDNA(),
+		Negative: GeneralNegative,
+		Slots:    GeneralSlots(),
+	}
+}
+
+// GeneralDNA 通用视觉 DNA（品类中性：干净棚拍 + 真实材质 + 统一光影）。
+func GeneralDNA() map[string]any {
+	return map[string]any{
+		"artDirection": "干净现代的商业摄影，主体清晰、背景克制，突出产品本身的形态与材质",
+		"palette":      "以产品固有色为主色，搭配中性背景（白/浅灰/米白），点缀色不超过一种",
+		"lighting":     "柔和主光 + 轻微侧逆光勾勒轮廓，阴影干净，避免硬光与彩色光污染",
+		"typography":   "现代无衬线，标题与正文层级分明，留白充足；纯图屏不排字",
+	}
+}
+
+// GeneralSlots 返回 7 屏通用槽位计划（3 主图 + 4 详情页，文案全部品类中性）。
+func GeneralSlots() []SlotPlan {
+	return []SlotPlan{
+		{
+			SlotKey: "hero_main", Kind: SlotKindHero, SlotNo: 1,
+			Title: "首屏主视觉", Copy: "",
+			Scene: "ecom_set", Variant: "白底主图", Aspect: "1:1",
+			UpstreamToolKey: "product-white-hero", UpstreamVariant: UpstreamVariantStandard,
+		},
+		{
+			SlotKey: "hero_benefit", Kind: SlotKindHero, SlotNo: 2,
+			Title: "核心卖点", Copy: "",
+			Scene: "ecom_set", Variant: "卖点主图", Aspect: "1:1",
+			UpstreamToolKey: "listing-benefit-layout", UpstreamVariant: UpstreamVariantComposition,
+		},
+		{
+			SlotKey: "hero_scene", Kind: SlotKindHero, SlotNo: 3,
+			Title: "使用场景", Copy: "",
+			Scene: "ecom_set", Variant: "场景使用", Aspect: "1:1",
+			UpstreamToolKey: "appliance-in-use", UpstreamVariant: UpstreamVariantStandard,
+		},
+		{
+			SlotKey: "detail_hero", Kind: SlotKindDetail, SlotNo: 1,
+			Title: "详情首屏", Copy: "",
+			Scene: "ecom_set", Variant: "场景生活", Aspect: "3:4",
+			UpstreamToolKey: "campaign-key-visual", UpstreamVariant: UpstreamVariantStandard,
+		},
+		{
+			SlotKey: "detail_macro", Kind: SlotKindDetail, SlotNo: 2,
+			Title: "细节与工艺", Copy: "",
+			Scene: "ecom_set", Variant: "细节微距", Aspect: "3:4",
+			UpstreamToolKey: "product-macro-detail", UpstreamVariant: UpstreamVariantDetail,
+		},
+		{
+			SlotKey: "detail_spec", Kind: SlotKindDetail, SlotNo: 3,
+			Title: "规格与结构", Copy: "",
+			Scene: "ecom_set", Variant: "结构标注", Aspect: "3:4",
+			UpstreamToolKey: "vertical-product-page", UpstreamVariant: UpstreamVariantDetail,
+		},
+		{
+			SlotKey: "detail_package", Kind: SlotKindDetail, SlotNo: 4,
+			Title: "包装与清单", Copy: "",
+			Scene: "ecom_set", Variant: "场景生活", Aspect: "3:4",
+			UpstreamToolKey: "packaging-lineup", UpstreamVariant: UpstreamVariantStandard,
+		},
 	}
 }
 

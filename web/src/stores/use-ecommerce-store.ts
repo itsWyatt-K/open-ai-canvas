@@ -36,6 +36,8 @@ type EcommerceWorkspaceState = {
     loading: boolean;
     detailLoading: boolean;
     saving: boolean;
+    /** 有本地配置改动尚未确认落库（保存失败或正在保存）。 */
+    configDirty: boolean;
     error: string;
 
     refreshProducts: () => Promise<void>;
@@ -51,6 +53,8 @@ type EcommerceWorkspaceState = {
 
     refreshConfig: () => Promise<void>;
     saveConfig: (config: EcommerceConfig) => Promise<boolean>;
+    /** 等待在途配置保存落库（派发前必须调用，避免冻结旧快照）。 */
+    flushConfig: () => Promise<boolean>;
     refreshPresets: () => Promise<void>;
     savePreset: (name: string) => Promise<boolean>;
     removePreset: (id: string) => Promise<void>;
@@ -64,6 +68,13 @@ function errorMessage(reason: unknown, fallback: string) {
     return reason instanceof Error ? reason.message : fallback;
 }
 
+/**
+ * 配置保存串行链：连续 patch 按提交顺序落库。
+ * 放在模块级（而非 state）是为了让 flushConfig 能跨组件等待同一链条，
+ * 且不触发额外渲染。
+ */
+let configSaveChain: Promise<boolean> = Promise.resolve(true);
+
 export const useEcommerceWorkspaceStore = create<EcommerceWorkspaceState>((set, get) => ({
     products: [],
     total: 0,
@@ -76,6 +87,7 @@ export const useEcommerceWorkspaceStore = create<EcommerceWorkspaceState>((set, 
     loading: false,
     detailLoading: false,
     saving: false,
+    configDirty: false,
     error: "",
 
     refreshProducts: async () => {
@@ -132,15 +144,25 @@ export const useEcommerceWorkspaceStore = create<EcommerceWorkspaceState>((set, 
         }
     },
     saveConfig: async (config) => {
-        set({ saving: true, error: "" });
-        try {
-            const saved = await saveEcommerceConfig(config);
-            set({ config: saved, saving: false });
-            return true;
-        } catch (reason) {
-            set({ saving: false, error: errorMessage(reason, "保存配置失败") });
-            return false;
-        }
+        // 串行化：连续 patch（选模型 → 切 mode → 改比例）必须按顺序落库，
+        // 否则后一次写会用旧快照覆盖前一次，后端冻结到过期配置。
+        configSaveChain = configSaveChain.then(async () => {
+            set({ saving: true, error: "" });
+            try {
+                const saved = await saveEcommerceConfig(config);
+                set({ config: saved, saving: false, configDirty: false });
+                return true;
+            } catch (reason) {
+                set({ saving: false, configDirty: true, error: errorMessage(reason, "保存配置失败") });
+                return false;
+            }
+        });
+        return configSaveChain;
+    },
+    // 等待在途保存落库：派发前必须先 flush，保证后端快照拿到最新模型与模式。
+    flushConfig: async () => {
+        const ok = await configSaveChain;
+        return ok;
     },
     refreshPresets: async () => {
         try {
