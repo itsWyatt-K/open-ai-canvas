@@ -159,3 +159,24 @@ func TestSlotViewsCarriesStatus(t *testing.T) {
 		t.Fatalf("槽位状态映射失败：%+v", views)
 	}
 }
+
+// 执行模式优先级：用户配置 > 预设 > auto（阶段 1：先审方案必须真的生效）。
+func TestResolveExecutionMode(t *testing.T) {
+	cases := []struct {
+		user, preset, want string
+	}{
+		{"review", "", ecommerce.ExecutionModeReview},
+		{"review", "auto", ecommerce.ExecutionModeReview},
+		{"auto", "review", ecommerce.ExecutionModeAuto},
+		{"AUTO", "review", ecommerce.ExecutionModeAuto},
+		{"", "review", ecommerce.ExecutionModeReview},
+		{"  ", "  ", ecommerce.ExecutionModeAuto},
+		{"unknown", "review", ecommerce.ExecutionModeReview},
+		{"unknown", "unknown", ecommerce.ExecutionModeAuto},
+	}
+	for _, item := range cases {
+		if got := resolveExecutionMode(item.user, item.preset); got != item.want {
+			t.Fatalf("resolveExecutionMode(%q,%q) = %q, want %q", item.user, item.preset, got, item.want)
+		}
+	}
+}

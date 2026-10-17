@@ -103,6 +103,27 @@ type ecommercePlanSnapshot struct {
 	GeneratedAt            string                  `json:"generatedAt"`
 }
 
+// resolveExecutionMode 决定本次编排的执行模式。
+//
+// 优先级：用户配置栏显式选择（auto|review）> 预设自带 Mode > 兜底 auto。
+// 用户配置里是空串/未知值时视为"未选择"，回落预设，避免把用户的配置误判为全自动。
+func resolveExecutionMode(userMode, presetMode string) string {
+	normalize := func(value string) string {
+		mode := strings.ToLower(strings.TrimSpace(value))
+		if mode == ecommerce.ExecutionModeReview || mode == ecommerce.ExecutionModeAuto {
+			return mode
+		}
+		return ""
+	}
+	if mode := normalize(userMode); mode != "" {
+		return mode
+	}
+	if mode := normalize(presetMode); mode != "" {
+		return mode
+	}
+	return ecommerce.ExecutionModeAuto
+}
+
 // StartEcommerceProduct 启动商品任务编排（消灭 501）。
 func (s *Service) StartEcommerceProduct(userID, productID string, options EcommerceStartOptions) (*EcommerceStartResult, error) {
 	product, err := s.repo.GetEcommerceProduct(userID, productID)
@@ -127,6 +148,11 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 	preset, err := s.resolveEcommercePreset(userID, options.PresetID)
 	if err != nil {
 		return nil, err
+	}
+	// 执行模式以「用户配置栏」为准（配置栏 mode: auto|review），覆盖预设默认。
+	// 预设自带 Mode 仅作为兜底；用户显式选择优先，避免"选了先审方案却不生效"。
+	if userConfig, cfgErr := s.EcommerceConfig(userID); cfgErr == nil && userConfig != nil {
+		preset.Mode = resolveExecutionMode(userConfig.Mode, preset.Mode)
 	}
 	// 卖点/锚点随启动同步（导入接口只带名称；编排前必须补齐，否则提示词缺卖点）。
 	if strings.TrimSpace(options.SellingPoints) != "" || strings.TrimSpace(options.ExtraRequirements) != "" {
