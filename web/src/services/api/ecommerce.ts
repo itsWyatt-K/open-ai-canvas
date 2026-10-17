@@ -230,6 +230,37 @@ export function syncEcommerceProduct(id: string) {
     return http.post<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/sync`);
 }
 
+/** 单屏可编辑字段（分屏编辑器保存体，与后端 EcommerceSlotPromptPatch 对齐）。 */
+export type EcommerceSlotPromptBody = {
+    title: string;
+    copy: string;
+    sceneType: string;
+    sellingPoints: string;
+    aspectRatio: string;
+    prompt: string;
+    promptOverride: string;
+};
+
+/** 仅保存单屏参数（不派发子任务、不动已生成图）。 */
+export function saveEcommerceSlotPrompt(slotId: string, body: EcommerceSlotPromptBody) {
+    return http.put<{ ok: boolean }>(`/ecommerce/slots/${encodeURIComponent(slotId)}/prompt`, body);
+}
+
+/** 保存并重新生成该屏（version+1；后端强制 confirmCost=true）。 */
+export function regenerateEcommerceSlot(slotId: string, body: EcommerceSlotPromptBody) {
+    return http.post<{ ok: boolean }>(`/ecommerce/slots/${encodeURIComponent(slotId)}/regenerate`, { ...body, confirmCost: true });
+}
+
+/** 审核模式确认整组方案：review → running 并派发所有待生成槽位。 */
+export function confirmEcommercePlan(id: string) {
+    return http.post<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/confirm-plan`);
+}
+
+/** 暂停派发（在途子任务不取消）。 */
+export function pauseEcommerceProduct(id: string) {
+    return http.post<{ id: string; status: string }>(`/ecommerce/products/${encodeURIComponent(id)}/pause`);
+}
+
 /**
  * 轮询商品详情直到全部槽位收尾（或超时）。
  * 详情接口本身会对账，因此轮询即可拿到最新状态。

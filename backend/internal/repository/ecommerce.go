@@ -238,6 +238,35 @@ func (r *Repository) UpdateEcommerceSlotStatus(slotID, status string) error {
 		Updates(map[string]any{"status": status, "updated_at": time.Now()}).Error
 }
 
+// EcommerceSlotByID 按主键取槽位（跨用户校验由 service 层做：先取商品验属主）。
+func (r *Repository) EcommerceSlotByID(slotID string) (*model.EcommerceSlot, error) {
+	var slot model.EcommerceSlot
+	if err := r.db.Where("id = ?", slotID).First(&slot).Error; err != nil {
+		return nil, err
+	}
+	return &slot, nil
+}
+
+// SetEcommerceProductExecutionMode 写执行模式与状态原因（先审方案断点 / 确认时用）。
+func (r *Repository) SetEcommerceProductExecutionMode(userID, productID, mode, statusReason string) error {
+	return r.db.Model(&model.EcommerceProduct{}).Where("id = ? AND user_id = ?", productID, userID).
+		Updates(map[string]any{
+			"execution_mode": mode,
+			"status_reason":  statusReason,
+			"updated_at":     time.Now(),
+		}).Error
+}
+
+// UpdateEcommerceSlotPlan 更新单屏可编辑字段（分屏编辑器「仅保存参数」）。
+// 空 promptOverride 表示清除覆盖（回落自动组装）；其余字段按传入值整体覆盖。
+func (r *Repository) UpdateEcommerceSlotPlan(slotID string, patch map[string]any) error {
+	if len(patch) == 0 {
+		return nil
+	}
+	patch["updated_at"] = time.Now()
+	return r.db.Model(&model.EcommerceSlot{}).Where("id = ?", slotID).Updates(patch).Error
+}
+
 // UpdateEcommerceProductRun 写商品编排态：状态 + 标题状态 + 方案快照与修订号。
 func (r *Repository) UpdateEcommerceProductRun(userID, productID, status, titleStatus, planJSON string, planRevision int) error {
 	updates := map[string]any{"status": status, "updated_at": time.Now()}

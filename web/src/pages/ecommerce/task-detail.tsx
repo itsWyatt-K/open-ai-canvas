@@ -9,6 +9,7 @@ import { ArrowLeft, Bot, Download, History, Loader2, Play } from "lucide-react";
 import {
     ECOMMERCE_SLOT_STATUS_LABELS,
     ECOMMERCE_STATUS_LABELS,
+    confirmEcommercePlan,
     getEcommerceProductDetail,
     startEcommerceProduct,
     type EcommerceProductDetail,
@@ -16,6 +17,7 @@ import {
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
 import { useConfigStore } from "@/stores/use-config-store";
 import { AgentWorkbenchPanel, useEcommerceWorkbenchCanvas } from "./agent-panel-adapter";
+import { EcommerceSlotEditorDialog } from "./slot-editor-dialog";
 
 const SLOT_STATUS_TONE: Record<string, string> = {
     pending: "bg-foreground/10 text-foreground/55",
@@ -44,6 +46,8 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const config = useConfigStore((state) => state.config);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const [starting, setStarting] = useState(false);
+    const [confirming, setConfirming] = useState(false);
+    const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
     // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
     const { canvasId: agentCanvasId, ensureCanvas, canvasState: agentCanvasState } = useEcommerceWorkbenchCanvas();
     const [agentOpen, setAgentOpen] = useState(false);
@@ -93,6 +97,22 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
             setStarting(false);
         }
     }, [productId, detail, config, message, refreshDetail, refreshProducts]);
+
+    // 阶段 1：确认整组方案（先审方案）→ 服务端派发所有待生成槽位。
+    const handleConfirmPlan = useCallback(async () => {
+        if (!productId) return;
+        setConfirming(true);
+        try {
+            await confirmEcommercePlan(productId);
+            message.success("已确认方案，开始派发生图任务");
+            await refreshDetail(productId);
+            await refreshProducts();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "确认方案失败");
+        } finally {
+            setConfirming(false);
+        }
+    }, [productId, message, refreshDetail, refreshProducts]);
 
     if (!productId) {
         return (
@@ -173,6 +193,26 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 ) : null}
             </header>
 
+            {/* 阶段 1：先审方案审核横幅（商品停在 review，等确认后才派发生图） */}
+            {product.status === "review" ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-5 py-3">
+                    <div className="min-w-0 text-xs text-amber-700 dark:text-amber-300">
+                        <strong className="font-semibold">待确认方案</strong>
+                        <span className="ml-2 opacity-80">
+                            已生成 {detail.slots.length} 屏方案（未派发生图任务，不计生图费用）。可点任意槽位「编辑」逐屏调整文案与提示词，确认后一次派发。
+                        </span>
+                    </div>
+                    <Button
+                        size="small"
+                        type="primary"
+                        loading={confirming}
+                        onClick={() => void handleConfirmPlan()}
+                    >
+                        确认方案并开始生图
+                    </Button>
+                </div>
+            ) : null}
+
             {/* 槽位网格 */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
                 {detail.slots.length === 0 ? (
@@ -182,12 +222,30 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                     </div>
                 ) : (
                     <div className="flex flex-col gap-6">
-                        <SlotGroup title="主图" slots={heroSlots} emptyText="未配置主图槽位" />
-                        <SlotGroup title="详情页" slots={detailSlots} emptyText="未配置详情页槽位" />
+                        <SlotGroup title="主图" slots={heroSlots} emptyText="未配置主图槽位" onEdit={setEditingSlotId} />
+                        <SlotGroup title="详情页" slots={detailSlots} emptyText="未配置详情页槽位" onEdit={setEditingSlotId} />
                         <TitlePanel detail={detail} />
                     </div>
                 )}
             </div>
+
+            {/* 阶段 1：单屏编辑器 */}
+            {editingSlotId ? (
+                <EcommerceSlotEditorDialog
+                    slot={detail.slots.find((item) => item.id === editingSlotId)!}
+                    index={detail.slots.findIndex((item) => item.id === editingSlotId)}
+                    total={detail.slots.length}
+                    onClose={() => setEditingSlotId(null)}
+                    onNavigate={(direction) => {
+                        const next = detail.slots[detail.slots.findIndex((item) => item.id === editingSlotId) + direction];
+                        if (next) setEditingSlotId(next.id);
+                    }}
+                    onChanged={async () => {
+                        await refreshDetail(productId);
+                        await refreshProducts();
+                    }}
+                />
+            ) : null}
 
             {/* Agent 精修抽屉：复用电商工作台画布与 Cloud Agent 面板；阶段 0 注入商品上下文 */}
             <Drawer
@@ -203,7 +261,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     );
 }
 
-function SlotGroup({ title, slots, emptyText }: { title: string; slots: EcommerceProductDetail["slots"]; emptyText: string }) {
+function SlotGroup({ title, slots, emptyText, onEdit }: { title: string; slots: EcommerceProductDetail["slots"]; emptyText: string; onEdit: (slotId: string) => void }) {
     if (slots.length === 0) {
         return (
             <div className="flex flex-col gap-2">
@@ -238,7 +296,12 @@ function SlotGroup({ title, slots, emptyText }: { title: string; slots: Ecommerc
                                 {ECOMMERCE_SLOT_STATUS_LABELS[slot.status] || slot.status}
                             </span>
                         </div>
-                        {slot.copy ? <p className="line-clamp-2 text-xs text-foreground/55">{slot.copy}</p> : null}
+                        <div className="flex items-center justify-between gap-2">
+                            {slot.copy ? <p className="line-clamp-2 text-xs text-foreground/55">{slot.copy}</p> : <span />}
+                            <Button size="small" type="link" className="!h-auto !p-0 text-xs" onClick={() => onEdit(slot.id)}>
+                                编辑
+                            </Button>
+                        </div>
                     </article>
                 ))}
             </div>

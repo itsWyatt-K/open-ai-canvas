@@ -69,7 +69,7 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var body struct {
-			Name   string              `json:"name"`
+			Name   string               `json:"name"`
 			Config ecommerce.ConfigView `json:"config"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
@@ -226,5 +226,76 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, detail)
+	})
+
+	// ---- 阶段 1：方案审核与单屏精修闭环 ----
+	// 确认整组方案（先审方案）：review → running 并派发所有待生成槽位。
+	group.POST("/products/:id/confirm-plan", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		detail, err := svc.ConfirmEcommercePlan(c.Request.Context(), user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, detail)
+	})
+	// 暂停派发（在途子任务不取消）。
+	group.POST("/products/:id/pause", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		product, err := svc.PauseEcommerceProduct(c.Request.Context(), user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, product)
+	})
+	// 单屏编辑仅保存（分屏编辑器「仅保存参数」）。
+	group.PUT("/slots/:id/prompt", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var patch service.EcommerceSlotPromptPatch
+		if err := c.ShouldBindJSON(&patch); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+			return
+		}
+		slot, err := svc.UpdateEcommerceSlotPrompt(c.Request.Context(), user.ID, c.Param("id"), patch)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, slot)
+	})
+	// 单屏保存并重新生成（version+1，必须 confirmCost=true）。
+	group.POST("/slots/:id/regenerate", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var body struct {
+			service.EcommerceSlotPromptPatch
+			ConfirmCost bool `json:"confirmCost"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+			return
+		}
+		slot, err := svc.RegenerateEcommerceSlot(c.Request.Context(), user.ID, c.Param("id"), body.EcommerceSlotPromptPatch, body.ConfirmCost)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, slot)
 	})
 }

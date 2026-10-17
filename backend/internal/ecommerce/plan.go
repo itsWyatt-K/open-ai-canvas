@@ -72,6 +72,34 @@ type PresetConfig struct {
 	ChannelID string `json:"channelId,omitempty"`
 	Size      string `json:"size,omitempty"`
 	Quality   string `json:"quality,omitempty"`
+	// Mode 执行模式：auto（全自动，默认）| review（先审方案，确认后才派发生图）。
+	Mode string `json:"mode,omitempty"`
+}
+
+// ExecutionMode 常量（先审方案 / 全自动）。
+const (
+	ExecutionModeAuto   = "auto"
+	ExecutionModeReview = "review"
+)
+
+// StatusReasonAwaitPlanConfirm 先审方案的商品状态原因（前端据此渲染审核横幅）。
+const StatusReasonAwaitPlanConfirm = "AWAITING_USER_PLAN_CONFIRMATION"
+
+// SnapshotMode 从预设配置 JSON 读取执行模式；缺省/非法值一律回落 auto（全自动）。
+// 用于派发时冻结语义：配置事后被改，不影响已派发商品的模式判定。
+func SnapshotMode(configJSON string) string {
+	if strings.TrimSpace(configJSON) == "" {
+		return ExecutionModeAuto
+	}
+	var config PresetConfig
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		return ExecutionModeAuto
+	}
+	mode := strings.ToLower(strings.TrimSpace(config.Mode))
+	if mode == ExecutionModeReview {
+		return ExecutionModeReview
+	}
+	return ExecutionModeAuto
 }
 
 // DefaultSoloIslandPreset 返回内置【独乐岛 SOLO ISLAND｜众乐乐不如独乐乐】7 屏预设。
@@ -146,7 +174,7 @@ func SoloIslandSlots() []SlotPlan {
 func SoloIslandDNA() map[string]any {
 	return map[string]any{
 		"source_summary": "Aesop 极简主义 × 王家卫暖黄壁灯氛围，低饱和高级质感",
-		"layout": map[string]any{"summary": "大量留白、单一视觉重心、居中或三分法构图、克制的细体排版"},
+		"layout":         map[string]any{"summary": "大量留白、单一视觉重心、居中或三分法构图、克制的细体排版"},
 		"color": map[string]any{
 			"summary": "鼠尾草绿与米白亚麻为主，暖黄壁灯点缀，整体低饱和",
 			"palette": []map[string]any{
@@ -156,13 +184,13 @@ func SoloIslandDNA() map[string]any {
 				{"role": "暗部-深灰蓝", "hex": "#3A4148", "ratio": 0.10},
 			},
 		},
-		"lighting": map[string]any{"summary": "单一暖黄壁灯侧逆光，蓝调时刻的冷背景与暖主体对比，柔和过渡无硬阴影"},
+		"lighting":   map[string]any{"summary": "单一暖黄壁灯侧逆光，蓝调时刻的冷背景与暖主体对比，柔和过渡无硬阴影"},
 		"typography": map[string]any{"summary": "细体无衬线，字距舒展，米白或深灰蓝单色，不做特效"},
-		"texture": map[string]any{"summary": "哑光亲肤硅胶、亚麻织物、粗陶与牛皮纸的自然纹理"},
-		"mood": map[string]any{"summary": "静谧、私密、从容独处的自我关怀感"},
-		"model": map[string]any{"present": false},
-		"props": map[string]any{"summary": "梳妆台、亚麻方巾、玻璃水杯、干花与牛皮纸盒"},
-		"brand": map[string]any{"summary": "独乐岛 SOLO ISLAND｜众乐乐，不如独乐乐；包装与画面不出现任何可读品牌文字"},
+		"texture":    map[string]any{"summary": "哑光亲肤硅胶、亚麻织物、粗陶与牛皮纸的自然纹理"},
+		"mood":       map[string]any{"summary": "静谧、私密、从容独处的自我关怀感"},
+		"model":      map[string]any{"present": false},
+		"props":      map[string]any{"summary": "梳妆台、亚麻方巾、玻璃水杯、干花与牛皮纸盒"},
+		"brand":      map[string]any{"summary": "独乐岛 SOLO ISLAND｜众乐乐，不如独乐乐；包装与画面不出现任何可读品牌文字"},
 	}
 }
 

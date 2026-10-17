@@ -289,6 +289,7 @@ type (
 	EcommerceStartOptions                  = app.EcommerceStartOptions
 	EcommerceStartResult                   = app.EcommerceStartResult
 	EcommerceSlotDispatch                  = app.EcommerceSlotDispatch
+	EcommerceSlotPromptPatch               = app.EcommerceSlotPromptPatch
 	ShotRevisionInput                      = app.ShotRevisionInput
 	SkillCategory                          = app.SkillCategory
 	SkillLibraryCategory                   = app.SkillLibraryCategory

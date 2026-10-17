@@ -35,6 +35,10 @@ type EcommerceProduct struct {
 	DiagJSON           string    `json:"-" gorm:"type:text"`
 	CreatedAt          time.Time `json:"createdAt" gorm:"index:idx_ecommerce_products_user_created,priority:2"`
 	UpdatedAt          time.Time `json:"updatedAt"`
+
+	// ---- v56：执行模式快照（先审方案 / 全自动）----
+	// 派发时从 ConfigSnapshot 冻结，确认方案与恢复派发时据此判定，避免配置被改后语义漂移。
+	ExecutionMode string `json:"executionMode,omitempty" gorm:"size:32"`
 }
 
 func (EcommerceProduct) TableName() string { return "ecommerce_products" }
@@ -55,6 +59,20 @@ type EcommerceSlot struct {
 	CurrentVersion   int       `json:"currentVersion"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+
+	// ---- v56：分屏编辑器（对齐 pr(1) CommerceScreen 字段）----
+	// PromptOverride 完整提示词覆盖：非空时最高优先，AI 重策划不得覆盖（pr(1) 纪律）。
+	PromptOverride string `json:"promptOverride,omitempty" gorm:"type:text"`
+	// SceneType 本屏场景类型（产品特写 / 使用场景 / 参数说明）。
+	SceneType string `json:"sceneType,omitempty" gorm:"size:200"`
+	// SellingPoints 本屏绑定的已确认卖点事实。
+	SellingPoints string `json:"sellingPoints,omitempty" gorm:"type:text"`
+	// AspectRatio 单屏比例覆盖（空 = 跟随本组）。
+	AspectRatio string `json:"aspectRatio,omitempty" gorm:"size:32"`
+	// ReferenceIDsJSON 单屏风格参考图 ResourceID 数组（JSON 字符串，仅参与策划）。
+	ReferenceIDsJSON string `json:"referenceIdsJson,omitempty" gorm:"type:text"`
+	// PlanFingerprint 视觉方案去重指纹（防 7 屏雷同，对齐 pr(1) compileCommerceDetailPlan）。
+	PlanFingerprint string `json:"planFingerprint,omitempty" gorm:"size:128"`
 }
 
 func (EcommerceSlot) TableName() string { return "ecommerce_slots" }
@@ -78,9 +96,9 @@ func (EcommerceSlotVersion) TableName() string { return "ecommerce_slot_versions
 
 // EcommerceUserConfig 用户统一配置（每用户一行，表 ecommerce_user_configs）。
 type EcommerceUserConfig struct {
-	UserID      string    `json:"userId" gorm:"primaryKey;size:36"`
-	ConfigJSON  string    `json:"-" gorm:"type:text"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	UserID     string    `json:"userId" gorm:"primaryKey;size:36"`
+	ConfigJSON string    `json:"-" gorm:"type:text"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 func (EcommerceUserConfig) TableName() string { return "ecommerce_user_configs" }

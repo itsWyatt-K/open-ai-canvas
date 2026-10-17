@@ -156,6 +156,11 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 	size := firstNonEmpty(strings.TrimSpace(options.Size), preset.Size, "1:1")
 	quality := firstNonEmpty(strings.TrimSpace(options.Quality), preset.Quality)
 	withSubject := options.WithSubjectLayer == nil || *options.WithSubjectLayer
+	// 执行模式从配置取（缺省 auto）：先审方案时槽位建好后停在 review，不派发生图任务。
+	executionMode := ecommerce.ExecutionModeAuto
+	if preset.Mode == ecommerce.ExecutionModeReview {
+		executionMode = ecommerce.ExecutionModeReview
+	}
 
 	// 落商品为排队中（写路径先置态，派发失败再回落）。
 	if err := s.repo.UpdateEcommerceProductRun(userID, productID, ecommerce.ProductStatusQueued, product.TitleStatus, "", 0); err != nil {
@@ -173,6 +178,49 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 	slotIndex := map[string]*model.EcommerceSlot{}
 	for index := range existingSlots {
 		slotIndex[existingSlots[index].SlotKey] = &existingSlots[index]
+	}
+
+	// 先审方案：槽位先落库（带提示词与方案摘要供人工审阅），但**不派发生图子任务**，
+	// 商品转 review 等确认；用户确认后由 ConfirmEcommercePlan 继续派发。
+	if executionMode == "review" {
+		for _, plan := range plans {
+			dispatch, dispatchErr := s.stageEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
+				ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
+				Count: options.Count, ProjectID: options.ProjectID,
+				Synthesized: synth, UpstreamRule: upstreamRules[plan.SlotKey], Existing: slotIndex[plan.SlotKey],
+			})
+			if dispatchErr != nil {
+				dispatch.Status = ecommerce.SlotStatusFailed
+				dispatch.Error = dispatchErr.Error()
+				result.Failed++
+			} else {
+				result.Dispatched++
+			}
+			result.Slots = append(result.Slots, dispatch)
+		}
+		if err := s.repo.UpdateEcommerceProductRun(userID, productID, ecommerce.ProductStatusReview, product.TitleStatus,
+			"", product.PlanRevision); err != nil {
+			return nil, err
+		}
+		if err := s.repo.SetEcommerceProductExecutionMode(userID, productID, "review", ecommerce.StatusReasonAwaitPlanConfirm); err != nil {
+			return nil, err
+		}
+		slots, listErr := s.repo.ListEcommerceSlots(productID)
+		if listErr != nil {
+			return nil, listErr
+		}
+		status, titleStatus := ecommerce.ComputeProductStatus(slotViews(slots))
+		snapshot := ecommercePlanSnapshot{
+			PresetKey: preset.Key, PresetName: preset.Name, AnchorCard: anchorCard, Degraded: degraded,
+			Slots: result.Slots, GeneratedAt: time.Now().Format(time.RFC3339),
+		}
+		planJSON, _ := json.Marshal(snapshot)
+		if err := s.repo.UpdateEcommerceProductRun(userID, productID, status, titleStatus, string(planJSON), product.PlanRevision+1); err != nil {
+			return nil, err
+		}
+		result.Status = status
+		result.Degraded = append(degraded, "先审方案：已生成各屏方案，确认后才派发生图任务")
+		return result, nil
 	}
 
 	for _, plan := range plans {
@@ -238,14 +286,20 @@ type ecommerceSlotDispatchInput struct {
 	Existing     *model.EcommerceSlot
 }
 
-// dispatchEcommerceSlot 建槽位/版本并派发一条 canvas_image 子任务。
-func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceProduct, preset ecommerce.PresetConfig, plan ecommerce.SlotPlan, input ecommerceSlotDispatchInput) (EcommerceSlotDispatch, error) {
-	dispatch := EcommerceSlotDispatch{
-		SlotKey: plan.SlotKey, Title: plan.Title, Kind: plan.Kind, SlotNo: plan.SlotNo,
-		Status: ecommerce.SlotStatusQueued,
-	}
+// ecommerceSlotDraft 槽位草稿：建/复用的槽位 + 已过 S5 门禁的最终提示词与负向词。
+type ecommerceSlotDraft struct {
+	slot     *model.EcommerceSlot
+	prompt   string
+	negative string
+	gateHits []string
+}
 
-	// 槽位：已存在则复用（幂等），否则新建。
+// prepareEcommerceSlot 建/复用槽位并算出最终提示词（不派发子任务）。
+//
+// 提示词优先级：slot.PromptOverride（用户完整覆盖，最高）> nxf 合成/上游模板。
+// S5 出口门禁在派发前强制执行；比例冲突直接返回错误。
+func (s *Service) prepareEcommerceSlot(userID string, product *model.EcommerceProduct, preset ecommerce.PresetConfig, plan ecommerce.SlotPlan, input ecommerceSlotDispatchInput) (ecommerceSlotDraft, error) {
+	draft := ecommerceSlotDraft{}
 	slot := input.Existing
 	if slot == nil {
 		created := model.EcommerceSlot{
@@ -255,30 +309,83 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 			CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		}
 		if err := s.repo.CreateEcommerceSlots([]model.EcommerceSlot{created}); err != nil {
-			return dispatch, err
+			return draft, err
 		}
 		slot = &created
 	}
-	dispatch.SlotID = slot.ID
+	draft.slot = slot
 
-	// 提示词：nxf 合成（按 scene+variant 匹配）→ 融合上游铁律段。
+	// 用户完整提示词覆盖优先（阶段 1：pr(1) 纪律 —— AI 重策划不覆盖该字段）。
+	if override := strings.TrimSpace(slot.PromptOverride); override != "" {
+		gate := ecommerce.ComplianceGate(override)
+		if gate.Rejected {
+			return draft, errors.New("S5 门禁拒绝：" + gate.RejectReason)
+		}
+		draft.prompt = gate.Filtered
+		draft.gateHits = gate.Hits
+		draft.negative = ecommerce.MergeNegative(preset.Negative)
+		return draft, nil
+	}
+
 	prompt, negative := ecommercePromptFor(plan, input.Synthesized)
 	prompt = ecommerce.FusePromptWithUpstreamRule(prompt, input.UpstreamRule)
 	if strings.TrimSpace(prompt) == "" {
-		return dispatch, errors.New("槽位提示词为空：nxf 与上游预设均不可用")
+		return draft, errors.New("槽位提示词为空：nxf 与上游预设均不可用")
 	}
-	// S5 出口门禁（M4）：下发前强制执行确定性过滤 + 通感改写；比例冲突直接拒绝该槽位。
 	gate := ecommerce.ComplianceGate(prompt)
 	if gate.Rejected {
-		return dispatch, errors.New("S5 门禁拒绝：" + gate.RejectReason)
+		return draft, errors.New("S5 门禁拒绝：" + gate.RejectReason)
 	}
-	prompt = gate.Filtered
-	if len(gate.Hits) > 0 {
-		dispatch.GateHits = gate.Hits
+	draft.prompt = gate.Filtered
+	draft.gateHits = gate.Hits
+	draft.negative = ecommerce.MergeNegative(negative, preset.Negative)
+	return draft, nil
+}
+
+// stageEcommerceSlot 只建槽位与方案（不派发 canvas_image 子任务）——先审方案用。
+// 槽位落 queued 等待人工确认；提示词已写入，前端可逐屏审阅/编辑。
+func (s *Service) stageEcommerceSlot(userID string, product *model.EcommerceProduct, preset ecommerce.PresetConfig, plan ecommerce.SlotPlan, input ecommerceSlotDispatchInput) (EcommerceSlotDispatch, error) {
+	dispatch := EcommerceSlotDispatch{
+		SlotKey: plan.SlotKey, Title: plan.Title, Kind: plan.Kind, SlotNo: plan.SlotNo,
+		Status: ecommerce.SlotStatusQueued,
 	}
-	negative = ecommerce.MergeNegative(negative, preset.Negative)
+	draft, err := s.prepareEcommerceSlot(userID, product, preset, plan, input)
+	if err != nil {
+		return dispatch, err
+	}
+	slot := draft.slot
+	dispatch.SlotID = slot.ID
+	dispatch.Prompt = draft.prompt
+	dispatch.Negative = draft.negative
+	if len(draft.gateHits) > 0 {
+		dispatch.GateHits = draft.gateHits
+	}
+	if err := s.repo.UpdateEcommerceSlotDispatch(slot.ID, ecommerce.SlotStatusQueued, draft.prompt, "", slot.CurrentVersion); err != nil {
+		return dispatch, err
+	}
+	return dispatch, nil
+}
+
+// dispatchEcommerceSlot 建槽位/版本并派发一条 canvas_image 子任务。
+func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceProduct, preset ecommerce.PresetConfig, plan ecommerce.SlotPlan, input ecommerceSlotDispatchInput) (EcommerceSlotDispatch, error) {
+	dispatch := EcommerceSlotDispatch{
+		SlotKey: plan.SlotKey, Title: plan.Title, Kind: plan.Kind, SlotNo: plan.SlotNo,
+		Status: ecommerce.SlotStatusQueued,
+	}
+
+	draft, err := s.prepareEcommerceSlot(userID, product, preset, plan, input)
+	if err != nil {
+		return dispatch, err
+	}
+	slot := draft.slot
+	prompt := draft.prompt
+	negative := draft.negative
+	dispatch.SlotID = slot.ID
 	dispatch.Prompt = prompt
 	dispatch.Negative = negative
+	if len(draft.gateHits) > 0 {
+		dispatch.GateHits = draft.gateHits
+	}
 
 	versionNo := slot.CurrentVersion + 1
 	dispatch.Version = versionNo

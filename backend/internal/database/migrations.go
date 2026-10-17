@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 55
+const CurrentSchemaVersion int64 = 56
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -194,6 +194,20 @@ var schemaMigrations = []migration{
 			&model.EcommercePreset{},
 		); err != nil {
 			return fmt.Errorf("创建电商工坊表：%w", err)
+		}
+		return nil
+	}},
+	{version: 56, name: "ecommerce_plan_review", checksum: "sha256:ecommerce-plan-review-v56-20261016", apply: func(tx *gorm.DB) error {
+		// v56：分屏编辑器与先审方案所需字段。
+		// ecommerce_slots +6（prompt_override / scene_type / selling_points /
+		//                  aspect_ratio / reference_ids_json / plan_fingerprint）
+		// ecommerce_products +1（execution_mode）
+		// AutoMigrate 幂等：只补缺失列，不改既有列与数据。
+		if err := tx.AutoMigrate(
+			&model.EcommerceSlot{},
+			&model.EcommerceProduct{},
+		); err != nil {
+			return fmt.Errorf("迁移电商分屏与方案审核字段：%w", err)
 		}
 		return nil
 	}},
