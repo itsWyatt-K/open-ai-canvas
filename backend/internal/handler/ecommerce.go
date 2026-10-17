@@ -191,16 +191,27 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
+		// 阶段 4：第 1 步引导区支持改名称/卖点/附加要求（失焦即存）。
 		var body struct {
-			Name string `json:"name"`
+			Name              *string `json:"name"`
+			SellingPoints     *string `json:"sellingPoints"`
+			ExtraRequirements *string `json:"extraRequirements"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
 			return
 		}
-		if err := svc.RenameEcommerceProduct(user.ID, c.Param("id"), body.Name); err != nil {
-			failService(c, err)
-			return
+		if body.Name != nil {
+			if err := svc.RenameEcommerceProduct(user.ID, c.Param("id"), *body.Name); err != nil {
+				failService(c, err)
+				return
+			}
+		}
+		if body.SellingPoints != nil || body.ExtraRequirements != nil {
+			if err := svc.UpdateEcommerceProductBrief(user.ID, c.Param("id"), body.SellingPoints, body.ExtraRequirements); err != nil {
+				failService(c, err)
+				return
+			}
 		}
 		ok(c, gin.H{"updated": true})
 	})
@@ -269,7 +280,15 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		detail, err := svc.ConfirmEcommercePlan(c.Request.Context(), user.ID, c.Param("id"))
+		// 阶段 4：draft 态一键确认需要模型参数（用于合成各屏方案后派发）。
+		var options service.EcommerceStartOptions
+		if c.Request.ContentLength > 0 {
+			if err := c.ShouldBindJSON(&options); err != nil {
+				fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+				return
+			}
+		}
+		detail, err := svc.ConfirmEcommercePlan(c.Request.Context(), user.ID, c.Param("id"), options)
 		if err != nil {
 			failService(c, err)
 			return

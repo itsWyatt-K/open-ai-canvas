@@ -35,7 +35,8 @@ func TestEcommerceConfig_缺省读取返回全默认(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.TaskConcurrency != 2 || cfg.Mode != "auto" || cfg.Hero.TextMode != "typeset" {
+	// 阶段 4：缺省执行模式改为 review（先审方案）。
+	if cfg.TaskConcurrency != 2 || cfg.Mode != "review" || cfg.Hero.TextMode != "typeset" {
 		t.Fatalf("缺省补齐结果不符: %+v", cfg)
 	}
 }

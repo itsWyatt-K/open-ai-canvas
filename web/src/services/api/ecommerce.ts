@@ -104,7 +104,9 @@ export type EcommerceSlotSummary = {
     currentVersion: number;
     resourceId?: string;
     updatedAt: string;
-};
+    /** 失败原因（阶段 4：直接展示，不再假装排队中）。 */
+    errorMessage?: string;
+}
 
 export type EcommerceProductDetail = {
     product: {
@@ -212,6 +214,11 @@ export function getEcommerceProductDetail(id: string) {
     return http.get<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}`);
 }
 
+/** 通用商品字段更新（PATCH）：名称/卖点/附加要求。 */
+export function updateEcommerceProduct(id: string, patch: { name?: string; sellingPoints?: string; extraRequirements?: string }) {
+    return http.patch<EcommerceProductSummary>(`/ecommerce/products/${encodeURIComponent(id)}`, patch);
+}
+
 export function renameEcommerceProduct(id: string, name: string) {
     return http.patch<{ updated: boolean }>(`/ecommerce/products/${encodeURIComponent(id)}`, { name });
 }
@@ -252,8 +259,11 @@ export function regenerateEcommerceSlot(slotId: string, body: EcommerceSlotPromp
 }
 
 /** 审核模式确认整组方案：review → running 并派发所有待生成槽位。 */
-export function confirmEcommercePlan(id: string) {
-    return http.post<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/confirm-plan`);
+export function confirmEcommercePlan(
+    id: string,
+    options?: { channelId: string; model: string; size?: string; quality?: string; projectId?: string },
+) {
+    return http.post<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/confirm-plan`, options ?? {});
 }
 
 /** 暂停派发（在途子任务不取消）。 */

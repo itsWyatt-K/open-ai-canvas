@@ -2,9 +2,9 @@
 // + 标题面板 + 底部打包下载/历史轮次入口。
 // M2.6 补：接入 M3 编排器——「开始生成」派发槽位任务并轮询对账（不再是占位）；
 //           接入电商 Agent 面板（原 agent-panel-adapter 为孤儿组件，现由「Agent 精修」抽屉挂载）。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { App, Button, Drawer, Empty, Input } from "antd";
-import { ArrowLeft, Bot, CopyPlus, Download, FileArchive, History, Loader2, Play, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowLeft, Bot, CopyPlus, Download, FileArchive, History, Loader2, Play, RotateCcw, Sparkles, Square } from "lucide-react";
 
 import {
     ECOMMERCE_SLOT_STATUS_LABELS,
@@ -19,6 +19,8 @@ import {
     getEcommercePlanResponse,
     retryEcommerceProducts,
     updateEcommercePlanResponse,
+    updateEcommerceProduct,
+    pauseEcommerceProduct,
     type EcommerceProductDetail,
 } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
@@ -61,6 +63,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const [planning, setPlanning] = useState(false);
     const [zipping, setZipping] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
+    const [stopping, setStopping] = useState(false);
     const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
     const ecommerceConfig = useEcommerceWorkspaceStore((state) => state.config);
     // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
@@ -135,9 +138,24 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     // 阶段 1：确认整组方案（先审方案）→ 服务端派发所有待生成槽位。
     const handleConfirmPlan = useCallback(async () => {
         if (!productId) return;
+        // 未选模型直接拦截（draft 态确认还要用它合成方案，更不能静默失败）。
+        if (!config.imageModel || !isAiConfigReady(config, config.imageModel)) {
+            message.error("请先在右侧「生成配置」选择可用的生图模型，再开始生成");
+            return;
+        }
         setConfirming(true);
         try {
-            await confirmEcommercePlan(productId);
+            const flushed = await useEcommerceWorkspaceStore.getState().flushConfig();
+            if (!flushed) {
+                message.error("配置保存失败，已中止派发（避免用旧模型生成）");
+                return;
+            }
+            const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
+            const requestConfig = resolveModelRequestConfig(config, config.imageModel);
+            await confirmEcommercePlan(productId, {
+                channelId: requestConfig.channelId,
+                model: modelOptionName(config.imageModel),
+            });
             message.success("已确认方案，开始派发生图任务");
             await refreshDetail(productId);
             await refreshProducts();
@@ -146,7 +164,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         } finally {
             setConfirming(false);
         }
-    }, [productId, message, refreshDetail, refreshProducts]);
+    }, [productId, config, isAiConfigReady, message, refreshDetail, refreshProducts]);
 
     // 长图下载：按屏序取已完成槽位的资源，浏览器本地栅格化（不上传、不改动原图）。
     const handleDownloadLongImage = useCallback(async () => {
@@ -319,6 +337,98 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         }
     }, [productId, modal, message, refreshDetail, refreshProducts]);
 
+    // 阶段 4：Agent 改稿反馈 —— 轮询检测到槽位标题/文案变化时弹出提示并高亮。
+    const [agentChangedSlots, setAgentChangedSlots] = useState<Record<string, number>>({});
+    useEffect(() => {
+        if (!agentOpen || !detail) return;
+        setAgentChangedSlots((previous) => {
+            const next: Record<string, number> = { ...previous };
+            for (const slot of detail.slots) {
+                const stamp = slot.updatedAt ? Date.parse(slot.updatedAt) : 0;
+                const known = previous[slot.slotKey];
+                if (known !== undefined && stamp > known) {
+                    message.success(`Agent 已更新【${slot.title || slot.slotKey}】的参数与文案`);
+                    next[slot.slotKey] = stamp;
+                } else if (known === undefined) {
+                    next[slot.slotKey] = stamp;
+                }
+            }
+            return next;
+        });
+    }, [agentOpen, detail, message]);
+
+    // 阶段 4：实时进度（running / planning）。槽位失败时直接显示 errorMessage，
+    // 不再让失败的一直假装"排队中"。
+    const progress = useMemo(() => {
+        const slots = detail?.slots ?? [];
+        const total = slots.length;
+        const done = slots.filter((slot) => slot.status === "completed").length;
+        const failed = slots.filter((slot) => slot.status === "failed");
+        const active = slots.find((slot) => slot.status === "running" || slot.status === "refining");
+        const queued = slots.filter((slot) => slot.status === "queued" || slot.status === "draft").length;
+        const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+        let text = "";
+        if (planning) {
+            text = "AI 策划中：等待模型返回 7 屏方案…";
+        } else if (active) {
+            text = `正在生成：${active.title || active.slotKey}（已完成 ${done}/${total} · 排队 ${queued} 屏）`;
+        } else if (failed.length > 0) {
+            text = `部分失败：${failed.map((slot) => slot.title || slot.slotKey).join("、")}（可点「编辑」单屏重试）`;
+        } else if (done === total && total > 0) {
+            text = `全部完成 ${done}/${total}`;
+        } else {
+            text = `排队中 ${queued} 屏 · 已完成 ${done}/${total}`;
+        }
+        return { total, done, percent, text, active, failed };
+    }, [detail, planning]);
+    const progressText = progress.text;
+    const progressPercent = progress.percent;
+    // Agent 改稿高亮集合（60 秒后自动淡出）。
+    const agentHighlight = useMemo(() => {
+        const now = Date.now();
+        const marked = new Set<string>();
+        for (const [key, stamp] of Object.entries(agentChangedSlots)) {
+            if (now - stamp < 60_000) marked.add(key);
+        }
+        return marked;
+    }, [agentChangedSlots, Date.now()]);
+
+    // 第 1 步引导区：商品信息快捷编辑（失焦即存）。
+    const saveProductField = useCallback(async (field: "name" | "sellingPoints" | "extraRequirements", value: string) => {
+        if (!productId || !detail) return;
+        const next = detail.product;
+        const patch: Record<string, string> = {};
+        if (field === "name") patch.name = value;
+        if (field === "sellingPoints") patch.sellingPoints = value;
+        if (field === "extraRequirements") patch.extraRequirements = value;
+        // 未变化不发请求，避免失焦抖动。
+        const current = field === "name" ? next.name : field === "sellingPoints" ? next.sellingPoints : next.extraRequirements;
+        if (current === value) return;
+        try {
+            await updateEcommerceProduct(productId, patch);
+            await refreshDetail(productId);
+            message.success("已保存");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "保存失败");
+        }
+    }, [productId, detail, message, refreshDetail]);
+
+    // 停止生成：中止在途槽位并退回可编辑态。
+    const handleStop = useCallback(async () => {
+        if (!productId) return;
+        setStopping(true);
+        try {
+            await pauseEcommerceProduct(productId);
+            await refreshDetail(productId);
+            await refreshProducts();
+            message.success("已停止生成，可修改参数后重新开始");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "停止失败");
+        } finally {
+            setStopping(false);
+        }
+    }, [productId, message, refreshDetail, refreshProducts]);
+
     if (!productId) {
         return (
             <section className="flex flex-1 items-center justify-center bg-surface">
@@ -345,7 +455,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const detailSlots = detail.slots.filter((slot) => slot.kind === "detail");
 
     return (
-        <section className="flex flex-1 flex-col overflow-hidden bg-surface">
+        <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
             {/* 面包屑 + 头部 */}
             <header className="flex flex-col gap-3 border-b border-border/60 px-5 py-4">
                 <div className="flex items-center gap-2 text-xs text-foreground/55">
@@ -356,15 +466,15 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                     <span>/</span>
                     <span className="truncate text-foreground/75">{product.name}</span>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
                         <h2 className="truncate text-base font-semibold">{product.name}</h2>
                         <span className="shrink-0 rounded bg-foreground/10 px-2 py-0.5 text-xs text-foreground/70">
                             {ECOMMERCE_STATUS_LABELS[product.status] || product.status}
                         </span>
                         {product.round > 1 ? <span className="shrink-0 text-xs text-foreground/50">第 {product.round} 轮</span> : null}
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <Button size="small" icon={<History className="size-3.5" />} onClick={() => message.info("历史轮次切换施工中（M5）")}>
                             历史轮次
                         </Button>
@@ -433,6 +543,96 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 ) : null}
             </header>
 
+            {/* 阶段 4：第 1 步引导区 —— 上传后先配置文案，再确认生图 */}
+            {product.status === "draft" || product.status === "review" ? (
+                <div className="flex flex-col gap-3 border-b border-border/60 bg-surface px-5 py-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-foreground/80">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-primary">1</span>
+                        商品信息与 AI / Agent 策划
+                        <span className="font-normal text-foreground/45">（改完自动保存；确认参数后才会开始生图计费）</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <label className="flex flex-col gap-1">
+                            <span className="text-[11px] text-foreground/55">商品名称</span>
+                            <Input
+                                size="small"
+                                defaultValue={product.name}
+                                onBlur={(event) => void saveProductField("name", event.target.value)}
+                                placeholder="例如：云感深睡被"
+                            />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                            <span className="text-[11px] text-foreground/55">核心卖点</span>
+                            <Input
+                                size="small"
+                                defaultValue={product.sellingPoints || ""}
+                                onBlur={(event) => void saveProductField("sellingPoints", event.target.value)}
+                                placeholder="例如：抗菌 · 可水洗"
+                            />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                            <span className="text-[11px] text-foreground/55">附加要求</span>
+                            <Input
+                                size="small"
+                                defaultValue={product.extraRequirements || ""}
+                                onBlur={(event) => void saveProductField("extraRequirements", event.target.value)}
+                                placeholder="例如：床品场景，暖光"
+                            />
+                        </label>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                            size="small"
+                            icon={<Sparkles className="size-3.5" />}
+                            loading={planning}
+                            onClick={() => void handleAiPlan()}
+                        >
+                            AI 一键生成各屏文案/提示词
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<Bot className="size-3.5" />}
+                            onClick={() => { setAgentOpen(true); }}
+                        >
+                            打开 Agent 对话精修各模块
+                        </Button>
+                        <Button
+                            size="small"
+                            type="primary"
+                            icon={<Play className="size-3.5" />}
+                            loading={confirming}
+                            onClick={() => void handleConfirmPlan()}
+                        >
+                            确认各屏参数并开始生图
+                        </Button>
+                    </div>
+                </div>
+            ) : null}
+
+            {/* 阶段 4：实时进度（running / planning） */}
+            {product.status === "running" || planning ? (
+                <div className="flex flex-col gap-2 border-b border-primary/25 bg-primary/5 px-5 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs text-foreground/75">{progressText}</span>
+                        <Button
+                            size="small"
+                            danger
+                            icon={<Square className="size-3.5" />}
+                            loading={stopping}
+                            onClick={() => void handleStop()}
+                        >
+                            停止生成
+                        </Button>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+                        <div
+                            className="h-full rounded-full bg-primary transition-all"
+                            style={{ width: `${progressPercent}%` }}
+                        />
+                    </div>
+                </div>
+            ) : null}
+
             {/* 阶段 1：先审方案审核横幅（商品停在 review，等确认后才派发生图） */}
             {product.status === "review" ? (
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-5 py-3">
@@ -476,8 +676,8 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                     </div>
                 ) : (
                     <div className="flex flex-col gap-6">
-                        <SlotGroup title="主图" slots={heroSlots} emptyText="未配置主图槽位" onEdit={setEditingSlotId} />
-                        <SlotGroup title="详情页" slots={detailSlots} emptyText="未配置详情页槽位" onEdit={setEditingSlotId} />
+                        <SlotGroup title="主图" slots={heroSlots} emptyText="未配置主图槽位" onEdit={setEditingSlotId} highlighted={agentHighlight} />
+                        <SlotGroup title="详情页" slots={detailSlots} emptyText="未配置详情页槽位" onEdit={setEditingSlotId} highlighted={agentHighlight} />
                         <TitlePanel detail={detail} />
                     </div>
                 )}
@@ -515,7 +715,8 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     );
 }
 
-function SlotGroup({ title, slots, emptyText, onEdit }: { title: string; slots: EcommerceProductDetail["slots"]; emptyText: string; onEdit: (slotId: string) => void }) {
+function SlotGroup({ title, slots, emptyText, onEdit, highlighted }: { title: string; slots: EcommerceProductDetail["slots"]; emptyText: string; onEdit: (slotId: string) => void; highlighted?: Set<string> }) {
+    const marked = highlighted ?? new Set<string>();
     if (slots.length === 0) {
         return (
             <div className="flex flex-col gap-2">
@@ -531,7 +732,10 @@ function SlotGroup({ title, slots, emptyText, onEdit }: { title: string; slots: 
             </h3>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
                 {slots.map((slot) => (
-                    <article key={slot.id} className="flex flex-col gap-2 rounded-lg border border-border/50 p-2.5">
+                    <article
+                        key={slot.id}
+                        className={`flex flex-col gap-2 rounded-lg border p-2.5 ${marked.has(slot.slotKey) ? "border-primary/60 bg-primary/5" : "border-border/50"}`}
+                    >
                         <div className="relative aspect-square overflow-hidden rounded-md bg-surface-active">
                             {slot.resourceId ? (
                                 <img src={`/api/resources/${slot.resourceId}/file`} alt={slot.title || slot.slotKey} className="size-full object-cover" />
@@ -543,6 +747,9 @@ function SlotGroup({ title, slots, emptyText, onEdit }: { title: string; slots: 
                             {slot.currentVersion > 0 ? (
                                 <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">v{slot.currentVersion}</span>
                             ) : null}
+                            {marked.has(slot.slotKey) ? (
+                                <span className="absolute left-1.5 top-1.5 rounded bg-primary px-1.5 py-0.5 text-xs text-white">Agent 已改</span>
+                            ) : null}
                         </div>
                         <div className="flex items-center justify-between gap-2">
                             <strong className="truncate text-xs">{slot.title || slot.slotKey}</strong>
@@ -550,6 +757,10 @@ function SlotGroup({ title, slots, emptyText, onEdit }: { title: string; slots: 
                                 {ECOMMERCE_SLOT_STATUS_LABELS[slot.status] || slot.status}
                             </span>
                         </div>
+                        {/* 阶段 4：失败原因直接展示，不再假装排队中 */}
+                        {slot.status === "failed" && slot.errorMessage ? (
+                            <p className="line-clamp-3 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">{slot.errorMessage}</p>
+                        ) : null}
                         <div className="flex items-center justify-between gap-2">
                             {slot.copy ? <p className="line-clamp-2 text-xs text-foreground/55">{slot.copy}</p> : <span />}
                             <Button size="small" type="link" className="!h-auto !p-0 text-xs" onClick={() => onEdit(slot.id)}>

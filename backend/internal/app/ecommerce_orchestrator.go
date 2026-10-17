@@ -369,11 +369,15 @@ func (s *Service) prepareEcommerceSlot(userID string, product *model.EcommercePr
 }
 
 // stageEcommerceSlot 只建槽位与方案（不派发 canvas_image 子任务）——先审方案用。
-// 槽位落 queued 等待人工确认；提示词已写入，前端可逐屏审阅/编辑。
+//
+// 槽位落 draft（而非 queued）：queued 的语义是"已派发、等子任务执行"，
+// 会被 ComputeProductStatus 判为在途 → 推导成 running → 把 review 覆盖掉，
+// 最终 confirm-plan 又因 status!=review 被拒 → 死锁。
+// draft 表示"方案已备、未派发"，既让前端看到卡片与提示词，又不冒充在途。
 func (s *Service) stageEcommerceSlot(userID string, product *model.EcommerceProduct, preset ecommerce.PresetConfig, plan ecommerce.SlotPlan, input ecommerceSlotDispatchInput) (EcommerceSlotDispatch, error) {
 	dispatch := EcommerceSlotDispatch{
 		SlotKey: plan.SlotKey, Title: plan.Title, Kind: plan.Kind, SlotNo: plan.SlotNo,
-		Status: ecommerce.SlotStatusQueued,
+		Status: ecommerce.SlotStatusDraft,
 	}
 	draft, err := s.prepareEcommerceSlot(userID, product, preset, plan, input)
 	if err != nil {
@@ -386,7 +390,7 @@ func (s *Service) stageEcommerceSlot(userID string, product *model.EcommerceProd
 	if len(draft.gateHits) > 0 {
 		dispatch.GateHits = draft.gateHits
 	}
-	if err := s.repo.UpdateEcommerceSlotDispatch(slot.ID, ecommerce.SlotStatusQueued, draft.prompt, "", slot.CurrentVersion); err != nil {
+	if err := s.repo.UpdateEcommerceSlotDispatch(slot.ID, ecommerce.SlotStatusDraft, draft.prompt, "", slot.CurrentVersion); err != nil {
 		return dispatch, err
 	}
 	return dispatch, nil
@@ -576,6 +580,22 @@ func (s *Service) SyncEcommerceProduct(userID, productID string) (*ProductDetail
 	slots, err = s.repo.ListEcommerceSlots(productID)
 	if err != nil {
 		return nil, err
+	}
+	// 死锁自愈（阶段 4 修复）：先审方案态下槽位是 draft/queued 但**从未派发**
+	// （无 slot_versions），旧版 ComputeProductStatus 会把 queued 当在途，
+	// 把 review 覆盖成 running，而 confirm-plan 又要求 status==review → 用户被锁死。
+	// 这里显式识别「没有任何子任务在途」的待确认态，回落到 review。
+	if product.Status == ecommerce.ProductStatusReview ||
+		(product.StatusReason == ecommerce.StatusReasonAwaitPlanConfirm && !s.hasInFlightSlotVersion(slots)) {
+		if !s.hasInFlightSlotVersion(slots) {
+			if err := s.repo.UpdateEcommerceProductStatus(userID, productID,
+				ecommerce.ProductStatusReview, product.TitleStatus, ecommerce.StatusReasonAwaitPlanConfirm); err != nil {
+				return nil, err
+			}
+			product.Status = ecommerce.ProductStatusReview
+			product.StatusReason = ecommerce.StatusReasonAwaitPlanConfirm
+			return s.EcommerceProductDetail(userID, productID)
+		}
 	}
 	status, titleStatus := ecommerce.ComputeProductStatus(slotViews(slots))
 	if status != product.Status || titleStatus != product.TitleStatus {
@@ -977,4 +997,22 @@ func uniqueStrings(values []string) []string {
 		}
 	}
 	return result
+}
+
+// hasInFlightSlotVersion 判断是否存在"已派发且未终态"的槽位版本。
+//
+// 判据：任一槽位的最新版本带 child_task_id 且状态非终态 → 有子任务在途。
+// draft 态槽位（先审方案暂存）没有任何版本，因此返回 false。
+func (s *Service) hasInFlightSlotVersion(slots []model.EcommerceSlot) bool {
+	for index := range slots {
+		versions, err := s.repo.ListEcommerceSlotVersions(slots[index].ID)
+		if err != nil || len(versions) == 0 {
+			continue
+		}
+		current := versions[0]
+		if strings.TrimSpace(current.ChildTaskID) != "" && !ecommerce.IsTerminalSlotStatus(current.Status) {
+			return true
+		}
+	}
+	return false
 }

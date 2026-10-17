@@ -52,6 +52,7 @@ type SlotSummary struct {
 	CurrentVersion int       `json:"currentVersion"`
 	ResourceID     string    `json:"resourceId,omitempty"`
 	UpdatedAt      time.Time `json:"updatedAt"`
+	ErrorMessage   string    `json:"errorMessage,omitempty"`
 }
 
 // ProductDetail 详情聚合。
@@ -114,9 +115,58 @@ func (s *Service) ImportEcommerceProducts(userID string, items []ImportItem) ([]
 		if err := s.repo.CreateEcommerceProduct(product); err != nil {
 			return nil, nil, err
 		}
+		// 阶段 4：导入即预建槽位卡片。用户上传完立刻看到「主图 3 + 详情页 4」
+		// 共 7 个模块，而不是空白区；Agent 也能立刻读取并用改稿工具逐屏配置。
+		if err := s.ensureEcommerceSlotCards(userID, product); err != nil {
+			return nil, nil, err
+		}
 		created = append(created, product)
 	}
 	return created, skipped, nil
+}
+
+// ensureEcommerceSlotCards 按当前默认预设预建槽位卡片（幂等：已有槽位则跳过）。
+//
+// 阶段 4 动线改造：上传商品图 → 立即出现 7 个可编辑模块卡片 →
+// 用户/AI/Agent 配置文案 → 确认后才派发生图。槽位落 draft 态（未派发），
+// 不产生任何费用。
+func (s *Service) ensureEcommerceSlotCards(userID string, product *model.EcommerceProduct) error {
+	existing, err := s.repo.ListEcommerceSlots(product.ID)
+	if err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	preset, err := s.resolveEcommercePreset(userID, "")
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	cards := make([]model.EcommerceSlot, 0, len(preset.Slots))
+	for _, plan := range preset.Slots {
+		cards = append(cards, model.EcommerceSlot{
+			ID:               kernel.NewID(),
+			ProductID:        product.ID,
+			Kind:             plan.Kind,
+			SlotNo:           plan.SlotNo,
+			SlotKey:          plan.SlotKey,
+			Title:            plan.Title,
+			Copy:             plan.Copy,
+			SceneType:        plan.Variant,
+			AspectRatio:      plan.Aspect,
+			GenerationPrompt: "",
+			Status:           ecommerce.SlotStatusDraft,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+			ReferenceIDsJSON: "[]",
+			PlanFingerprint:  "",
+		})
+	}
+	if len(cards) == 0 {
+		return nil
+	}
+	return s.repo.CreateEcommerceSlots(cards)
 }
 
 // ListEcommerceProducts 列表（status 过滤含 completed_with_warnings 展开）。
@@ -212,6 +262,13 @@ func (s *Service) EcommerceProductDetail(userID, productID string) (*ProductDeta
 		}
 		if len(versions) > 0 {
 			summary.ResourceID = versions[0].ResourceID // 已按 version DESC 排序
+			// 阶段 4：把失败原因带到详情，前端直接展示，不再假装"排队中"。
+			if slot.Status == ecommerce.SlotStatusFailed {
+				summary.ErrorMessage = firstNonEmpty(versions[0].ErrorMessage, "该屏生成失败")
+			}
+		}
+		if summary.ErrorMessage == "" && slot.Status == ecommerce.SlotStatusFailed {
+			summary.ErrorMessage = "该屏生成失败"
 		}
 		summaries = append(summaries, summary)
 	}
@@ -336,4 +393,19 @@ func sanitizeProductName(name string) string {
 		cleaned = string([]rune(cleaned)[:120])
 	}
 	return cleaned
+}
+
+// UpdateEcommerceProductBrief 更新卖点与附加要求（第 1 步引导区失焦即存）。
+func (s *Service) UpdateEcommerceProductBrief(userID, productID string, sellingPoints, extraRequirements *string) error {
+	updates := map[string]any{"updated_at": time.Now()}
+	if sellingPoints != nil {
+		updates["selling_points"] = strings.TrimSpace(*sellingPoints)
+	}
+	if extraRequirements != nil {
+		updates["extra_requirements"] = strings.TrimSpace(*extraRequirements)
+	}
+	if len(updates) == 1 {
+		return nil
+	}
+	return s.repo.UpdateEcommerceProductFields(userID, productID, updates)
 }

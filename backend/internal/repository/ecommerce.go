@@ -361,3 +361,17 @@ func (r *Repository) UpsertEcommercePreset(preset *model.EcommercePreset) error 
 		return tx.Create(preset).Error
 	})
 }
+
+// UpdateEcommerceSlotVersionStatus 更新槽位版本状态（停止生成时中止未终态版本）。
+func (r *Repository) UpdateEcommerceSlotVersionStatus(versionID, status, errorMessage string) error {
+	updates := map[string]any{"status": status, "error_message": errorMessage}
+	return r.db.Model(&model.EcommerceSlotVersion{}).Where("id = ?", versionID).Updates(updates).Error
+}
+
+// UpdateEcommerceProductFields 通用商品字段更新（调用方负责组装白名单字段）。
+func (r *Repository) UpdateEcommerceProductFields(userID, productID string, updates map[string]any) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.Model(&model.EcommerceProduct{}).Where("id = ? AND user_id = ?", productID, userID).Updates(updates).Error
+}

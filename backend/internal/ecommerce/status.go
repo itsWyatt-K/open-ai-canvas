@@ -34,12 +34,14 @@ const (
 // 槽位状态（槽位级）。
 const (
 	SlotStatusPending   = "pending"
-	SlotStatusQueued    = "queued"
-	SlotStatusRefining  = "refining"  // 细化中
-	SlotStatusRunning   = "running"   // 生图中
+	SlotStatusDraft     = "draft"    // 方案已备、未派发（先审方案的暂存态）
+	SlotStatusQueued    = "queued"   // 已派发、等画布子任务执行
+	SlotStatusRefining  = "refining" // 细化中
+	SlotStatusRunning   = "running"  // 生图中
 	SlotStatusFailed    = "failed"
 	SlotStatusUncertain = "uncertain" // 结果待确认
 	SlotStatusCompleted = "completed"
+	SlotStatusPaused    = "paused" // 用户主动停止（可重新派发）
 )
 
 // IsTerminalProductStatus 终态判定（删除/重试约束：非终态整项拒绝）。
@@ -91,8 +93,11 @@ func ComputeProductStatus(slots []SlotView) (status string, titleStatus string) 
 			return ProductStatusUncertain, titleStatus
 		case SlotStatusFailed:
 			return ProductStatusFailed, titleStatus
-		case SlotStatusCompleted, SlotStatusPending, SlotStatusQueued:
-			if slot.Status != SlotStatusCompleted {
+		case SlotStatusCompleted, SlotStatusPending, SlotStatusDraft, SlotStatusQueued, SlotStatusPaused:
+			// draft = 方案已备但未派发（先审方案暂存），不算在途。
+			// paused = 用户主动停止，也不算在途（否则停止后又被推回 running）。
+			// 只有 queued/running 才是真正等画布子任务的状态。
+			if slot.Status == SlotStatusQueued || slot.Status == SlotStatusRunning {
 				hasInFlight = true
 			}
 		default:
@@ -101,6 +106,13 @@ func ComputeProductStatus(slots []SlotView) (status string, titleStatus string) 
 	}
 	if hasInFlight {
 		return ProductStatusRunning, titleStatus
+	}
+	// 阶段 4：还有 draft/pending 屏未派发 → 停在 draft（不是 completed，
+	// 否则用户会误以为全部生成完了）。
+	for _, slot := range slots {
+		if slot.Status == SlotStatusDraft || slot.Status == SlotStatusPending {
+			return ProductStatusDraft, titleStatus
+		}
 	}
 	if titleStatus == TitleStatusFailed || titleStatus == TitleStatusUncertain {
 		return ProductStatusCompletedWithWarnings, titleStatus

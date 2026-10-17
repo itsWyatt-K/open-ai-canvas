@@ -119,7 +119,8 @@ func TestListEcommerceProducts_过滤与聚合(t *testing.T) {
 	if summary == nil {
 		t.Fatal("未找到商品A")
 	}
-	if summary.HeroTotal != 2 || summary.HeroDone != 1 {
+	// 阶段 4：导入即预建 7 屏（3 主图 + 4 详情页），故主图总数 = 预建 3 + 手工 2。
+	if summary.HeroTotal != 5 || summary.HeroDone != 1 {
 		t.Fatalf("进度聚合错误: %d/%d", summary.HeroDone, summary.HeroTotal)
 	}
 	// 状态过滤：全部是 draft

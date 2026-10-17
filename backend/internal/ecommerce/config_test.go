@@ -75,7 +75,8 @@ func TestNormalizeConfigJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("合法 JSON 应通过: %v", err)
 	}
-	if merged.TaskConcurrency != 3 || merged.Platform != "抖音" || merged.Mode != ModeAuto {
+	// 阶段 4：缺省模式改为 review（先审方案，未确认不扣费）。
+	if merged.TaskConcurrency != 3 || merged.Platform != "抖音" || merged.Mode != ModeReview {
 		t.Fatalf("解析+补齐结果不符: %+v", merged)
 	}
 	if _, err := NormalizeConfigJSON(`{"taskConcurrency":9}`); err == nil {

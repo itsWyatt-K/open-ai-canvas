@@ -66,7 +66,7 @@ type PromptSets struct {
 func DefaultConfigView() ConfigView {
 	return ConfigView{
 		TaskConcurrency:   2,
-		Mode:              ModeAuto,
+		Mode:              ModeReview, // 阶段 4：默认先审方案，未确认前不扣费
 		Quality:           QualityAuto,
 		MaxRetries:        1,
 		TimeoutSeconds:    600,

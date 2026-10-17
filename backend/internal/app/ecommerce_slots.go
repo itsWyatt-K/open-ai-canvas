@@ -183,7 +183,17 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 // ConfirmEcommercePlan 审核模式确认整组方案 → 商品转 running 并派发所有待生成槽位。
 //
 // 只接受 review 状态；余额预检失败返回 insufficient_credits（与 start 同语义）。
-func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID string) (*ProductDetail, error) {
+// ConfirmEcommercePlan 确认方案并派发生图（阶段 4 新动线主按钮）。
+//
+// 接受 draft 与 review 两种来源：
+//   - review：槽位已 stage（提示词已合成），直接派发；
+//   - draft：导入后预建的裸卡片（无提示词）。此时要求调用方带模型参数
+//     （options），先复用 StartEcommerceProduct 的完整合成链路把槽位 stage 好，
+//     再统一派发——「确认各屏参数并开始生图」一步到位。
+//
+// 计费纪律：只有走到这里才真正派发 canvas_image 子任务；未确认前商品停在
+// draft/review，不产生任何生图费用。
+func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID string, options EcommerceStartOptions) (*ProductDetail, error) {
 	product, err := s.repo.GetEcommerceProduct(userID, productID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -191,10 +201,20 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 		}
 		return nil, err
 	}
-	if product.Status != ecommerce.ProductStatusReview {
-		return nil, NewAppError(http.StatusConflict, "当前状态为 "+product.Status+"，仅「待确认方案」可执行确认")
+	if product.Status != ecommerce.ProductStatusReview && product.Status != ecommerce.ProductStatusDraft {
+		return nil, NewAppError(http.StatusConflict, "当前状态为 "+product.Status+"，仅「待确认方案/未开始」可执行确认")
 	}
-	preset, err := s.resolveEcommercePreset(userID, "")
+	// draft 态：先走完整编排合成各屏方案（stage 槽位 + 商品转 review）。
+	if product.Status == ecommerce.ProductStatusDraft {
+		if _, err := s.StartEcommerceProduct(userID, productID, options); err != nil {
+			return nil, err
+		}
+		product, err = s.repo.GetEcommerceProduct(userID, productID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	preset, err := s.resolveEcommercePreset(userID, options.PresetID)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +222,7 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 	if err != nil {
 		return nil, err
 	}
+	slots = sortEcommerceSlotsForPlan(slots)
 	if err := s.repo.UpdateEcommerceProductRun(userID, productID, ecommerce.ProductStatusRunning, product.TitleStatus, "", 0); err != nil {
 		return nil, err
 	}
@@ -219,7 +240,7 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 			Title: slot.Title, Copy: slot.Copy,
 		}
 		if _, dispatchErr := s.dispatchEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
-			Existing: &slots[index], ProjectID: "",
+			Existing: &slots[index], ProjectID: options.ProjectID,
 		}); dispatchErr != nil {
 			_ = s.repo.UpdateEcommerceSlotStatus(slot.ID, ecommerce.SlotStatusFailed)
 		}
@@ -228,6 +249,15 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 }
 
 // PauseEcommerceProduct 暂停派发（在途子任务不取消，按派发时参数收尾）。
+// PauseEcommerceProduct 停止生成（强制脱困）。
+//
+// 阶段 4 修复：旧版只置 product.paused/status=paused，槽位仍留 queued/running，
+// 前端按钮依旧被「编排生成中」锁死，用户无法改参数也无法重开。
+// 现在：
+//  1. 把所有 queued/running/refining 的槽位中止为 paused（连同未终态版本）；
+//  2. 商品退回 review（待确认方案），解除前端锁定，允许改参数或重新开始；
+//  3. 真正在途的画布子任务不取消（云端已收费的请求正常收尾），但状态立即不再
+//     冒充"在途"，对账不会把商品重新推回 running。
 func (s *Service) PauseEcommerceProduct(ctx context.Context, userID, productID string) (*model.EcommerceProduct, error) {
 	product, err := s.repo.GetEcommerceProduct(userID, productID)
 	if err != nil {
@@ -236,7 +266,34 @@ func (s *Service) PauseEcommerceProduct(ctx context.Context, userID, productID s
 		}
 		return nil, err
 	}
-	if err := s.repo.UpdateEcommerceProductStatus(userID, productID, ecommerce.ProductStatusPaused, product.TitleStatus, "PAUSED_BY_USER"); err != nil {
+	// 中止在途槽位（queued/running/refining → paused），未终态版本一并标记。
+	slots, err := s.repo.ListEcommerceSlots(productID)
+	if err != nil {
+		return nil, err
+	}
+	for index := range slots {
+		switch slots[index].Status {
+		case ecommerce.SlotStatusQueued, ecommerce.SlotStatusRunning, ecommerce.SlotStatusRefining:
+			if err := s.repo.UpdateEcommerceSlotStatus(slots[index].ID, ecommerce.SlotStatusPaused); err != nil {
+				return nil, err
+			}
+			versions, versionErr := s.repo.ListEcommerceSlotVersions(slots[index].ID)
+			if versionErr != nil {
+				return nil, versionErr
+			}
+			for _, version := range versions {
+				if ecommerce.IsTerminalSlotStatus(version.Status) {
+					continue
+				}
+				if err := s.repo.UpdateEcommerceSlotVersionStatus(version.ID, ecommerce.SlotStatusPaused, "STOPPED_BY_USER"); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	// 退回 review：用户可以改文案/参数后重新确认派发。
+	if err := s.repo.UpdateEcommerceProductStatus(userID, productID,
+		ecommerce.ProductStatusReview, product.TitleStatus, "STOPPED_BY_USER: 已停止生成，可修改参数后重新开始"); err != nil {
 		return nil, err
 	}
 	return s.repo.GetEcommerceProduct(userID, productID)
