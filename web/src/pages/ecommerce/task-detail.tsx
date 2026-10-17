@@ -4,7 +4,7 @@
 //           接入电商 Agent 面板（原 agent-panel-adapter 为孤儿组件，现由「Agent 精修」抽屉挂载）。
 import { useCallback, useEffect, useState } from "react";
 import { App, Button, Drawer, Empty } from "antd";
-import { ArrowLeft, Bot, Download, History, Loader2, Play } from "lucide-react";
+import { ArrowLeft, Bot, Download, History, Loader2, Play, Sparkles } from "lucide-react";
 
 import {
     ECOMMERCE_SLOT_STATUS_LABELS,
@@ -12,6 +12,8 @@ import {
     confirmEcommercePlan,
     getEcommerceProductDetail,
     startEcommerceProduct,
+    startEcommercePlanning,
+    applyEcommercePlan,
     type EcommerceProductDetail,
 } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
@@ -20,6 +22,7 @@ import { AgentWorkbenchPanel, useEcommerceWorkbenchCanvas } from "./agent-panel-
 import { EcommerceSlotEditorDialog } from "./slot-editor-dialog";
 import { downloadBlob, mergeSlotImagesToLongImage } from "./long-image";
 import { resourceFileUrl } from "@/services/api/resources";
+import { queryGenerationTask } from "@/services/api/task-center";
 
 const SLOT_STATUS_TONE: Record<string, string> = {
     pending: "bg-foreground/10 text-foreground/55",
@@ -50,7 +53,9 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
     const [starting, setStarting] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [downloading, setDownloading] = useState(false);
+    const [planning, setPlanning] = useState(false);
     const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+    const ecommerceConfig = useEcommerceWorkspaceStore((state) => state.config);
     // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
     const { canvasId: agentCanvasId, ensureCanvas, canvasState: agentCanvasState } = useEcommerceWorkbenchCanvas();
     const [agentOpen, setAgentOpen] = useState(false);
@@ -146,6 +151,56 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         }
     }, [detail, message]);
 
+    // AI 策划轨：派发视觉文本策划 → 轮询结果 → 服务端 12 段编译回写各屏。
+    const handleAiPlan = useCallback(async () => {
+        if (!productId || !detail) return;
+        const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
+        const plannerModel = detail.product ? (ecommerceConfig?.plannerModelId || config.textModel) : config.textModel;
+        if (!plannerModel || !isAiConfigReady(config, plannerModel)) {
+            message.error("请先在右侧「生成配置」选择可用的策划模型（需支持看图）");
+            return;
+        }
+        setPlanning(true);
+        try {
+            const flushed = await useEcommerceWorkspaceStore.getState().flushConfig();
+            if (!flushed) {
+                message.error("配置保存失败，已中止策划");
+                return;
+            }
+            const requestConfig = resolveModelRequestConfig(config, plannerModel);
+            const started = await startEcommercePlanning(productId, {
+                channelId: requestConfig.channelId,
+                model: modelOptionName(plannerModel),
+            });
+            message.info(`已派发策划任务（${started.screens} 屏），等待模型返回…`);
+            const deadline = Date.now() + 10 * 60 * 1000;
+            for (;;) {
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+                const task = await queryGenerationTask(started.taskId);
+                if (task.status === "succeeded") {
+                    const raw = task.textDraft || task.resultJson || "";
+                    await applyEcommercePlan(productId, raw);
+                    await refreshDetail(productId);
+                    await refreshProducts();
+                    message.success("策划已编译并写入各屏（结构不合格会被拒绝，不会半成品出图）");
+                    return;
+                }
+                if (task.status === "failed" || task.status === "cancelled") {
+                    message.error(task.error || "策划任务失败，可重试或改用模板合成");
+                    return;
+                }
+                if (Date.now() > deadline) {
+                    message.warning("策划仍在执行，请稍后到任务中心查看结果后手动应用");
+                    return;
+                }
+            }
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "AI 策划失败");
+        } finally {
+            setPlanning(false);
+        }
+    }, [productId, detail, ecommerceConfig?.plannerModelId, config, isAiConfigReady, message, refreshDetail, refreshProducts]);
+
     if (!productId) {
         return (
             <section className="flex flex-1 items-center justify-center bg-surface">
@@ -210,6 +265,15 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                             onClick={() => void handleStart()}
                         >
                             {starting ? "编排生成中…" : "开始生成"}
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<Sparkles className="size-3.5" />}
+                            loading={planning}
+                            disabled={starting}
+                            onClick={() => void handleAiPlan()}
+                        >
+                            AI 策划
                         </Button>
                         <Button
                             size="small"
