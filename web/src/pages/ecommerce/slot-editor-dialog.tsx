@@ -50,16 +50,18 @@ export function EcommerceSlotEditorDialog({ slot, index, total, onClose, onNavig
     const [saving, setSaving] = useState(false);
     const [generating, setGenerating] = useState(false);
 
-    // 切换槽位时重置表单（详情接口暂不返回 prompt 明细，画面描述留空由用户填写或保留后端值）。
+    // 切换槽位时重置表单。阶段 5：详情接口已返回 sceneType/sellingPoints/
+    // aspectRatio/generationPrompt/promptOverride，**全部预填**——不再打开全空
+    // （Bug 2：此前详情不带这些字段，编辑器只能留空，一保存还把库里的值清掉）。
     useEffect(() => {
         setTitle(slot.title || "");
         setCopy(slot.copy || "");
-        setSceneType("");
-        setSellingPoints("");
-        setAspectRatio("");
-        setPrompt("");
-        setPromptOverride("");
-    }, [slot.id, slot.title, slot.copy]);
+        setSceneType(slot.sceneType || "");
+        setSellingPoints(slot.sellingPoints || "");
+        setAspectRatio(slot.aspectRatio || "");
+        setPrompt(slot.generationPrompt || "");
+        setPromptOverride(slot.promptOverride || "");
+    }, [slot.id, slot.title, slot.copy, slot.sceneType, slot.sellingPoints, slot.aspectRatio, slot.generationPrompt, slot.promptOverride]);
 
     const body = (): EcommerceSlotPromptBody => ({
         title,

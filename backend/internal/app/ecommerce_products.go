@@ -53,6 +53,12 @@ type SlotSummary struct {
 	ResourceID     string    `json:"resourceId,omitempty"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 	ErrorMessage   string    `json:"errorMessage,omitempty"`
+	// ---- 阶段 5：分镜脚本卡与编辑器预填 ----
+	SceneType        string `json:"sceneType,omitempty"`
+	AspectRatio      string `json:"aspectRatio,omitempty"`
+	SellingPoints    string `json:"sellingPoints,omitempty"`
+	GenerationPrompt string `json:"generationPrompt,omitempty"`
+	PromptOverride   string `json:"promptOverride,omitempty"`
 }
 
 // ProductDetail 详情聚合。
@@ -125,11 +131,14 @@ func (s *Service) ImportEcommerceProducts(userID string, items []ImportItem) ([]
 	return created, skipped, nil
 }
 
-// ensureEcommerceSlotCards 按当前默认预设预建槽位卡片（幂等：已有槽位则跳过）。
+// ensureEcommerceSlotCards 按当前平台模板预建槽位卡片（幂等：已有槽位则跳过）。
 //
-// 阶段 4 动线改造：上传商品图 → 立即出现 7 个可编辑模块卡片 →
+// 阶段 4 动线改造：上传商品图 → 立即出现「主图 3 + 详情页 4」共 7 个模块卡片 →
 // 用户/AI/Agent 配置文案 → 确认后才派发生图。槽位落 draft 态（未派发），
 // 不产生任何费用。
+// 阶段 5（Bug 2 根治）：预建即写入平台定制的 scene_type / copy 引导词 /
+// generation_prompt 基底——用户点开编辑或看分镜卡时就有完整初始方案，
+// 不再是空壳（此前只写 Title，编辑器打开全空）。
 func (s *Service) ensureEcommerceSlotCards(userID string, product *model.EcommerceProduct) error {
 	existing, err := s.repo.ListEcommerceSlots(product.ID)
 	if err != nil {
@@ -138,13 +147,11 @@ func (s *Service) ensureEcommerceSlotCards(userID string, product *model.Ecommer
 	if len(existing) > 0 {
 		return nil
 	}
-	preset, err := s.resolveEcommercePreset(userID, "")
-	if err != nil {
-		return err
-	}
+	slotPlans := ecommerceSlotPlansForPlatform(s.ecommercePlatformKey(userID))
+	spec := ecommerce.PlatformSpecOrDefault(s.ecommercePlatformKey(userID))
 	now := time.Now()
-	cards := make([]model.EcommerceSlot, 0, len(preset.Slots))
-	for _, plan := range preset.Slots {
+	cards := make([]model.EcommerceSlot, 0, len(slotPlans))
+	for _, plan := range slotPlans {
 		cards = append(cards, model.EcommerceSlot{
 			ID:               kernel.NewID(),
 			ProductID:        product.ID,
@@ -155,7 +162,7 @@ func (s *Service) ensureEcommerceSlotCards(userID string, product *model.Ecommer
 			Copy:             plan.Copy,
 			SceneType:        plan.Variant,
 			AspectRatio:      plan.Aspect,
-			GenerationPrompt: "",
+			GenerationPrompt: ecommerce.PlatformSlotBasePrompt(plan, spec),
 			Status:           ecommerce.SlotStatusDraft,
 			CreatedAt:        now,
 			UpdatedAt:        now,
@@ -246,15 +253,17 @@ func (s *Service) EcommerceProductDetail(userID, productID string) (*ProductDeta
 	summaries := make([]SlotSummary, 0, len(slots))
 	for _, slot := range slots {
 		summary := SlotSummary{
-			ID:             slot.ID,
-			Kind:           slot.Kind,
-			SlotNo:         slot.SlotNo,
-			SlotKey:        slot.SlotKey,
-			Title:          slot.Title,
-			Copy:           slot.Copy,
-			Status:         slot.Status,
-			CurrentVersion: slot.CurrentVersion,
-			UpdatedAt:      slot.UpdatedAt,
+			ID:   slot.ID,
+			Kind: slot.Kind, SlotNo: slot.SlotNo, SlotKey: slot.SlotKey,
+			Title: slot.Title, Copy: slot.Copy,
+			Status: slot.Status, CurrentVersion: slot.CurrentVersion,
+			UpdatedAt: slot.UpdatedAt,
+			// 阶段 5：分镜卡正面直接渲染，编辑器据此预填（不再打开全空）。
+			SceneType:        slot.SceneType,
+			AspectRatio:      slot.AspectRatio,
+			SellingPoints:    slot.SellingPoints,
+			GenerationPrompt: slot.GenerationPrompt,
+			PromptOverride:   slot.PromptOverride,
 		}
 		versions, err := s.repo.ListEcommerceSlotVersions(slot.ID)
 		if err != nil {

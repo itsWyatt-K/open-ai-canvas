@@ -15,8 +15,16 @@ import type { EcommerceProductDetail } from "@/services/api/ecommerce";
  * 阶段 0 修复（方案 C）：Agent 只认画布、不认识电商表（`grep ecommerce cloud_agent*.go` 零命中），
  * 因此这里把「当前商品 + 槽位」上下文通过两条既有通道喂给面板：
  *   1. `references` —— 商品实拍原图（视觉模型可直接看图）；
- *   2. `prefillRequest` —— 结构化文本上下文（`requiresVision: true` 走视觉路由，`autoSubmit: false` 不自动扣费）。
- * 不改后端：Agent 仍只读画布与 references，写能力维持原状（改槽位需阶段 2 的 slots 端点）。
+ *   2. `prefillRequest` —— 结构化文本上下文（`requiresVision: true` 走视觉路由）。
+ *
+ * 阶段 5 修复（Bug 3）：
+ *   - **移除 task-detail 里的空壳 Drawer**：CanvasCloudAgentPanel 自身是 fixed 悬浮面板，
+ *     包在 Drawer 里只会得到一个右侧空白大白框。现在 open 由父组件控制，直接渲染。
+ *   - **prefillRequest 时序**：面板挂载瞬间 prefill 可能早于输入框就绪。打开后延迟 120ms
+ *     再递增 prefillNonce（改变 prefillRequest.id 触发一次新预填），保证商品上下文
+ *     【ID + 名称 + 平台 + 卖点 + 各屏文案】稳定进入输入框。
+ *   - **顾问模式（advisor）**：用户点「跟 AI 顾问对话定制」时 autoSubmit=true，
+ *     Agent 打开瞬间直接结合商品原图给出卖点与分屏建议；「精修」模式不自动提交（不自动扣费）。
  */
 
 const WORKBENCH_TITLE = "电商工作台";
@@ -46,21 +54,32 @@ export function AgentWorkbenchPanel({
     canvasState,
     productCount,
     detail,
+    open,
+    onOpenChange,
+    advisorMode = false,
 }: {
     canvasId: string;
     canvasState: string;
     productCount: number;
     /** 当前商品详情（含实拍原图资源 ID 与槽位）；为空时退化为纯画布助手。 */
     detail?: EcommerceProductDetail | null;
+    /** 父组件控制的打开态（阶段 5：不再有内部默认常开，也不套 Drawer）。 */
+    open: boolean;
+    onOpenChange?: (open: boolean) => void;
+    /** 顾问模式：预填后自动提交（AI 主动给建议）；精修模式只预填不提交。 */
+    advisorMode?: boolean;
 }) {
-    const [open, setOpen] = useState(true);
-    // 画布创建是异步的：拿到 ID 前不挂载面板，拿到后保持常开。
-    useEffect(() => {
-        if (canvasId) setOpen(true);
-    }, [canvasId]);
-
     const product = detail?.product;
     const slots = detail?.slots ?? [];
+
+    // 打开后延迟递增 nonce：改变 prefillRequest.id 触发面板重新预填一次，
+    // 规避「挂载瞬间输入框未就绪 → prefill 丢失」的时序问题（Bug 3）。
+    const [prefillNonce, setPrefillNonce] = useState(0);
+    useEffect(() => {
+        if (!open) return;
+        const timer = window.setTimeout(() => setPrefillNonce((value) => value + 1), 120);
+        return () => window.clearTimeout(timer);
+    }, [open]);
 
     // 商品实拍原图 → 视觉引用（Agent 可直接看图，无需用户重新上传）。
     const references = useMemo<CanvasResourceReference[]>(() => {
@@ -78,7 +97,7 @@ export function AgentWorkbenchPanel({
         }];
     }, [product]);
 
-    // 打开抽屉时的结构化商品上下文（视觉路由 + 不自动提交，避免未确认即扣费）。
+    // 打开抽屉时的结构化商品上下文（视觉路由 + 精修模式不自动提交，避免未确认即扣费）。
     const prefillRequest = useMemo(() => {
         if (!product) return null;
         const slotLines = slots
@@ -86,6 +105,9 @@ export function AgentWorkbenchPanel({
                 `  [${index + 1}] ${slot.slotKey}（${slot.title || "未命名"}）· 状态:${slot.status} · 文案:${slot.copy || "无"}`,
             )
             .join("\n");
+        const ask = advisorMode
+            ? "请基于上方商品实拍图，直接给我 3 条核心卖点建议和这套分屏的修改方案（每条说明改哪屏、改成什么）。"
+            : "请结合上方商品实拍图与分屏信息，协助我优化分屏文案或生图提示词。";
         const text = [
             "【当前电商工坊商品上下文】",
             `- 商品名称：${product.name}（ID: ${product.id}，状态: ${product.status}）`,
@@ -94,11 +116,17 @@ export function AgentWorkbenchPanel({
             `- 分屏槽位（共 ${slots.length} 屏）：`,
             slotLines || "  暂无已生成槽位",
             "",
-            "请结合上方商品实拍图与分屏信息，协助我优化分屏文案或生图提示词。",
+            ask,
         ].join("\n");
-        // id 变化即触发一次预填（面板以 id 判重）；取商品 ID 长度 + 槽位数，保证切换商品时重新注入。
-        return { id: product.id.length + slots.length * 7919, text, autoSubmit: false, requiresVision: true };
-    }, [product, slots]);
+        // id 变化即触发一次预填（面板以 id 判重）：商品 ID + 槽位数 + 打开 nonce，
+        // 保证切换商品/重新打开都能重新注入。
+        return {
+            id: product.id.length + slots.length * 7919 + prefillNonce * 104729,
+            text,
+            autoSubmit: advisorMode,
+            requiresVision: true,
+        };
+    }, [product, slots, prefillNonce, advisorMode]);
 
     if (!canvasId) {
         return <div className="ecommerce-agent-placeholder">{canvasState || "工作台画布准备中…"}</div>;
@@ -112,8 +140,8 @@ export function AgentWorkbenchPanel({
                 references={references}
                 prefillRequest={prefillRequest}
                 open={open}
-                onOpen={() => setOpen(true)}
-                onCollapse={() => setOpen(false)}
+                onOpen={() => onOpenChange?.(true)}
+                onCollapse={() => onOpenChange?.(false)}
                 canvasNodes={[]}
                 runningNodeId={null}
             />

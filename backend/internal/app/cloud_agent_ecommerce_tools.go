@@ -57,14 +57,20 @@ func cloudAgentEcommerceGetProductDetail(services []*Service, userID string, cal
 }
 
 // cloudAgentEcommerceUpdateSlotPrompt 改稿：复用 UpdateEcommerceSlotPrompt（不扣费）。
+//
+// 阶段 5：args 用指针——模型没传的字段保持 nil，由 service 的指针补丁语义
+// 决定「保留原值」；空串视为显式清空（模型明确要清文案时）。
 func cloudAgentEcommerceUpdateSlotPrompt(services []*Service, userID string, call cloudAgentCall) (any, error) {
 	var args struct {
-		ProductID      string `json:"productId"`
-		SlotID         string `json:"slotId"`
-		Title          string `json:"title"`
-		Copy           string `json:"copy"`
-		Prompt         string `json:"prompt"`
-		PromptOverride string `json:"promptOverride"`
+		ProductID      string  `json:"productId"`
+		SlotID         string  `json:"slotId"`
+		Title          *string `json:"title"`
+		Copy           *string `json:"copy"`
+		SceneType      *string `json:"sceneType"`
+		SellingPoints  *string `json:"sellingPoints"`
+		AspectRatio    *string `json:"aspectRatio"`
+		Prompt         *string `json:"prompt"`
+		PromptOverride *string `json:"promptOverride"`
 	}
 	if err := decodeCloudAgentJSONObject(call.Function.Arguments, &args); err != nil {
 		return nil, cloudAgentJSONArgumentError(err)
@@ -85,14 +91,14 @@ func cloudAgentEcommerceUpdateSlotPrompt(services []*Service, userID string, cal
 	if productID := strings.TrimSpace(args.ProductID); productID != "" && productID != slot.ProductID {
 		return nil, BadAuthRequest("slotId 与 productId 不匹配")
 	}
-	// 空字段表示「保留原值」，避免模型漏传字段把文案清空。
+	// 指针补丁：只传模型给了的字段，未传字段服务端保留原值（防漏传清空文案）。
 	patch := EcommerceSlotPromptPatch{
-		Title:          firstNonEmpty(strings.TrimSpace(args.Title), slot.Title),
+		Title:          args.Title,
 		Copy:           args.Copy,
-		SceneType:      slot.SceneType,
-		SellingPoints:  slot.SellingPoints,
-		AspectRatio:    slot.AspectRatio,
-		Prompt:         firstNonEmpty(strings.TrimSpace(args.Prompt), slot.GenerationPrompt),
+		SceneType:      args.SceneType,
+		SellingPoints:  args.SellingPoints,
+		AspectRatio:    args.AspectRatio,
+		Prompt:         args.Prompt,
 		PromptOverride: args.PromptOverride,
 	}
 	updated, err := svc.UpdateEcommerceSlotPrompt(context.Background(), userID, slotID, patch)

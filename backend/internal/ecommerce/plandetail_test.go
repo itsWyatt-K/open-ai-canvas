@@ -74,36 +74,153 @@ func TestCompileDetailPlanHappyPath(t *testing.T) {
 	}
 }
 
-func TestCompileDetailPlanRejectsWrongScreenCount(t *testing.T) {
-	_, err := CompileDetailPlan(validPlanJSON(3, nil), 5)
-	if !errors.Is(err, ErrPlanInvalid) {
-		t.Fatalf("屏数不符应返回 ErrPlanInvalid，得到 %v", err)
+// 阶段 5：任务结果包装解包（canvas_text 成功后 resultJson 是 {"mode":"text","text":...}）。
+func TestUnwrapPlanText(t *testing.T) {
+	wrapped := "{\"mode\":\"text\",\"text\":\"```json\\n{\\\"screens\\\": []}\\n```\"}"
+	want := "```json\n{\"screens\": []}\n```"
+	if got := UnwrapPlanText(wrapped); got != want {
+		t.Fatalf("包装体应解包出 text 原文，得到 %q", got)
 	}
-	if !strings.Contains(err.Error(), "须包含 5 屏") {
-		t.Fatalf("错误信息应说明期望屏数：%v", err)
+	// 合法策划 JSON（无 mode/text）原样返回。
+	plan := `{"screens":[{"title":"首屏"}]}`
+	if got := UnwrapPlanText(plan); got != plan {
+		t.Fatalf("策划 JSON 不应被改写，得到 %q", got)
+	}
+	// 非 JSON / 空 / 坏 JSON / text 为空 原样返回。
+	for _, raw := range []string{"", "not json", `{"mode":"text"}`, `{"text":""}`, "{\"mode\":\"text\",\"text\":"} {
+		if got := UnwrapPlanText(raw); got != raw {
+			t.Fatalf("输入 %q 应原样返回，得到 %q", raw, got)
+		}
 	}
 }
 
-func TestCompileDetailPlanRejectsDuplicateVisualPlan(t *testing.T) {
+// 阶段 5 容错语义：屏数不符不再拒绝——少于 wantCount 按模板补齐，多于截断。
+func TestCompileDetailPlanPadsAndTruncatesScreens(t *testing.T) {
+	padded, err := CompileDetailPlan(validPlanJSON(3, nil), 5)
+	if err != nil {
+		t.Fatalf("屏数不足应补齐而非拒绝：%v", err)
+	}
+	if len(padded) != 5 {
+		t.Fatalf("应补齐到 5 屏，实际 %d", len(padded))
+	}
+	// 补齐屏必须有模板标题且编译出 12 段。
+	if !strings.Contains(padded[4].Prompt, "整组视觉方向：") {
+		t.Fatal("补齐屏应编译完整 12 段提示词")
+	}
+	truncated, err := CompileDetailPlan(validPlanJSON(3, nil), 2)
+	if err != nil {
+		t.Fatalf("屏数超出应截断而非拒绝：%v", err)
+	}
+	if len(truncated) != 2 {
+		t.Fatalf("应截断到 2 屏，实际 %d", len(truncated))
+	}
+}
+
+// 阶段 5 容错语义：指纹相撞不再拒绝——自动追加差异化机位描述。
+func TestCompileDetailPlanAutoDifferentiatesDuplicateFingerprint(t *testing.T) {
 	raw := validPlanJSON(2, func(plan *DetailPlan) {
-		// 第二屏复制第一屏的视觉方案 → 必须拒绝
+		// 第二屏复制第一屏的视觉方案 → 旧版拒绝，现在自动差异化
 		plan.Screens[1].VisualPlan = plan.Screens[0].VisualPlan
 	})
-	_, err := CompileDetailPlan(raw, 2)
-	if !errors.Is(err, ErrPlanInvalid) {
-		t.Fatalf("重复视觉方案应拒绝，得到 %v", err)
+	compiled, err := CompileDetailPlan(raw, 2)
+	if err != nil {
+		t.Fatalf("指纹相撞应自动差异化而非拒绝：%v", err)
 	}
-	if !strings.Contains(err.Error(), "视觉方案重复") {
-		t.Fatalf("错误信息应指出重复：%v", err)
+	if compiled[0].Fingerprint == compiled[1].Fingerprint {
+		t.Fatal("差异化后两屏指纹必须不同")
+	}
+	if !strings.Contains(compiled[1].Prompt, "切换为微距特写视角") {
+		t.Fatalf("后一屏应追加差异化机位描述：%s", compiled[1].Prompt)
 	}
 }
 
-func TestCompileDetailPlanRejectsMissingField(t *testing.T) {
+// 阶段 5 容错语义：visualPlan 子字段缺失 → 模板兜底，不拒绝。
+func TestCompileDetailPlanFillsMissingVisualPlanFields(t *testing.T) {
 	raw := validPlanJSON(1, func(plan *DetailPlan) {
 		plan.Screens[0].VisualPlan["variation"] = ""
 	})
-	if _, err := CompileDetailPlan(raw, 1); !errors.Is(err, ErrPlanInvalid) {
-		t.Fatalf("缺字段应拒绝，得到 %v", err)
+	compiled, err := CompileDetailPlan(raw, 1)
+	if err != nil {
+		t.Fatalf("缺 visualPlan 字段应兜底而非拒绝：%v", err)
+	}
+	if !strings.Contains(compiled[0].Prompt, "本屏差异与连续性：") {
+		t.Fatal("兜底后仍须编译完整 12 段")
+	}
+}
+
+// 阶段 5 容错语义：Markdown 外壳 + snake_case 键名差异必须能编译。
+func TestCompileDetailPlanStripsMarkdownAndSnakeCase(t *testing.T) {
+	raw := "模型说明文字如下：\n```json\n" + validPlanJSON(2, func(plan *DetailPlan) {
+		// 模拟 snake_case：直接把 JSON 文本的 camelCase 键替换成下划线形式。
+	}) + "\n```\n以上是结果。"
+	snake := strings.NewReplacer(
+		"productAnalysis", "product_analysis",
+		"styleAnalysis", "style_analysis",
+		"visualSystem", "visual_system",
+		"sceneType", "scene_type",
+		"sellingPoints", "selling_points",
+		"visualPlan", "visual_plan",
+		"colorAndMaterials", "color_and_materials",
+		"visualEvidence", "visual_evidence",
+		"visibleFeatures", "visible_features",
+		"confirmedSellingPoints", "confirmed_selling_points",
+		"transferableElements", "transferable_elements",
+		"excludedElements", "excluded_elements",
+		"artDirection", "art_direction",
+	).Replace(raw)
+	compiled, err := CompileDetailPlan(snake, 2)
+	if err != nil {
+		t.Fatalf("Markdown 外壳 + snake_case 应容错编译：%v", err)
+	}
+	if len(compiled) != 2 {
+		t.Fatalf("应编译 2 屏，实际 %d", len(compiled))
+	}
+}
+
+// 阶段 5 容错语义：styleAnalysis 整体缺失 → 智能缺省，不报错。
+func TestCompileDetailPlanDefaultsMissingStyleAnalysis(t *testing.T) {
+	raw := validPlanJSON(2, func(plan *DetailPlan) {
+		plan.StyleAnalysis = nil
+	})
+	compiled, err := CompileDetailPlan(raw, 2)
+	if err != nil {
+		t.Fatalf("styleAnalysis 缺失应兜底而非拒绝：%v", err)
+	}
+	if !strings.Contains(compiled[0].Prompt, "统一配色：") {
+		t.Fatal("兜底后仍须编译整组视觉段")
+	}
+}
+
+// 阶段 5 容错语义：productAnalysis 整体缺失 → 商品事实兜底，不报错。
+func TestCompileDetailPlanDefaultsMissingProductAnalysis(t *testing.T) {
+	raw := validPlanJSON(2, func(plan *DetailPlan) {
+		plan.ProductAnalysis = nil
+	})
+	compiled, err := CompileDetailPlanWithFallback(raw, 2, PlanFallback{
+		ProductName: "海尔双子冰盒", SellingPoints: "一级能效、双温区独立控温",
+	})
+	if err != nil {
+		t.Fatalf("productAnalysis 缺失应兜底而非拒绝：%v", err)
+	}
+	if len(compiled) != 2 {
+		t.Fatalf("应编译 2 屏，实际 %d", len(compiled))
+	}
+}
+
+// 仍然硬失败的只有：空响应、非法 JSON、screens 为空、单屏超长。
+func TestCompileDetailPlanStillRejectsEmptyScreensAndGarbage(t *testing.T) {
+	empty := validPlanJSON(1, func(plan *DetailPlan) { plan.Screens = nil })
+	if _, err := CompileDetailPlan(empty, 1); !errors.Is(err, ErrPlanInvalid) {
+		t.Fatal("screens 为空必须拒绝")
+	}
+	if _, err := CompileDetailPlan("", 1); !errors.Is(err, ErrPlanInvalid) {
+		t.Fatal("空返回必须拒绝")
+	}
+	if _, err := CompileDetailPlan("{not json}", 1); !errors.Is(err, ErrPlanInvalid) {
+		t.Fatal("非法 JSON 必须拒绝")
+	}
+	if _, err := CompileDetailPlan("完全不是 JSON 的一段话", 1); !errors.Is(err, ErrPlanInvalid) {
+		t.Fatal("无 JSON 结构必须拒绝")
 	}
 }
 

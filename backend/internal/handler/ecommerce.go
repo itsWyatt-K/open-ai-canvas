@@ -295,6 +295,28 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, detail)
 	})
+	// ---- 阶段 5：三步向导 · 平台切换 ----
+	// 切换上架平台：更新配置（平台/张数/比例/语言）并按平台模板重建未派发槽位。
+	group.POST("/products/:id/apply-platform", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var body struct {
+			Platform string `json:"platform"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+			return
+		}
+		detail, config, err := svc.ApplyEcommercePlatform(c.Request.Context(), user.ID, c.Param("id"), body.Platform)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"detail": detail, "config": config})
+	})
 	// 暂停派发（在途子任务不取消）。
 	group.POST("/products/:id/pause", func(c *gin.Context) {
 		user, err := currentUser(c, svc)

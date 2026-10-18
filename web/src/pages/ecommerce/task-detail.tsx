@@ -1,23 +1,29 @@
-// 任务详情栏：面包屑 + 头部（名称/状态徽章/轮次）+ 槽位网格（主图/详情页分区）
-// + 标题面板 + 底部打包下载/历史轮次入口。
-// M2.6 补：接入 M3 编排器——「开始生成」派发槽位任务并轮询对账（不再是占位）；
-//           接入电商 Agent 面板（原 agent-panel-adapter 为孤儿组件，现由「Agent 精修」抽屉挂载）。
+// 任务详情栏：三步向导式工作台（阶段 5 小白向重构）。
+//   第一步：选择上架平台（6 大平台规范卡，一键切换整套框定）
+//   第二步：商品卖点与风格引导（AI 看图提炼 / AI 顾问对话）
+//   第三步：各屏图文分镜预览与确认生图（明牌分镜脚本卡 + 唯一大按钮）
+// 顶栏只保留纯工具按钮（历史轮次/复制/重试/下载）；编排动作全部收进向导动线。
+// M3 编排器：确认方案 → 服务端按容量派发 → 轮询对账；Agent 面板为悬浮直挂（无 Drawer 空壳）。
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { App, Button, Drawer, Empty, Input } from "antd";
-import { ArrowLeft, Bot, CopyPlus, Download, FileArchive, History, Loader2, Play, RotateCcw, Sparkles, Square } from "lucide-react";
+import { App, Button, Empty, Input } from "antd";
+import {
+    ArrowLeft, Bot, CopyPlus, Download, FileArchive, History, Loader2, MessageCircle,
+    Pencil, RotateCcw, Rocket, Sparkles, Square, Wand2, Zap,
+} from "lucide-react";
 
 import {
     ECOMMERCE_SLOT_STATUS_LABELS,
     ECOMMERCE_STATUS_LABELS,
+    applyEcommercePlatform,
     confirmEcommercePlan,
-    getEcommerceProductDetail,
-    startEcommerceProduct,
-    startEcommercePlanning,
-    applyEcommercePlan,
     duplicateEcommerceProduct,
     getEcommerceExportZip,
     getEcommercePlanResponse,
+    regenerateEcommerceSlot,
     retryEcommerceProducts,
+    saveEcommerceSlotPrompt,
+    startEcommercePlanning,
+    applyEcommercePlan,
     updateEcommercePlanResponse,
     updateEcommerceProduct,
     pauseEcommerceProduct,
@@ -30,6 +36,9 @@ import { EcommerceSlotEditorDialog } from "./slot-editor-dialog";
 import { downloadBlob, mergeSlotImagesToLongImage } from "./long-image";
 import { resourceFileUrl } from "@/services/api/resources";
 import { queryGenerationTask } from "@/services/api/task-center";
+import {
+    ECOMMERCE_PLATFORMS, STYLE_CAPSULES, platformByKey, platformSpecOrDefault, platformSpecSummary,
+} from "./platforms";
 
 const SLOT_STATUS_TONE: Record<string, string> = {
     pending: "bg-foreground/10 text-foreground/55",
@@ -49,26 +58,34 @@ const TITLE_STATUS_LABELS: Record<string, string> = {
     uncertain: "标题结果待确认",
 };
 
+/** 平台可切换的商品状态（draft/review：未派发，后端才会按平台模板重建槽位）。 */
+function platformSwitchable(status: string): boolean {
+    return status === "draft" || status === "review";
+}
+
 export function EcommerceTaskDetail({ productId, onBack }: { productId: string | null; onBack: () => void }) {
     const { message, modal } = App.useApp();
     const detail = useEcommerceWorkspaceStore((state) => (productId ? state.detailById[productId] : undefined));
     const loading = useEcommerceWorkspaceStore((state) => state.detailLoading);
     const refreshDetail = useEcommerceWorkspaceStore((state) => state.refreshDetail);
     const refreshProducts = useEcommerceWorkspaceStore((state) => state.refreshProducts);
+    const refreshConfig = useEcommerceWorkspaceStore((state) => state.refreshConfig);
     const config = useConfigStore((state) => state.config);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
-    const [starting, setStarting] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [downloading, setDownloading] = useState(false);
     const [planning, setPlanning] = useState(false);
     const [zipping, setZipping] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
     const [stopping, setStopping] = useState(false);
+    const [switchingPlatform, setSwitchingPlatform] = useState(false);
     const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+    const [generatingSlotId, setGeneratingSlotId] = useState<string | null>(null);
     const ecommerceConfig = useEcommerceWorkspaceStore((state) => state.config);
-    // Agent 精修抽屉：电商工作台画布按需创建，面板挂载后常开。
+    // Agent 精修：悬浮面板直挂（阶段 5 移除空壳 Drawer）；advisor 模式打开即自动提交。
     const { canvasId: agentCanvasId, ensureCanvas, canvasState: agentCanvasState } = useEcommerceWorkbenchCanvas();
     const [agentOpen, setAgentOpen] = useState(false);
+    const [advisorMode, setAdvisorMode] = useState(false);
 
     useEffect(() => {
         if (agentOpen && !agentCanvasId) void ensureCanvas();
@@ -85,55 +102,6 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
             void refreshDetail(productId);
         };
     }, [agentOpen, productId, refreshDetail]);
-
-    // M3 编排器：派发槽位任务 → 轮询对账直至终态（详情接口本身会对账）。
-    const handleStart = useCallback(async () => {
-        if (!productId || !detail) return;
-        // 阶段 0 修复（移植自 pr(1) use-commerce-workflow.ts:127,205 的 isAiConfigReady 守卫）：
-        // 派发前强制校验生图模型「已选且可用」，杜绝无模型请求导致 7 张卡静默变红。
-        const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
-        if (!config.imageModel || !isAiConfigReady(config, config.imageModel)) {
-            message.error("请先在右侧「生成配置」选择可用的生图模型，再开始生成");
-            return;
-        }
-        setStarting(true);
-        try {
-            // 先 flush 在途配置保存：后端派发时冻结 ConfigSnapshotJSON，
-            // 若此时 PUT /config 还没回来，会冻结到旧模型/旧 mode（假保存问题）。
-            const flushed = await useEcommerceWorkspaceStore.getState().flushConfig();
-            if (!flushed) {
-                message.error("配置保存失败，已中止派发（避免用旧模型生成）");
-                return;
-            }
-            const requestConfig = resolveModelRequestConfig(config, config.imageModel);
-            const bareModel = modelOptionName(config.imageModel);
-            const started = await startEcommerceProduct(productId, {
-                channelId: requestConfig.channelId,
-                model: bareModel,
-                size: "1:1",
-                quality: "auto",
-                sellingPoints: detail.product.sellingPoints || "",
-                extraRequirements: detail.product.extraRequirements || "",
-            });
-            if (started.degraded?.length) message.warning(started.degraded.join("；"));
-            message.success(`已派发 ${started.dispatched} 个槽位任务${started.failed ? `（失败 ${started.failed}）` : ""}`);
-            // 轮询：详情接口隐式对账，终态后停止。
-            const deadline = Date.now() + 15 * 60 * 1000;
-            for (;;) {
-                await refreshDetail(productId);
-                const latest = useEcommerceWorkspaceStore.getState().detailById[productId];
-                const status = latest?.product.status;
-                if (!status || status === "completed" || status === "completed_with_warnings" || status === "failed" || status === "uncertain" || status === "paused") break;
-                if (Date.now() > deadline) break;
-                await new Promise((resolve) => setTimeout(resolve, 3000));
-            }
-            await refreshProducts();
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "启动编排失败");
-        } finally {
-            setStarting(false);
-        }
-    }, [productId, detail, config, message, refreshDetail, refreshProducts]);
 
     // 阶段 1：确认整组方案（先审方案）→ 服务端派发所有待生成槽位。
     const handleConfirmPlan = useCallback(async () => {
@@ -188,7 +156,8 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         }
     }, [detail, message]);
 
-    // AI 策划轨：派发视觉文本策划 → 轮询结果 → 服务端 12 段编译回写各屏。
+    // AI 策划轨：派发视觉文本策划 → 轮询结果 → 服务端容错编译回写各屏。
+    // 阶段 5：卖点为空也能触发（后端让视觉模型看图提炼并回填 sellingPoints）。
     const handleAiPlan = useCallback(async () => {
         if (!productId || !detail) return;
         const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
@@ -215,11 +184,13 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 await new Promise((resolve) => setTimeout(resolve, 3000));
                 const task = await queryGenerationTask(started.taskId);
                 if (task.status === "succeeded") {
-                    const raw = task.textDraft || task.resultJson || "";
+                    // 阶段 5：任务结果是 {"mode":"text","text":"..."} 包装体，先解包再编译。
+                    const { unwrapPlanText } = await import("./pr/commerce-detail-plan");
+                    const raw = unwrapPlanText(task.textDraft || task.resultJson || "");
                     await applyEcommercePlan(productId, raw);
                     await refreshDetail(productId);
                     await refreshProducts();
-                    message.success("策划已编译并写入各屏（结构不合格会被拒绝，不会半成品出图）");
+                    message.success("策划已编译并写入各屏（结构不完整会智能兜底，不会中断流程）");
                     return;
                 }
                 if (task.status === "failed" || task.status === "cancelled") {
@@ -282,7 +253,7 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                     const result = await retryEcommerceProducts([productId]);
                     const refused = Object.values(result.refused || {});
                     if (refused.length) message.warning(refused.join("；"));
-                    else message.success("已开启新一轮，请重新点「开始生成」派发");
+                    else message.success("已开启新一轮，请重新确认方案派发");
                     await refreshDetail(productId);
                     await refreshProducts();
                 } catch (error) {
@@ -357,42 +328,41 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         });
     }, [agentOpen, detail, message]);
 
-    // 阶段 4：实时进度（running / planning）。槽位失败时直接显示 errorMessage，
-    // 不再让失败的一直假装"排队中"。
-    const progress = useMemo(() => {
-        const slots = detail?.slots ?? [];
-        const total = slots.length;
-        const done = slots.filter((slot) => slot.status === "completed").length;
-        const failed = slots.filter((slot) => slot.status === "failed");
-        const active = slots.find((slot) => slot.status === "running" || slot.status === "refining");
-        // queued=已派发等子任务；draft/pending=方案已备、顺延等容量（阶段 4 容量修复）。
-        const queued = slots.filter((slot) => slot.status === "queued" || slot.status === "draft" || slot.status === "pending").length;
-        const percent = total === 0 ? 0 : Math.round((done / total) * 100);
-        let text = "";
-        if (planning) {
-            text = "AI 策划中：等待模型返回 7 屏方案…";
-        } else if (active) {
-            text = `正在生成：${active.title || active.slotKey}（已完成 ${done}/${total} · 排队 ${queued} 屏）`;
-        } else if (failed.length > 0) {
-            text = `部分失败：${failed.map((slot) => slot.title || slot.slotKey).join("、")}（可点「编辑」单屏重试）`;
-        } else if (done === total && total > 0) {
-            text = `全部完成 ${done}/${total}`;
-        } else {
-            text = `排队中 ${queued} 屏 · 已完成 ${done}/${total}`;
+    // 阶段 5：平台切换（三步向导第 1 步）——后端一次完成配置更新 + 槽位重建。
+    const handleApplyPlatform = useCallback(async (key: string) => {
+        if (!productId || !detail) return;
+        if (!platformSwitchable(detail.product.status)) {
+            message.warning("任务已开始生成，不能切换平台（可停止生成或复制任务后再试）");
+            return;
         }
-        return { total, done, percent, text, active, failed };
-    }, [detail, planning]);
-    const progressText = progress.text;
-    const progressPercent = progress.percent;
-    // Agent 改稿高亮集合（60 秒后自动淡出）。
-    const agentHighlight = useMemo(() => {
-        const now = Date.now();
-        const marked = new Set<string>();
-        for (const [key, stamp] of Object.entries(agentChangedSlots)) {
-            if (now - stamp < 60_000) marked.add(key);
+        setSwitchingPlatform(true);
+        try {
+            await applyEcommercePlatform(productId, key);
+            await refreshDetail(productId);
+            await refreshConfig();
+            await refreshProducts();
+            message.success(`已切换到「${platformByKey(key)?.name ?? key}」，各屏模板已按平台规范重置`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "切换平台失败");
+        } finally {
+            setSwitchingPlatform(false);
         }
-        return marked;
-    }, [agentChangedSlots, Date.now()]);
+    }, [productId, detail, message, refreshDetail, refreshConfig, refreshProducts]);
+
+    // 阶段 5：风格胶囊 → 写入附加要求（失焦即存的口径：立即 PATCH）。
+    const [activeCapsule, setActiveCapsule] = useState<string>("");
+    const handleStyleCapsule = useCallback(async (capsuleKey: string, hint: string) => {
+        if (!productId) return;
+        const nextKey = activeCapsule === capsuleKey ? "" : capsuleKey;
+        setActiveCapsule(nextKey);
+        try {
+            await updateEcommerceProduct(productId, { extraRequirements: nextKey ? hint : "" });
+            await refreshDetail(productId);
+            if (nextKey) message.success("已应用风格方向");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "应用风格失败");
+        }
+    }, [productId, activeCapsule, message, refreshDetail]);
 
     // 第 1 步引导区：商品信息快捷编辑（失焦即存）。
     const saveProductField = useCallback(async (field: "name" | "sellingPoints" | "extraRequirements", value: string) => {
@@ -430,6 +400,86 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         }
     }, [productId, message, refreshDetail, refreshProducts]);
 
+    // 阶段 5：单屏「单独生成此屏」——收费确认后用库内现有参数派发（空补丁）。
+    const handleGenerateSlot = useCallback((slot: EcommerceProductDetail["slots"][number]) => {
+        if (!productId) return;
+        modal.confirm({
+            title: `确认重新生成「${slot.title || slot.slotKey}」？`,
+            content: "将按该屏当前参数提交 1 个生图任务并计入版本号；失败项不会自动重复扣费。",
+            okText: "确认生成",
+            cancelText: "取消",
+            onOk: async () => {
+                setGeneratingSlotId(slot.id);
+                try {
+                    await regenerateEcommerceSlot(slot.id, {});
+                    message.success("已提交该屏生成任务");
+                    await refreshDetail(productId);
+                    await refreshProducts();
+                } catch (error) {
+                    message.error(error instanceof Error ? error.message : "生成任务提交失败");
+                } finally {
+                    setGeneratingSlotId(null);
+                }
+            },
+        });
+    }, [productId, modal, message, refreshDetail, refreshProducts]);
+
+    // 阶段 5：分镜卡上的文案快改（指针补丁：只发 copy 一个字段）。
+    const handleSlotCopyBlur = useCallback(async (slotId: string, value: string, original: string) => {
+        if (value === original) return;
+        try {
+            await saveEcommerceSlotPrompt(slotId, { copy: value });
+            await refreshDetail(productId!);
+            message.success("已保存该屏文案");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "保存文案失败");
+        }
+    }, [productId, message, refreshDetail]);
+
+    // 打开 Agent：refine（只预填）/ advisor（预填后自动提交，AI 主动给建议）。
+    const openAgent = useCallback((advisor: boolean) => {
+        setAdvisorMode(advisor);
+        setAgentOpen(true);
+    }, []);
+
+    // 阶段 5：实时进度。isRunning/isPlanning 只有 running/queued/planning 为真——
+    // draft/review/failed 绝不允许假转圈（Bug 4）。
+    const isRunning = detail?.product.status === "running" || detail?.product.status === "queued";
+    const progress = useMemo(() => {
+        const slots = detail?.slots ?? [];
+        const total = slots.length;
+        const done = slots.filter((slot) => slot.status === "completed").length;
+        const failed = slots.filter((slot) => slot.status === "failed");
+        const active = slots.find((slot) => slot.status === "running" || slot.status === "refining");
+        // queued=已派发等子任务；draft/pending=方案已备、顺延等容量（阶段 4 容量修复）。
+        const queued = slots.filter((slot) => slot.status === "queued" || slot.status === "draft" || slot.status === "pending").length;
+        const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+        let text = "";
+        if (planning) {
+            text = "AI 策划中：等待模型返回分屏方案…";
+        } else if (active) {
+            text = `正在生成：${active.title || active.slotKey}（已完成 ${done}/${total} · 排队 ${queued} 屏）`;
+        } else if (failed.length > 0) {
+            text = `部分失败：${failed.map((slot) => slot.title || slot.slotKey).join("、")}（可点「编辑」单屏重试）`;
+        } else if (done === total && total > 0) {
+            text = `全部完成 ${done}/${total}`;
+        } else {
+            text = `排队中 ${queued} 屏 · 已完成 ${done}/${total}`;
+        }
+        return { total, done, percent, text, active, failed };
+    }, [detail, planning]);
+    const progressText = progress.text;
+    const progressPercent = progress.percent;
+    // Agent 改稿高亮集合（60 秒后自动淡出）。
+    const agentHighlight = useMemo(() => {
+        const now = Date.now();
+        const marked = new Set<string>();
+        for (const [key, stamp] of Object.entries(agentChangedSlots)) {
+            if (now - stamp < 60_000) marked.add(key);
+        }
+        return marked;
+    }, [agentChangedSlots, Date.now()]);
+
     if (!productId) {
         return (
             <section className="flex flex-1 items-center justify-center bg-surface">
@@ -452,12 +502,12 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         );
     }
     const { product } = detail;
-    const heroSlots = detail.slots.filter((slot) => slot.kind === "hero");
-    const detailSlots = detail.slots.filter((slot) => slot.kind === "detail");
+    const platformSpec = platformSpecOrDefault(ecommerceConfig?.platform);
+    const pendingScreenCount = detail.slots.filter((slot) => slot.status !== "completed").length;
 
     return (
         <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-            {/* 面包屑 + 头部 */}
+            {/* 头部：面包屑 + 名称/状态/轮次 + 纯工具按钮（编排动作已收进三步向导） */}
             <header className="flex flex-col gap-3 border-b border-border/60 px-5 py-4">
                 <div className="flex items-center gap-2 text-xs text-foreground/55">
                     <button type="button" className="flex items-center gap-1 hover:text-foreground" onClick={onBack}>
@@ -473,36 +523,14 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                         <span className="shrink-0 rounded bg-foreground/10 px-2 py-0.5 text-xs text-foreground/70">
                             {ECOMMERCE_STATUS_LABELS[product.status] || product.status}
                         </span>
+                        <span className="shrink-0 rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                            {platformSpec.name}
+                        </span>
                         {product.round > 1 ? <span className="shrink-0 text-xs text-foreground/50">第 {product.round} 轮</span> : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <Button size="small" icon={<History className="size-3.5" />} onClick={() => message.info("历史轮次切换施工中（M5）")}>
                             历史轮次
-                        </Button>
-                        <Button
-                            size="small"
-                            icon={<Bot className="size-3.5" />}
-                            onClick={() => setAgentOpen(true)}
-                        >
-                            Agent 精修
-                        </Button>
-                        <Button
-                            size="small"
-                            type="primary"
-                            icon={starting ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-                            loading={starting}
-                            onClick={() => void handleStart()}
-                        >
-                            {starting ? "编排生成中…" : "开始生成"}
-                        </Button>
-                        <Button
-                            size="small"
-                            icon={<Sparkles className="size-3.5" />}
-                            loading={planning}
-                            disabled={starting}
-                            onClick={() => void handleAiPlan()}
-                        >
-                            AI 策划
                         </Button>
                         <Button
                             size="small"
@@ -544,144 +572,206 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 ) : null}
             </header>
 
-            {/* 阶段 4：第 1 步引导区 —— 上传后先配置文案，再确认生图 */}
-            {product.status === "draft" || product.status === "review" ? (
-                <div className="flex flex-col gap-3 border-b border-border/60 bg-surface px-5 py-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-foreground/80">
-                        <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-primary">1</span>
-                        商品信息与 AI / Agent 策划
-                        <span className="font-normal text-foreground/45">（改完自动保存；确认参数后才会开始生图计费）</span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <label className="flex flex-col gap-1">
-                            <span className="text-[11px] text-foreground/55">商品名称</span>
-                            <Input
-                                size="small"
-                                defaultValue={product.name}
-                                onBlur={(event) => void saveProductField("name", event.target.value)}
-                                placeholder="例如：云感深睡被"
-                            />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                            <span className="text-[11px] text-foreground/55">核心卖点</span>
-                            <Input
-                                size="small"
-                                defaultValue={product.sellingPoints || ""}
-                                onBlur={(event) => void saveProductField("sellingPoints", event.target.value)}
-                                placeholder="例如：抗菌 · 可水洗"
-                            />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                            <span className="text-[11px] text-foreground/55">附加要求</span>
-                            <Input
-                                size="small"
-                                defaultValue={product.extraRequirements || ""}
-                                onBlur={(event) => void saveProductField("extraRequirements", event.target.value)}
-                                placeholder="例如：床品场景，暖光"
-                            />
-                        </label>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                            size="small"
-                            icon={<Sparkles className="size-3.5" />}
-                            loading={planning}
-                            onClick={() => void handleAiPlan()}
-                        >
-                            AI 一键生成各屏文案/提示词
-                        </Button>
-                        <Button
-                            size="small"
-                            icon={<Bot className="size-3.5" />}
-                            onClick={() => { setAgentOpen(true); }}
-                        >
-                            打开 Agent 对话精修各模块
-                        </Button>
-                        <Button
-                            size="small"
-                            type="primary"
-                            icon={<Play className="size-3.5" />}
-                            loading={confirming}
-                            onClick={() => void handleConfirmPlan()}
-                        >
-                            确认各屏参数并开始生图
-                        </Button>
-                    </div>
-                </div>
-            ) : null}
-
-            {/* 阶段 4：实时进度（running / queued 顺延等容量 / planning） */}
-            {product.status === "running" || product.status === "queued" || planning ? (
-                <div className="flex flex-col gap-2 border-b border-primary/25 bg-primary/5 px-5 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs text-foreground/75">{progressText}</span>
-                        <Button
-                            size="small"
-                            danger
-                            icon={<Square className="size-3.5" />}
-                            loading={stopping}
-                            onClick={() => void handleStop()}
-                        >
-                            停止生成
-                        </Button>
-                    </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-                        <div
-                            className="h-full rounded-full bg-primary transition-all"
-                            style={{ width: `${progressPercent}%` }}
-                        />
-                    </div>
-                </div>
-            ) : null}
-
-            {/* 阶段 1：先审方案审核横幅（商品停在 review，等确认后才派发生图） */}
-            {product.status === "review" ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-5 py-3">
-                    <div className="min-w-0 text-xs text-amber-700 dark:text-amber-300">
-                        <strong className="font-semibold">待确认方案</strong>
-                        <span className="ml-2 opacity-80">
-                            已生成 {detail.slots.length} 屏方案（未派发生图任务，不计生图费用）。可点任意槽位「编辑」逐屏调整文案与提示词，确认后一次派发。
-                        </span>
-                    </div>
-                    <Button
-                        size="small"
-                        type="primary"
-                        loading={confirming}
-                        onClick={() => void handleConfirmPlan()}
-                    >
-                        确认方案并开始生图
-                    </Button>
-                </div>
-            ) : null}
-
-            {/* 阶段 3：策划失败/待确认时的手工兜底入口 */}
-            {product.status === "review" || product.status === "failed" ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-surface px-5 py-2">
-                    <span className="text-xs text-foreground/55">
-                        {product.status === "failed"
-                            ? "策划或出图失败：可打开原始响应手工修正后重新应用（本地校验，不调模型、不扣费）"
-                            : "可打开原始策划 JSON 手工微调后重新应用（不调模型、不扣费）"}
-                    </span>
-                    <Button size="small" onClick={() => void handleOpenPlanResponse()}>
-                        查看 / 修正原始响应
-                    </Button>
-                </div>
-            ) : null}
-
-            {/* 槽位网格 */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
-                {detail.slots.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 py-16 text-center">
-                        <p className="text-sm text-foreground/65">该商品还没有生成任何槽位</p>
-                        <p className="text-xs text-foreground/50">点右上角「开始生成」：服务端会合成各槽位提示词（含负向词与商品主体强控）并派发生图任务</p>
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-6">
-                        <SlotGroup title="主图" slots={heroSlots} emptyText="未配置主图槽位" onEdit={setEditingSlotId} highlighted={agentHighlight} />
-                        <SlotGroup title="详情页" slots={detailSlots} emptyText="未配置详情页槽位" onEdit={setEditingSlotId} highlighted={agentHighlight} />
-                        <TitlePanel detail={detail} />
-                    </div>
-                )}
+                <div className="flex flex-col gap-5">
+                    {/* 第一步：选择上架平台 */}
+                    <section className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-foreground/80">
+                            <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-primary">1</span>
+                            选择上架平台
+                            <span className="font-normal text-foreground/45">（切换后自动套用该平台的主图/详情规格与视觉规范）</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+                            {ECOMMERCE_PLATFORMS.map((spec) => {
+                                const active = spec.key === platformSpec.key;
+                                return (
+                                    <button
+                                        key={spec.key}
+                                        type="button"
+                                        disabled={switchingPlatform || !platformSwitchable(product.status)}
+                                        onClick={() => void handleApplyPlatform(spec.key)}
+                                        className={`flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${active ? "border-primary bg-primary/5" : "border-border/50 hover:border-primary/40"}`}
+                                    >
+                                        <span className="flex w-full items-center justify-between gap-1">
+                                            <strong className="truncate text-xs">{spec.name}</strong>
+                                            {active ? <span className="shrink-0 rounded bg-primary px-1.5 py-0.5 text-[10px] text-white">当前</span> : null}
+                                        </span>
+                                        <span className="text-[11px] text-foreground/55">{spec.tagline}</span>
+                                        <span className="text-[10px] text-foreground/40">{platformSpecSummary(spec)}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </section>
+
+                    {/* 第二步：商品卖点与风格引导 */}
+                    <section className="flex flex-col gap-3 rounded-lg border border-border/50 p-3">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-foreground/80">
+                            <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-primary">2</span>
+                            商品卖点与风格
+                            <span className="font-normal text-foreground/45">（改完自动保存；不会写没关系，AI 看图帮你提炼）</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <label className="flex flex-col gap-1">
+                                <span className="text-[11px] text-foreground/55">商品名称</span>
+                                <Input
+                                    size="small"
+                                    defaultValue={product.name}
+                                    onBlur={(event) => void saveProductField("name", event.target.value)}
+                                    placeholder="例如：云感深睡被"
+                                />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                                <span className="text-[11px] text-foreground/55">核心卖点</span>
+                                <Input
+                                    size="small"
+                                    defaultValue={product.sellingPoints || ""}
+                                    onBlur={(event) => void saveProductField("sellingPoints", event.target.value)}
+                                    placeholder="例如：抗菌 · 可水洗"
+                                />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                                <span className="text-[11px] text-foreground/55">附加要求</span>
+                                <Input
+                                    size="small"
+                                    defaultValue={product.extraRequirements || ""}
+                                    onBlur={(event) => void saveProductField("extraRequirements", event.target.value)}
+                                    placeholder="例如：床品场景，暖光"
+                                />
+                            </label>
+                        </div>
+                        {/* 视觉风格快捷胶囊 */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] text-foreground/55">视觉风格：</span>
+                            {STYLE_CAPSULES.map((capsule) => (
+                                <button
+                                    key={capsule.key}
+                                    type="button"
+                                    onClick={() => void handleStyleCapsule(capsule.key, capsule.hint)}
+                                    className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${activeCapsule === capsule.key ? "border-primary bg-primary/10 text-primary" : "border-border/50 text-foreground/65 hover:border-primary/40"}`}
+                                >
+                                    {capsule.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                                size="small"
+                                type="primary"
+                                ghost
+                                icon={<Wand2 className="size-3.5" />}
+                                loading={planning}
+                                className={!product.sellingPoints ? "animate-pulse ring-1 ring-primary/40" : ""}
+                                onClick={() => void handleAiPlan()}
+                            >
+                                {product.sellingPoints ? "AI 一键生成各屏文案/提示词" : "🪄 不知道怎么写？AI 看图自动提炼卖点与全套文案"}
+                            </Button>
+                            <Button
+                                size="small"
+                                icon={<MessageCircle className="size-3.5" />}
+                                onClick={() => openAgent(true)}
+                            >
+                                💬 跟 AI 顾问对话定制
+                            </Button>
+                            <Button
+                                size="small"
+                                icon={<Bot className="size-3.5" />}
+                                onClick={() => openAgent(false)}
+                            >
+                                打开 Agent 精修各屏
+                            </Button>
+                        </div>
+                    </section>
+
+                    {/* 实时进度（running / queued 顺延等容量 / planning） */}
+                    {isRunning || planning ? (
+                        <div className="flex flex-col gap-2 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs text-foreground/75">{progressText}</span>
+                                <Button
+                                    size="small"
+                                    danger
+                                    icon={<Square className="size-3.5" />}
+                                    loading={stopping}
+                                    onClick={() => void handleStop()}
+                                >
+                                    停止生成
+                                </Button>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+                                <div
+                                    className="h-full rounded-full bg-primary transition-all"
+                                    style={{ width: `${progressPercent}%` }}
+                                />
+                            </div>
+                        </div>
+                    ) : null}
+
+                    {/* 策划失败/待确认时的手工兜底入口 */}
+                    {product.status === "review" || product.status === "failed" ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-surface px-4 py-2">
+                            <span className="text-xs text-foreground/55">
+                                {product.status === "failed"
+                                    ? "策划或出图失败：可打开原始响应手工修正后重新应用（本地校验，不调模型、不扣费）"
+                                    : "可打开原始策划 JSON 手工微调后重新应用（不调模型、不扣费）"}
+                            </span>
+                            <Button size="small" onClick={() => void handleOpenPlanResponse()}>
+                                查看 / 修正原始响应
+                            </Button>
+                        </div>
+                    ) : null}
+
+                    {/* 第三步：各屏图文分镜预览与确认生图 */}
+                    <section className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-foreground/80">
+                            <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-primary">3</span>
+                            各屏分镜预览
+                            <span className="font-normal text-foreground/45">（未出图的屏显示分镜脚本卡，文案可点开直接改）</span>
+                        </div>
+                        {detail.slots.length === 0 ? (
+                            <div className="flex flex-col items-center gap-2 py-16 text-center">
+                                <p className="text-sm text-foreground/65">该商品还没有任何槽位</p>
+                                <p className="text-xs text-foreground/50">切换上方平台或导入商品图后，系统会按平台规范预建各屏卡片</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
+                                {detail.slots.map((slot, index) => (
+                                    <SlotCard
+                                        key={slot.id}
+                                        slot={slot}
+                                        index={index}
+                                        total={detail.slots.length}
+                                        highlighted={agentHighlight.has(slot.slotKey)}
+                                        generating={generatingSlotId === slot.id}
+                                        onEdit={() => setEditingSlotId(slot.id)}
+                                        onGenerate={() => handleGenerateSlot(slot)}
+                                        onCopyBlur={(value) => handleSlotCopyBlur(slot.id, value, slot.copy || "")}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                        {/* 底部唯一大按钮：确认方案并生图 */}
+                        {product.status === "draft" || product.status === "review" ? (
+                            <div className="sticky bottom-0 z-10 -mx-5 border-t border-border/60 bg-surface/95 px-5 py-3 backdrop-blur">
+                                <Button
+                                    type="primary"
+                                    size="large"
+                                    block
+                                    icon={<Rocket className="size-4" />}
+                                    loading={confirming}
+                                    onClick={() => void handleConfirmPlan()}
+                                >
+                                    🚀 确认以上 {detail.slots.length} 屏方案，立即开始生图
+                                </Button>
+                                <p className="mt-1 text-center text-[11px] text-foreground/45">
+                                    点击后按当前平台规范派发生图任务（未确认前不产生任何生图费用）
+                                </p>
+                            </div>
+                        ) : null}
+                    </section>
+
+                    <TitlePanel detail={detail} />
+                </div>
             </div>
 
             {/* 阶段 1：单屏编辑器 */}
@@ -702,76 +792,117 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 />
             ) : null}
 
-            {/* Agent 精修抽屉：复用电商工作台画布与 Cloud Agent 面板；阶段 0 注入商品上下文 */}
-            <Drawer
-                title="Agent 精修 · 电商工作台"
+            {/* Agent 精修：悬浮面板直挂（阶段 5 移除空壳 Drawer，open 由本组件控制） */}
+            <AgentWorkbenchPanel
+                canvasId={agentCanvasId}
+                canvasState={agentCanvasState}
+                productCount={1}
+                detail={detail}
                 open={agentOpen}
-                onClose={() => setAgentOpen(false)}
-                width={420}
-                destroyOnHidden
-            >
-                <AgentWorkbenchPanel canvasId={agentCanvasId} canvasState={agentCanvasState} productCount={1} detail={detail} />
-            </Drawer>
+                onOpenChange={setAgentOpen}
+                advisorMode={advisorMode}
+            />
         </section>
     );
 }
 
-function SlotGroup({ title, slots, emptyText, onEdit, highlighted }: { title: string; slots: EcommerceProductDetail["slots"]; emptyText: string; onEdit: (slotId: string) => void; highlighted?: Set<string> }) {
-    const marked = highlighted ?? new Set<string>();
-    if (slots.length === 0) {
-        return (
-            <div className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-foreground/75">{title}</h3>
-                <p className="text-xs text-foreground/50">{emptyText}</p>
-            </div>
-        );
-    }
+/**
+ * 槽位卡（阶段 5 明牌分镜脚本卡）：
+ *   - 已出图 → 成品图卡（版本角标 / Agent 已改 / 失败原因）；
+ *   - 未出图 → 分镜脚本卡：场景定位 + 可快改的画面文案 + 构图摘要 + 详细编辑/单独生成。
+ */
+function SlotCard({
+    slot, index, total, highlighted, generating, onEdit, onGenerate, onCopyBlur,
+}: {
+    slot: EcommerceProductDetail["slots"][number];
+    index: number;
+    total: number;
+    highlighted: boolean;
+    generating: boolean;
+    onEdit: () => void;
+    onGenerate: () => void;
+    onCopyBlur: (value: string) => void;
+}) {
+    const generated = Boolean(slot.resourceId);
+    const promptLines = (slot.promptOverride || slot.generationPrompt || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 3);
+    const aspect = slot.aspectRatio || "1:1";
     return (
-        <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-foreground/75">
-                {title} <span className="font-normal text-foreground/50">· {slots.length} 张</span>
-            </h3>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-                {slots.map((slot) => (
-                    <article
-                        key={slot.id}
-                        className={`flex flex-col gap-2 rounded-lg border p-2.5 ${marked.has(slot.slotKey) ? "border-primary/60 bg-primary/5" : "border-border/50"}`}
+        <article
+            className={`flex flex-col gap-2 rounded-lg border p-2.5 ${highlighted ? "border-primary/60 bg-primary/5" : "border-border/50"}`}
+        >
+            {generated ? (
+                <div className="relative aspect-square overflow-hidden rounded-md bg-surface-active">
+                    <img src={`/api/resources/${slot.resourceId}/file`} alt={slot.title || slot.slotKey} className="size-full object-cover" />
+                    {slot.currentVersion > 0 ? (
+                        <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">v{slot.currentVersion}</span>
+                    ) : null}
+                    {highlighted ? (
+                        <span className="absolute left-1.5 top-1.5 rounded bg-primary px-1.5 py-0.5 text-xs text-white">Agent 已改</span>
+                    ) : null}
+                </div>
+            ) : (
+                <div className="flex flex-col gap-1.5 rounded-md bg-surface-active/60 p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] text-foreground/60">
+                            [{slot.kind === "hero" ? "主图" : "详情页"} {slot.slotNo} · {aspect}]
+                        </span>
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${SLOT_STATUS_TONE[slot.status] || SLOT_STATUS_TONE.pending}`}>
+                            {ECOMMERCE_SLOT_STATUS_LABELS[slot.status] || slot.status}
+                        </span>
+                    </div>
+                    <strong className="text-xs">{slot.title || slot.slotKey}</strong>
+                    <p className="text-[11px] text-foreground/50">
+                        🏷️ 场景定位：{slot.sceneType || "待定"}
+                    </p>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[11px] text-foreground/50">📝 画面排版文案：</span>
+                        <Input.TextArea
+                            key={`${slot.id}-${slot.updatedAt}`}
+                            size="small"
+                            autoSize={{ minRows: 1, maxRows: 4 }}
+                            defaultValue={slot.copy || ""}
+                            onBlur={(event) => onCopyBlur(event.target.value)}
+                            placeholder="需要上图的文案；纯图屏留空"
+                        />
+                        {!slot.copy ? <span className="text-[10px] text-foreground/40">（当前为空 = 纯图无文字）</span> : null}
+                    </div>
+                    {promptLines.length > 0 ? (
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[11px] text-foreground/50">🎨 画面构图简述：</span>
+                            <p className="line-clamp-3 whitespace-pre-wrap rounded bg-background/60 px-2 py-1 text-[10px] leading-4 text-foreground/55">
+                                {promptLines.join("\n")}
+                            </p>
+                        </div>
+                    ) : null}
+                </div>
+            )}
+            {/* 阶段 4：失败原因直接展示，不再假装排队中 */}
+            {slot.status === "failed" && slot.errorMessage ? (
+                <p className="line-clamp-3 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">{slot.errorMessage}</p>
+            ) : null}
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-foreground/40">{index + 1} / {total}</span>
+                <div className="flex items-center gap-1">
+                    <Button size="small" type="link" className="!h-auto !p-0 text-xs" icon={<Pencil className="size-3" />} onClick={onEdit}>
+                        详细编辑
+                    </Button>
+                    <Button
+                        size="small"
+                        type="link"
+                        className="!h-auto !p-0 text-xs"
+                        icon={<Zap className="size-3" />}
+                        loading={generating}
+                        onClick={onGenerate}
                     >
-                        <div className="relative aspect-square overflow-hidden rounded-md bg-surface-active">
-                            {slot.resourceId ? (
-                                <img src={`/api/resources/${slot.resourceId}/file`} alt={slot.title || slot.slotKey} className="size-full object-cover" />
-                            ) : (
-                                <div className="flex size-full items-center justify-center text-xs text-foreground/45">
-                                    {ECOMMERCE_SLOT_STATUS_LABELS[slot.status] || slot.status}
-                                </div>
-                            )}
-                            {slot.currentVersion > 0 ? (
-                                <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">v{slot.currentVersion}</span>
-                            ) : null}
-                            {marked.has(slot.slotKey) ? (
-                                <span className="absolute left-1.5 top-1.5 rounded bg-primary px-1.5 py-0.5 text-xs text-white">Agent 已改</span>
-                            ) : null}
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                            <strong className="truncate text-xs">{slot.title || slot.slotKey}</strong>
-                            <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${SLOT_STATUS_TONE[slot.status] || SLOT_STATUS_TONE.pending}`}>
-                                {ECOMMERCE_SLOT_STATUS_LABELS[slot.status] || slot.status}
-                            </span>
-                        </div>
-                        {/* 阶段 4：失败原因直接展示，不再假装排队中 */}
-                        {slot.status === "failed" && slot.errorMessage ? (
-                            <p className="line-clamp-3 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">{slot.errorMessage}</p>
-                        ) : null}
-                        <div className="flex items-center justify-between gap-2">
-                            {slot.copy ? <p className="line-clamp-2 text-xs text-foreground/55">{slot.copy}</p> : <span />}
-                            <Button size="small" type="link" className="!h-auto !p-0 text-xs" onClick={() => onEdit(slot.id)}>
-                                编辑
-                            </Button>
-                        </div>
-                    </article>
-                ))}
+                        单独生成此屏
+                    </Button>
+                </div>
             </div>
-        </div>
+        </article>
     );
 }
 

@@ -106,7 +106,13 @@ export type EcommerceSlotSummary = {
     updatedAt: string;
     /** 失败原因（阶段 4：直接展示，不再假装排队中）。 */
     errorMessage?: string;
-}
+    /** ---- 阶段 5：分镜脚本卡与编辑器预填 ---- */
+    sceneType?: string;
+    aspectRatio?: string;
+    sellingPoints?: string;
+    generationPrompt?: string;
+    promptOverride?: string;
+};
 
 export type EcommerceProductDetail = {
     product: {
@@ -238,14 +244,19 @@ export function syncEcommerceProduct(id: string) {
 }
 
 /** 单屏可编辑字段（分屏编辑器保存体，与后端 EcommerceSlotPromptPatch 对齐）。 */
+/**
+ * 单屏可编辑字段补丁（阶段 5：指针语义——只传要改的字段）。
+ * 未传的字段服务端保留原值；传 "" 表示显式清空（如纯图屏清文案）。
+ */
 export type EcommerceSlotPromptBody = {
-    title: string;
-    copy: string;
-    sceneType: string;
-    sellingPoints: string;
-    aspectRatio: string;
-    prompt: string;
-    promptOverride: string;
+    title?: string;
+    copy?: string;
+    sceneType?: string;
+    sellingPoints?: string;
+    aspectRatio?: string;
+    prompt?: string;
+    promptOverride?: string;
+    referenceIds?: string[];
 };
 
 /** 仅保存单屏参数（不派发子任务、不动已生成图）。 */
@@ -269,6 +280,18 @@ export function confirmEcommercePlan(
 /** 暂停派发（在途子任务不取消）。 */
 export function pauseEcommerceProduct(id: string) {
     return http.post<{ id: string; status: string }>(`/ecommerce/products/${encodeURIComponent(id)}/pause`);
+}
+
+/**
+ * 切换上架平台（阶段 5 · 三步向导第 1 步）：
+ * 后端一次完成「更新配置（平台/张数/比例/语言）+ 按平台模板重建未派发槽位」。
+ * 返回最新详情与生效配置，前端据此同步中间分镜卡与右侧配置面板。
+ */
+export function applyEcommercePlatform(id: string, platform: string) {
+    return http.post<{ detail: EcommerceProductDetail; config: EcommerceConfig }>(
+        `/ecommerce/products/${encodeURIComponent(id)}/apply-platform`,
+        { platform },
+    );
 }
 
 /** AI 策划轨：派发一次视觉文本策划任务（不直接出图）。 */

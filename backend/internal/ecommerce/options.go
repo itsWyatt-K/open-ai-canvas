@@ -37,7 +37,8 @@ const (
 var QualityValues = []string{QualityAuto, QualityHigh, QualityMedium, QualityLow}
 
 // ImageRatioValues 图片比例候选（前端配置面板固化值；自定义走 width×height）。
-var ImageRatioValues = []string{"1:1", "2:3", "3:2", "3:4", "9:16"}
+// 阶段 5：补 4:3（亚马逊 A+ 横版详情页规范比例）。
+var ImageRatioValues = []string{"1:1", "2:3", "3:2", "3:4", "4:3", "9:16"}
 
 // [待规范源] 以下选项列表桌面版 core/commerce-options.mjs 逐字固化于合作方文档之外，
 // 本机无规范源（C:\Users\PC\Desktop\电商\product-studio\ 不存在），

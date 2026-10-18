@@ -9,7 +9,7 @@ import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
 import { modelDisplayName, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
-const RATIO_OPTIONS = ["1:1", "2:3", "3:2", "3:4", "9:16"];
+const RATIO_OPTIONS = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16"];
 const TEXT_MODE_OPTIONS = [
     { label: "按需排版", value: "typeset" },
     { label: "纯图不排字", value: "none" },

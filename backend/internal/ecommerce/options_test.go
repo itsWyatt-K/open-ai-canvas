@@ -18,7 +18,8 @@ func TestQualityValues(t *testing.T) {
 }
 
 func TestImageRatioValues(t *testing.T) {
-	want := []string{"1:1", "2:3", "3:2", "3:4", "9:16"}
+	// 阶段 5：补 4:3（亚马逊 A+ 横版详情页规范比例）。
+	want := []string{"1:1", "2:3", "3:2", "3:4", "4:3", "9:16"}
 	if len(ImageRatioValues) != len(want) {
 		t.Fatalf("ImageRatioValues 长度 = %d, want %d", len(ImageRatioValues), len(want))
 	}

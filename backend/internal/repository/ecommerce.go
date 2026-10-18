@@ -120,9 +120,14 @@ func (r *Repository) DeleteEcommerceProducts(userID string, ids []string) error 
 	return r.db.Where("user_id = ? AND id IN ?", userID, ids).Delete(&model.EcommerceProduct{}).Error
 }
 
+// ecommerceSlotOrder hero 优先的统一排序口径（阶段 5 Bug 2 根治）：
+// 主图（hero）永远排在详情页（detail）前，同类按 slot_no 升序。
+// SQL 层统一后，详情接口/策划回写/编辑器导航拿到同一屏序，前端不再需要自己重排。
+const ecommerceSlotOrder = "CASE kind WHEN 'hero' THEN 0 ELSE 1 END, slot_no"
+
 func (r *Repository) ListEcommerceSlots(productID string) ([]model.EcommerceSlot, error) {
 	var slots []model.EcommerceSlot
-	if err := r.db.Where("product_id = ?", productID).Order("kind, slot_no").Find(&slots).Error; err != nil {
+	if err := r.db.Where("product_id = ?", productID).Order(ecommerceSlotOrder).Find(&slots).Error; err != nil {
 		return nil, err
 	}
 	return slots, nil
@@ -134,7 +139,7 @@ func (r *Repository) ListEcommerceSlotsByProductIDs(productIDs []string) ([]mode
 		return nil, nil
 	}
 	var slots []model.EcommerceSlot
-	if err := r.db.Where("product_id IN ?", productIDs).Order("product_id, kind, slot_no").Find(&slots).Error; err != nil {
+	if err := r.db.Where("product_id IN ?", productIDs).Order("product_id, " + ecommerceSlotOrder).Find(&slots).Error; err != nil {
 		return nil, err
 	}
 	return slots, nil

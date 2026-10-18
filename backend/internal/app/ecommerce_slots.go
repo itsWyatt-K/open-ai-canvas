@@ -24,14 +24,18 @@ import (
 )
 
 // EcommerceSlotPromptPatch 单屏可编辑字段（分屏编辑器保存体）。
+//
+// 阶段 5：全部改指针——**只更新请求里出现的字段**。旧版是全量覆盖：
+// 编辑器没带回的字段（sceneType/prompt 等）会被空串清库，用户 staged 的
+// 方案被悄悄抹掉。指针语义下，nil = 不改，"" = 显式清空。
 type EcommerceSlotPromptPatch struct {
-	Title          string   `json:"title"`
-	Copy           string   `json:"copy"`
-	SceneType      string   `json:"sceneType"`
-	SellingPoints  string   `json:"sellingPoints"`
-	AspectRatio    string   `json:"aspectRatio"`
-	Prompt         string   `json:"prompt"`
-	PromptOverride string   `json:"promptOverride"`
+	Title          *string  `json:"title"`
+	Copy           *string  `json:"copy"`
+	SceneType      *string  `json:"sceneType"`
+	SellingPoints  *string  `json:"sellingPoints"`
+	AspectRatio    *string  `json:"aspectRatio"`
+	Prompt         *string  `json:"prompt"`
+	PromptOverride *string  `json:"promptOverride"`
 	ReferenceIDs   []string `json:"referenceIds"`
 }
 
@@ -65,28 +69,51 @@ func (s *Service) UpdateEcommerceSlotPrompt(ctx context.Context, userID, slotID 
 	if slot.Status == ecommerce.SlotStatusRunning || slot.Status == ecommerce.SlotStatusUncertain {
 		return nil, NewAppError(http.StatusConflict, "该屏正在生成或结果待确认，请等当前请求收尾后再修改")
 	}
-	if len([]rune(patch.PromptOverride)) > 16000 {
+	if patch.PromptOverride != nil && len([]rune(*patch.PromptOverride)) > 16000 {
 		return nil, NewAppError(http.StatusBadRequest, "完整提示词覆盖超过 16000 字符上限")
 	}
-	referenceJSON := ""
+	if patch.Title != nil && len([]rune(*patch.Title)) > 200 {
+		return nil, NewAppError(http.StatusBadRequest, "屏主题超过 200 字符上限")
+	}
+	if patch.Copy != nil && len([]rune(*patch.Copy)) > 8000 {
+		return nil, NewAppError(http.StatusBadRequest, "画面文案超过 8000 字符上限")
+	}
+	if patch.Prompt != nil && len([]rune(*patch.Prompt)) > 12000 {
+		return nil, NewAppError(http.StatusBadRequest, "画面描述超过 12000 字符上限")
+	}
+	// 指针补丁语义（阶段 5）：只写请求里出现的字段；nil = 不改，"" = 显式清空。
+	// 修复「编辑器打开全空 → 保存把 staged 方案清库」的隐藏坑。
+	updates := map[string]any{}
+	if patch.Title != nil {
+		updates["title"] = strings.TrimSpace(*patch.Title)
+	}
+	if patch.Copy != nil {
+		updates["copy"] = *patch.Copy
+	}
+	if patch.SceneType != nil {
+		updates["scene_type"] = strings.TrimSpace(*patch.SceneType)
+	}
+	if patch.SellingPoints != nil {
+		updates["selling_points"] = *patch.SellingPoints
+	}
+	if patch.AspectRatio != nil {
+		updates["aspect_ratio"] = strings.TrimSpace(*patch.AspectRatio)
+	}
+	if patch.Prompt != nil {
+		updates["generation_prompt"] = *patch.Prompt
+	}
+	if patch.PromptOverride != nil {
+		updates["prompt_override"] = *patch.PromptOverride
+	}
 	if patch.ReferenceIDs != nil {
 		encoded, err := json.Marshal(patch.ReferenceIDs)
 		if err != nil {
 			return nil, err
 		}
-		referenceJSON = string(encoded)
+		updates["reference_ids_json"] = string(encoded)
 	}
-	updates := map[string]any{
-		"title":             strings.TrimSpace(patch.Title),
-		"copy":              patch.Copy,
-		"scene_type":        patch.SceneType,
-		"selling_points":    patch.SellingPoints,
-		"aspect_ratio":      patch.AspectRatio,
-		"generation_prompt": patch.Prompt,
-		"prompt_override":   patch.PromptOverride,
-	}
-	if referenceJSON != "" {
-		updates["reference_ids_json"] = referenceJSON
+	if len(updates) == 0 {
+		return slot, nil // 空补丁：原样返回，不写库
 	}
 	if err := s.repo.UpdateEcommerceSlotPlan(slotID, updates); err != nil {
 		return nil, err
@@ -112,7 +139,8 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 	if err != nil {
 		return nil, err
 	}
-	// 最终提示词：PromptOverride 优先，否则 GenerationPrompt。
+	// 最终提示词：PromptOverride 优先，否则 GenerationPrompt（阶段 5 指针补丁后，
+	// 未传字段保持库中原值，这里按库内最新态取）。
 	effective := strings.TrimSpace(saved.PromptOverride)
 	if effective == "" {
 		effective = strings.TrimSpace(saved.GenerationPrompt)
