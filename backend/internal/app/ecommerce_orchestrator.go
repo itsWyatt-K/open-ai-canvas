@@ -101,6 +101,33 @@ type ecommercePlanSnapshot struct {
 	SubjectLayerResourceID string                  `json:"subjectLayerResourceId,omitempty"`
 	Slots                  []EcommerceSlotDispatch `json:"slots"`
 	GeneratedAt            string                  `json:"generatedAt"`
+	// 派发参数（阶段 4 修复）：确认/恢复派发与 Sync 顺延补派时复用，
+	// 避免「确认时传了模型、Sync 补派时取不到」的断链。
+	ChannelID string `json:"channelId,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Size      string `json:"size,omitempty"`
+	Quality   string `json:"quality,omitempty"`
+}
+
+// ecommerceDispatchCapacity 返回该用户当前还能派发几条画布子任务。
+//
+// 平台运行策略限制同时在途（排队+运行）任务数（默认 5），电商 7 屏一次确认
+// 必然超出。编排器按容量派发，超出的槽位顺延为 pending/draft，由 Sync 对账
+// 时在容量释放后自动补派——不把「排队已满」伪装成「该屏生成失败」。
+func (s *Service) ecommerceDispatchCapacity(userID string) (int, error) {
+	policy, err := s.RuntimePolicy()
+	if err != nil {
+		return 0, err
+	}
+	active, err := s.repo.ActiveTaskCountForUser(userID)
+	if err != nil {
+		return 0, err
+	}
+	remaining := int(policy.Task.ActiveTaskLimit) - int(active)
+	if remaining < 0 {
+		remaining = 0
+	}
+	return remaining, nil
 }
 
 // resolveExecutionMode 决定本次编排的执行模式。
@@ -239,6 +266,7 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		snapshot := ecommercePlanSnapshot{
 			PresetKey: preset.Key, PresetName: preset.Name, AnchorCard: anchorCard, Degraded: degraded,
 			Slots: result.Slots, GeneratedAt: time.Now().Format(time.RFC3339),
+			ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
 		}
 		planJSON, _ := json.Marshal(snapshot)
 		if err := s.repo.UpdateEcommerceProductRun(userID, productID, status, titleStatus, string(planJSON), product.PlanRevision+1); err != nil {
@@ -249,13 +277,40 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		return result, nil
 	}
 
+	deferred := make([]string, 0, len(plans))
 	for _, plan := range plans {
+		// 容量预检（阶段 4 修复）：在途任务已满时槽位顺延为 pending，
+		// 由 Sync 对账在容量释放后补派；不计失败、不计费。
+		if remaining, capErr := s.ecommerceDispatchCapacity(userID); capErr == nil && remaining <= 0 {
+			existing := slotIndex[plan.SlotKey]
+			slotID := ""
+			if existing != nil {
+				slotID = existing.ID
+				if existing.Status != ecommerce.SlotStatusPending {
+					_ = s.repo.UpdateEcommerceSlotStatus(existing.ID, ecommerce.SlotStatusPending)
+				}
+			}
+			result.Slots = append(result.Slots, EcommerceSlotDispatch{
+				SlotID: slotID, SlotKey: plan.SlotKey, Title: plan.Title,
+				Kind: plan.Kind, SlotNo: plan.SlotNo, Status: ecommerce.SlotStatusPending,
+			})
+			deferred = append(deferred, plan.SlotKey)
+			continue
+		}
 		dispatch, dispatchErr := s.dispatchEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
 			ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
 			Count: options.Count, ProjectID: options.ProjectID,
 			Synthesized: synth, UpstreamRule: upstreamRules[plan.SlotKey], Existing: slotIndex[plan.SlotKey],
 		})
 		if dispatchErr != nil {
+			// 容量竞态：预检后名额被占 → 计顺延不计失败。
+			if errors.Is(dispatchErr, errEcommerceQueueFull) {
+				dispatch.Status = ecommerce.SlotStatusPending
+				dispatch.Error = dispatchErr.Error()
+				deferred = append(deferred, plan.SlotKey)
+				result.Slots = append(result.Slots, dispatch)
+				continue
+			}
 			dispatch.Status = ecommerce.SlotStatusFailed
 			dispatch.Error = dispatchErr.Error()
 			result.Failed++
@@ -289,12 +344,16 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		PresetKey: preset.Key, PresetName: preset.Name, AnchorCard: anchorCard, Degraded: degraded,
 		SubjectLayerResourceID: subjectResourceID, Slots: result.Slots,
 		GeneratedAt: time.Now().Format(time.RFC3339),
+		ChannelID:   channelID, Model: modelName, Size: size, Quality: quality,
 	}
 	planJSON, _ := json.Marshal(snapshot)
 	if err := s.repo.UpdateEcommerceProductRun(userID, productID, status, titleStatus, string(planJSON), product.PlanRevision+1); err != nil {
 		return nil, err
 	}
 	result.Status = status
+	if len(deferred) > 0 {
+		degraded = append(degraded, fmt.Sprintf("%d 屏因同时在途任务已达上限顺延派发，容量释放后自动继续", len(deferred)))
+	}
 	result.Degraded = degraded
 	return result, nil
 }
@@ -356,6 +415,15 @@ func (s *Service) prepareEcommerceSlot(userID string, product *model.EcommercePr
 	prompt, negative := ecommercePromptFor(plan, input.Synthesized)
 	prompt = ecommerce.FusePromptWithUpstreamRule(prompt, input.UpstreamRule)
 	if strings.TrimSpace(prompt) == "" {
+		// 阶段 4 修复：先审方案的确认/恢复派发不会再带合成结果（synth 为空），
+		// 此时沿用 review 阶段已落库的提示词——stage 写入、分屏编辑器改稿都落在
+		// generation_prompt。否则确认后所有槽位都会以「提示词为空」失败。
+		// PromptOverride 非空时上面已提前返回，此处优先级天然正确。
+		if staged := strings.TrimSpace(slot.GenerationPrompt); staged != "" {
+			prompt = staged
+		}
+	}
+	if strings.TrimSpace(prompt) == "" {
 		return draft, errors.New("槽位提示词为空：nxf 与上游预设均不可用")
 	}
 	gate := ecommerce.ComplianceGate(prompt)
@@ -394,6 +462,17 @@ func (s *Service) stageEcommerceSlot(userID string, product *model.EcommerceProd
 		return dispatch, err
 	}
 	return dispatch, nil
+}
+
+// errEcommerceQueueFull 顺延派发哨兵：CreateTask 因平台在途任务上限被拒时包装返回，
+// 调用方据此计「顺延」而非「失败」（阶段 4 容量修复）。
+var errEcommerceQueueFull = errors.New("同时在途任务已达上限，顺延派发")
+
+// isQueueFullError 识别平台在途任务上限错误。CreateTask 把
+// repository.ErrActiveTaskLimit 包装成了 400 文案（哨兵在包装层丢失），
+// 这里按 task_creation.go 的稳定格式化口径匹配。
+func isQueueFullError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "同时排队或运行的任务最多")
 }
 
 // dispatchEcommerceSlot 建槽位/版本并派发一条 canvas_image 子任务。
@@ -460,6 +539,12 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 		},
 	})
 	if err != nil {
+		// 容量竞态：预检通过、但落库前名额被该用户其他任务占掉 → 不计失败，
+		// 槽位留待派发态，等下次对账补派；也未产生任何计费。
+		if isQueueFullError(err) {
+			_ = s.repo.UpdateEcommerceSlotStatus(slot.ID, ecommerce.SlotStatusPending)
+			return dispatch, fmt.Errorf("%w：%s", errEcommerceQueueFull, err.Error())
+		}
 		version.Status = ecommerce.SlotStatusFailed
 		version.ErrorMessage = truncateError(err)
 		if writeErr := s.repo.CreateEcommerceSlotVersion(&version); writeErr != nil {
@@ -541,6 +626,81 @@ func (s *Service) dispatchEcommerceSubjectLayer(userID string, product *model.Ec
 	return task.ID, nil
 }
 
+// continueEcommerceDispatch 顺延补派：对「已确认（running/queued）但仍有
+// draft/pending 屏未派发」的商品，按当前容量继续派发。
+//
+// 背景（阶段 4 容量修复）：平台默认同时在途任务上限 5，而一组方案通常 7 屏，
+// 一次确认必然有屏派不出去。超出的屏顺延为 draft/pending，由本函数在
+// SyncEcommerceProduct（前端轮询详情即隐式对账）中按容量补派。
+//
+// 安全边界：
+//   - 只补派 running/queued 商品（用户已确认，非 review/draft 待确认态）；
+//   - 槽位必须带 stage 落库的提示词（generation_prompt），否则跳过等用户编辑；
+//   - 渠道/模型取自确认时写入的方案快照（plan_json），缺参即跳过不盲派；
+//   - 每屏仅派发一次：成功即转 queued 并落带 child_task_id 的版本，幂等。
+func (s *Service) continueEcommerceDispatch(userID string, product *model.EcommerceProduct) (int, error) {
+	if product.Status != ecommerce.ProductStatusRunning && product.Status != ecommerce.ProductStatusQueued {
+		return 0, nil
+	}
+	var snapshot ecommercePlanSnapshot
+	if strings.TrimSpace(product.PlanJSON) != "" {
+		if err := json.Unmarshal([]byte(product.PlanJSON), &snapshot); err != nil {
+			return 0, nil // 快照损坏不阻断对账，等下轮
+		}
+	}
+	if strings.TrimSpace(snapshot.ChannelID) == "" || strings.TrimSpace(snapshot.Model) == "" {
+		return 0, nil
+	}
+	preset, err := s.resolveEcommercePreset(userID, "")
+	if err != nil {
+		return 0, err
+	}
+	slots, err := s.repo.ListEcommerceSlots(product.ID)
+	if err != nil {
+		return 0, err
+	}
+	dispatched := 0
+	for index := range slots {
+		slot := slots[index]
+		if slot.Status != ecommerce.SlotStatusDraft && slot.Status != ecommerce.SlotStatusPending {
+			continue
+		}
+		if strings.TrimSpace(slot.GenerationPrompt) == "" {
+			continue // 无方案提示词（裸卡），补派必失败，等用户编辑
+		}
+		versions, versionErr := s.repo.ListEcommerceSlotVersions(slot.ID)
+		if versionErr != nil {
+			return dispatched, versionErr
+		}
+		if len(versions) > 0 && strings.TrimSpace(versions[0].ChildTaskID) != "" &&
+			!ecommerce.IsTerminalSlotStatus(versions[0].Status) {
+			continue // 已有在途版本（对账尚未收尾），不重复派发
+		}
+		remaining, capErr := s.ecommerceDispatchCapacity(userID)
+		if capErr != nil || remaining <= 0 {
+			break // 容量再满即停，下次对账继续
+		}
+		plan := ecommerce.SlotPlan{
+			SlotKey: slot.SlotKey, Kind: slot.Kind, SlotNo: slot.SlotNo,
+			Title: slot.Title, Copy: slot.Copy,
+			Aspect: firstNonEmpty(strings.TrimSpace(slot.AspectRatio), snapshot.Size),
+		}
+		if _, dispatchErr := s.dispatchEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
+			Existing: &slots[index], ChannelID: snapshot.ChannelID, Model: snapshot.Model,
+			Size: snapshot.Size, Quality: snapshot.Quality, Count: 1,
+		}); dispatchErr != nil {
+			// 容量竞态：名额又没了，停止本轮补派（槽位已被 dispatch 留为 pending）。
+			// 真实失败：dispatchEcommerceSlot 已落失败态与原因，继续试下一屏。
+			if errors.Is(dispatchErr, errEcommerceQueueFull) {
+				break
+			}
+			continue
+		}
+		dispatched++
+	}
+	return dispatched, nil
+}
+
 // SyncEcommerceProduct 对账：把子任务终态回写到槽位版本与商品状态。
 // 幂等：已终态的版本不再重复写；仅处理有 child_task_id 且未收尾的版本。
 func (s *Service) SyncEcommerceProduct(userID, productID string) (*ProductDetail, error) {
@@ -576,6 +736,13 @@ func (s *Service) SyncEcommerceProduct(userID, productID string) (*ProductDetail
 			return nil, err
 		}
 	}
+	// 顺延补派（阶段 4 容量修复）：已确认商品中因在途满额而顺延的屏，
+	// 在容量释放后自动继续派发（幂等，仅在 running/queued 且快照带参数时生效）。
+	if product.Status == ecommerce.ProductStatusRunning || product.Status == ecommerce.ProductStatusQueued {
+		if _, contErr := s.continueEcommerceDispatch(userID, product); contErr != nil {
+			return nil, contErr
+		}
+	}
 	// 重新读取槽位后推导商品状态。
 	slots, err = s.repo.ListEcommerceSlots(productID)
 	if err != nil {
@@ -598,6 +765,12 @@ func (s *Service) SyncEcommerceProduct(userID, productID string) (*ProductDetail
 		}
 	}
 	status, titleStatus := ecommerce.ComputeProductStatus(slotViews(slots))
+	// queued 保持：已确认但全部屏都还在顺延（容量未释放）时，ComputeProductStatus
+	// 会把「全 draft/pending」推导成 draft——那等于悄悄撤销用户的确认。这里显式
+	// 保持 queued（"已确认、等容量"的诚实中间态），等补派成功后再自然转 running。
+	if product.Status == ecommerce.ProductStatusQueued && status == ecommerce.ProductStatusDraft {
+		status = ecommerce.ProductStatusQueued
+	}
 	if status != product.Status || titleStatus != product.TitleStatus {
 		if err := s.repo.UpdateEcommerceProductStatus(userID, productID, status, titleStatus, product.StatusReason); err != nil {
 			return nil, err
@@ -1002,6 +1175,9 @@ func uniqueStrings(values []string) []string {
 // hasInFlightSlotVersion 判断是否存在"已派发且未终态"的槽位版本。
 //
 // 判据：任一槽位的最新版本带 child_task_id 且状态非终态 → 有子任务在途。
+// paused（用户主动停止）**不算在途**——阶段 4 明确"状态立即不再冒充在途"，
+// 否则停止生成后 ComputeProductStatus 会把「3 完成 + 4 paused」推导成
+// completed，对用户谎报全部生成完毕。
 // draft 态槽位（先审方案暂存）没有任何版本，因此返回 false。
 func (s *Service) hasInFlightSlotVersion(slots []model.EcommerceSlot) bool {
 	for index := range slots {
@@ -1010,6 +1186,9 @@ func (s *Service) hasInFlightSlotVersion(slots []model.EcommerceSlot) bool {
 			continue
 		}
 		current := versions[0]
+		if current.Status == ecommerce.SlotStatusPaused {
+			continue
+		}
 		if strings.TrimSpace(current.ChildTaskID) != "" && !ecommerce.IsTerminalSlotStatus(current.Status) {
 			return true
 		}

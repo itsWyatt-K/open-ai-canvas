@@ -52,9 +52,9 @@ func TestValidateConfig_自定义比例合法宽高通过(t *testing.T) {
 }
 
 func TestMergeWithDefault_缺省补齐与显式空串(t *testing.T) {
-	// 空 stored → 全默认
+	// 空 stored → 全默认（阶段 4：默认模式为 review，未确认不扣费）。
 	merged := MergeWithDefault(ConfigView{})
-	if merged.TaskConcurrency != 2 || merged.Mode != ModeAuto || merged.Hero.TextMode != TextModeTypeset {
+	if merged.TaskConcurrency != 2 || merged.Mode != ModeReview || merged.Hero.TextMode != TextModeTypeset {
 		t.Fatalf("空配置应补全默认: %+v", merged)
 	}
 	// 显式值覆盖；显式空串保持为空（不补默认）

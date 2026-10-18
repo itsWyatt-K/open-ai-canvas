@@ -365,7 +365,8 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
         const done = slots.filter((slot) => slot.status === "completed").length;
         const failed = slots.filter((slot) => slot.status === "failed");
         const active = slots.find((slot) => slot.status === "running" || slot.status === "refining");
-        const queued = slots.filter((slot) => slot.status === "queued" || slot.status === "draft").length;
+        // queued=已派发等子任务；draft/pending=方案已备、顺延等容量（阶段 4 容量修复）。
+        const queued = slots.filter((slot) => slot.status === "queued" || slot.status === "draft" || slot.status === "pending").length;
         const percent = total === 0 ? 0 : Math.round((done / total) * 100);
         let text = "";
         if (planning) {
@@ -609,8 +610,8 @@ export function EcommerceTaskDetail({ productId, onBack }: { productId: string |
                 </div>
             ) : null}
 
-            {/* 阶段 4：实时进度（running / planning） */}
-            {product.status === "running" || planning ? (
+            {/* 阶段 4：实时进度（running / queued 顺延等容量 / planning） */}
+            {product.status === "running" || product.status === "queued" || planning ? (
                 <div className="flex flex-col gap-2 border-b border-primary/25 bg-primary/5 px-5 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-xs text-foreground/75">{progressText}</span>

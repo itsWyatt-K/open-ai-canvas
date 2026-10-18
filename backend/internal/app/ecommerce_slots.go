@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -204,6 +205,13 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 	if product.Status != ecommerce.ProductStatusReview && product.Status != ecommerce.ProductStatusDraft {
 		return nil, NewAppError(http.StatusConflict, "当前状态为 "+product.Status+"，仅「待确认方案/未开始」可执行确认")
 	}
+	// 写路径强校验：确认即派发即收费，渠道与模型必须显式到位（draft 路径进
+	// StartEcommerceProduct 也会校验，这里提前挡住 review 直确认的漏传）。
+	channelID := strings.TrimSpace(options.ChannelID)
+	modelName := strings.TrimSpace(options.Model)
+	if channelID == "" || modelName == "" {
+		return nil, NewAppError(http.StatusBadRequest, "请先选择生图模型与渠道")
+	}
 	// draft 态：先走完整编排合成各屏方案（stage 槽位 + 商品转 review）。
 	if product.Status == ecommerce.ProductStatusDraft {
 		if _, err := s.StartEcommerceProduct(userID, productID, options); err != nil {
@@ -218,6 +226,9 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 	if err != nil {
 		return nil, err
 	}
+	// 派发默认参数与 StartEcommerceProduct 同口径（options > 预设 > 1:1）。
+	size := firstNonEmpty(strings.TrimSpace(options.Size), preset.Size, "1:1")
+	quality := firstNonEmpty(strings.TrimSpace(options.Quality), preset.Quality)
 	slots, err := s.repo.ListEcommerceSlots(productID)
 	if err != nil {
 		return nil, err
@@ -230,19 +241,78 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 		return nil, err
 	}
 	// 逐槽派发：仅对尚未派发过子任务的槽位（已有 ChildTaskID 的跳过，避免重复计费）。
+	dispatched, deferred := 0, 0
 	for index := range slots {
 		slot := slots[index]
 		if slot.Status == ecommerce.SlotStatusCompleted || slot.Status == ecommerce.SlotStatusFailed {
 			continue
 		}
+		// 容量预检（阶段 4 修复）：在途已满 → 槽位保持 draft/pending 顺延，
+		// 由 Sync 对账补派；不判失败、不计费。
+		if remaining, capErr := s.ecommerceDispatchCapacity(userID); capErr == nil && remaining <= 0 {
+			deferred++
+			continue
+		}
 		plan := ecommerce.SlotPlan{
 			SlotKey: slot.SlotKey, Kind: slot.Kind, SlotNo: slot.SlotNo,
 			Title: slot.Title, Copy: slot.Copy,
+			// 单屏比例覆盖（v56 分屏编辑器）优先于整组默认。
+			Aspect: firstNonEmpty(strings.TrimSpace(slot.AspectRatio), size),
 		}
+		// 阶段 4 修复：渠道/模型/比例/质量必须随行传入——此前整组漏传，
+		// 即使提示词兜底成功，CreateTask 也会因空模型失败。
 		if _, dispatchErr := s.dispatchEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
 			Existing: &slots[index], ProjectID: options.ProjectID,
+			ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
+			Count: options.Count,
 		}); dispatchErr != nil {
+			// 容量竞态（预检后、落库前被别的任务占了名额）：同样算顺延，不判失败。
+			if errors.Is(dispatchErr, errEcommerceQueueFull) {
+				deferred++
+				continue
+			}
 			_ = s.repo.UpdateEcommerceSlotStatus(slot.ID, ecommerce.SlotStatusFailed)
+		} else {
+			dispatched++
+		}
+	}
+	// 终态一次算清：全部顺延（在途已满）时商品落 queued 而不是 running。
+	// ComputeProductStatus 会把「全 draft/pending」推导成 draft，那等于把用户
+	// 的确认悄悄撤销；queued 是「已确认、等容量」的诚实中间态，Sync 会继续补派。
+	finalStatus := ecommerce.ProductStatusRunning
+	statusReason := ""
+	if deferred > 0 {
+		statusReason = fmt.Sprintf("%d 屏顺延派发：同时在途任务已达上限，容量释放后自动继续", deferred)
+		if dispatched == 0 {
+			finalStatus = ecommerce.ProductStatusQueued
+		}
+	}
+	// 用确认时的参数重写方案快照：Sync 顺延补派据此取渠道/模型，
+	// 断链即补派失败（空模型 CreateTask 必错）。保留原快照的降级说明。
+	snapshot := ecommercePlanSnapshot{ChannelID: channelID, Model: modelName, Size: size, Quality: quality}
+	if existing := strings.TrimSpace(product.PlanJSON); existing != "" {
+		_ = json.Unmarshal([]byte(existing), &snapshot)
+		snapshot.ChannelID, snapshot.Model = channelID, modelName
+		snapshot.Size, snapshot.Quality = size, quality
+	}
+	snapshot.GeneratedAt = time.Now().Format(time.RFC3339)
+	if refreshed, listErr := s.repo.ListEcommerceSlots(productID); listErr == nil {
+		views := make([]EcommerceSlotDispatch, 0, len(refreshed))
+		for _, slot := range refreshed {
+			views = append(views, EcommerceSlotDispatch{
+				SlotID: slot.ID, SlotKey: slot.SlotKey, Title: slot.Title,
+				Kind: slot.Kind, SlotNo: slot.SlotNo, Status: slot.Status,
+			})
+		}
+		snapshot.Slots = views
+	}
+	planJSON, _ := json.Marshal(snapshot)
+	if err := s.repo.UpdateEcommerceProductRun(userID, productID, finalStatus, product.TitleStatus, string(planJSON), 0); err != nil {
+		return nil, err
+	}
+	if statusReason != "" {
+		if err := s.repo.UpdateEcommerceProductStatus(userID, productID, finalStatus, product.TitleStatus, statusReason); err != nil {
+			return nil, err
 		}
 	}
 	return s.EcommerceProductDetail(userID, productID)
