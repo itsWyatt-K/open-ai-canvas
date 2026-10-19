@@ -238,9 +238,7 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 				return err
 			}
 			profile = normalized.Image
-			if profile.Parameters == nil {
-				fillMissingImageSizePresets(profile, taskInput.Config.InterfaceType)
-			}
+			fillMissingImageSizePresets(profile, taskInput.Config.InterfaceType)
 			if presetErr := imageSizePresetReadyError(profile, taskInput.Config.InterfaceType); presetErr != nil {
 				return presetErr
 			}
@@ -279,9 +277,7 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 		}
 		imageProfile = applyModelSpecificImageCapability(imageProfile, string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), taskInput.Config.APIFormat)
 		// 旧线路没有换算表时按声明的档位补齐；补不齐就失败关闭，不能静默按 1K 出图。
-		if imageProfile.Parameters == nil {
-			fillMissingImageSizePresets(imageProfile, string(item.Protocol))
-		}
+		fillMissingImageSizePresets(imageProfile, string(item.Protocol))
 		if presetErr := imageSizePresetReadyError(imageProfile, string(item.Protocol)); presetErr != nil {
 			return presetErr
 		}
@@ -608,8 +604,12 @@ func imagePresetDefaultTier(profile *ImageCapabilityConfig) string {
 // resolveImageTaskSize 把画布按比例保存的 size（如 16:9）换算成图片模型
 // 声明的 preset 像素尺寸。声明式 OpenAI Images 协议把统一请求的 aspectRatio
 // 原样映射到上游 size 字段，只认 WIDTHxHEIGHT 的上游会拒绝比例字符串，所以
-// 换算必须在任务输入边界完成。未命中 preset 的组合不做猜测，交给能力校验给
-// 出明确错误。
+// 换算必须在任务输入边界完成。
+//
+// 换算顺序（主人返工令：缺表时**严禁直接报错阻断**）：
+//  1. 线路自己的换算表（presets）命中 → 用预设像素；
+//  2. 未配置专属表时 → 用内置标准兜底换算表把比例换成像素，保证仍能出网；
+//  3. 两条路都取不到（既非声明比例、也非标准比例）时保持原样，交给能力校验给明确错误。
 func resolveImageTaskSize(profile *ImageCapabilityConfig, interfaceType string, size string, quality string) string {
 	if profile == nil {
 		return size
@@ -618,11 +618,22 @@ func resolveImageTaskSize(profile *ImageCapabilityConfig, interfaceType string, 
 	if value == "" || strings.EqualFold(value, "auto") {
 		return size
 	}
+	pixelOutbound := imageSizePixelOutbound(profile, interfaceType)
 	preset, ok := declaredImageSizePreset(activeImageSizePresets(profile), value, imagePresetSelectionTier(profile, quality), imagePresetDefaultTier(profile))
 	if !ok {
+		if !pixelOutbound {
+			return size
+		}
+		// 兜底：线路没有专属换算表（或表里没有这个比例）时，用内置标准表换算。
+		if fallback, found := standardImageSizeFallbackPreset(value); found {
+			return fallback.Size
+		}
+		if fallback, found := openAIImageDefaultPixelSize(normalizeDeclaredImageRatio(value), standardImageSizeFallbackTier); found {
+			return fallback.Size
+		}
 		return size
 	}
-	if imageSizePixelOutbound(profile, interfaceType) {
+	if pixelOutbound {
 		return preset.Size
 	}
 	if profile.Size.Parameter == "aspect_ratio" {
@@ -687,8 +698,11 @@ func imageSizePresetMissing(profile *ImageCapabilityConfig, protocol string) boo
 	return len(imageSizeDeclaredTiers(profile)) > 0
 }
 
-// imageSizeDeclaredTiers 取出该线路声明里可解析的分辨率档位。只有"档位要被编码进尺寸"的
-// 线路才需要换算表：没有质量档位声明（例如 ark / 即梦图片）时，档位不参与请求，用不着表。
+// imageSizeDeclaredTiers 取出该线路声明里可解析的分辨率档位。
+//
+// 档位只认 quality / resolution 的取值与默认值（新式声明）。size.values 里出现的
+// 独立档位记号（如 "2K"/"4K"）**不再**被当作档位：那是旧式手工配置的残留标注，
+// 按主人返工令，缺表时一律走内置标准兜底表，不靠读这些记号去推导档位。
 func imageSizeDeclaredTiers(profile *ImageCapabilityConfig) []string {
 	tiers := make([]string, 0, 3)
 	seen := make(map[string]bool, 3)
@@ -761,32 +775,36 @@ func openAIImageDefaultPixelSize(ratio string, tier string) (ImageSizePreset, bo
 	return ImageSizePreset{}, false
 }
 
-// fillMissingImageSizePresets 为「出网需要像素、按比例提交、却没有换算表」的旧线路补齐
-// 换算表：按线路自己声明的档位与比例，从 openAIImageDefaultSizeTable 取值。这与
-// legacyImageSizeValues 修复旧通配符尺寸是同一套做法 —— 旧数据在读取边界补成当前形态，
-// 而不是要求人工逐条重配。补不齐（声明了表里没有的比例）时保持原样，交给调用方拒绝。
-// 返回是否发生了补齐。
+// fillMissingImageSizePresets 为「出网需要像素、按比例提交、却没有换算表」的线路补齐
+// 换算表：用**内置标准兜底换算表**（主人 2026-10 指定的 8 个比例 → 像素）按线路声明的
+// 比例生成预设，缺表时绝不再失败关闭。返回是否发生了补齐。
+//
+// 与既有的 legacyImageSizeValues（修复旧通配符尺寸）是同一套思路：旧数据在读取边界补成
+// 当前形态，而不是要求人工逐条重配。三条重要口径：
+//  1. 不再要求线路声明「档位」——标准表本身就是 1K 基准，缺档位照样能换算；
+//  2. 对「旧式声明（Parameters==nil）」与「参数合同形态（Parameters!=nil）」一视同仁，
+//     运行期 normalizedChannelModelCapability 会把声明投影成参数合同，用 `if Parameters==nil`
+//     把关等于让合同形态永远补不到表（yingce-image-2.5 现场故障即此）；
+//  3. 声明了比例就用声明比例，一个都没声明时覆盖标准表全部比例，保证有表可用。
 func fillMissingImageSizePresets(profile *ImageCapabilityConfig, protocol string) bool {
 	if !imageSizePresetMissingExact(profile, protocol) {
 		return false
 	}
-	tiers := imageSizeDeclaredTiers(profile)
 	ratios := imageSizeDeclaredRatios(profile)
-	if len(tiers) == 0 || len(ratios) == 0 {
-		return false
+	if len(ratios) == 0 {
+		ratios = standardImageSizeFallbackRatios()
 	}
-	presets := make([]ImageSizePreset, 0, len(tiers)*len(ratios))
-	for _, tier := range tiers {
-		for _, ratio := range ratios {
-			if preset, ok := openAIImageDefaultPixelSize(ratio, tier); ok {
-				presets = append(presets, preset)
-			}
-		}
-	}
+	presets := standardImageSizePresetsForRatios(ratios)
 	if len(presets) == 0 {
 		return false
 	}
 	profile.Size.Presets = presets
+	// 没有档位选择器（quality / resolution 都未开启）时，必须钉一个默认档位，
+	// 否则 singleImageSizeTier 无法判定唯一致命档位 → 换算被静默跳过 → 校验报
+	// 「缺少像素尺寸换算表」，用户看到的是一条无解的错误。
+	if strings.TrimSpace(profile.Size.DefaultTier) == "" && !imageSizeHasTierSelector(profile) {
+		profile.Size.DefaultTier = standardImageSizeFallbackTier
+	}
 	if profile.Size.Parameter == "size" {
 		// parameter=size 的线路要求预设像素值同时出现在支持值里（validateImageCapabilityConfig），
 		// 与前端 imageSizeConfigWithPresets 的做法一致。
@@ -799,13 +817,18 @@ func fillMissingImageSizePresets(profile *ImageCapabilityConfig, protocol string
 	return true
 }
 
-// imageSizePresetReadyError 是运行时的失败关闭点：需要把档位换算成像素、又确实没有可用的
-// 换算表（含补不齐的情况）时，宁可报错，也不要静默按 1K 出图。
+// imageSizeHasTierSelector 表示该线路自身就能让用户挑档位（分辨率或质量选择器已开启）。
+func imageSizeHasTierSelector(profile *ImageCapabilityConfig) bool {
+	return profile.Resolution.Supported || profile.Quality.Supported
+}
+
+// imageSizePresetReadyError 是运行时的最后一道防线：只有在内置标准兜底表也补不出
+// 换算表（例如线路声明的全是非标准比例）时才报错，绝不因为「缺表」阻断常规生图。
 func imageSizePresetReadyError(profile *ImageCapabilityConfig, protocol string) error {
 	if !imageSizePresetMissing(profile, protocol) {
 		return nil
 	}
-	return BadAuthRequest("当前线路缺少像素尺寸换算表，无法把所选比例与档位换算成上游要求的像素尺寸；请在管理端为该线路的每个档位配置像素预设")
+	return BadAuthRequest("当前线路缺少像素尺寸换算表，且所选比例不在内置标准换算表（1:1 / 3:4 / 4:3 / 9:16 / 16:9 / 2:3 / 3:2 / 21:9）内，无法换算成上游要求的像素尺寸；请在管理端为该线路补充像素预设")
 }
 
 // validateImageSizePresetRequirement 是写路径（保存渠道模型）使用的完整性校验：

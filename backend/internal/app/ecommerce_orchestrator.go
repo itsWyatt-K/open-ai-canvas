@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -194,12 +195,30 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		return nil, NewAppError(http.StatusBadRequest, "预设没有可用槽位")
 	}
 
-	// 1) 取上游 54 号表铁律段（供料），2) 调 nxf 合成（不可用则降级）。
+	// 1) 取上游 54 号表铁律段（供料）。
 	upstreamRules := s.upstreamRuleSegments(plans)
 	degraded := make([]string, 0, 2)
-	synth, synthErr := s.synthesizeEcommercePrompts(preset, product, plans)
-	if synthErr != nil {
-		degraded = append(degraded, "nxf 视觉DNA 引擎不可用（"+synthErr.Error()+"），已降级为上游预设模板")
+	// 先读库内槽位：既用于判断「是否还需要 nxf 合成」，也用于按 SlotKey 复用槽位。
+	existingSlots, err := s.repo.ListEcommerceSlots(productID)
+	if err != nil {
+		return nil, err
+	}
+	slotIndex := map[string]*model.EcommerceSlot{}
+	for index := range existingSlots {
+		slotIndex[existingSlots[index].SlotKey] = &existingSlots[index]
+	}
+	// 2) nxf 合成：**仅当库里确实没有提示词时才调用**（阶段 5 返工铁律）。
+	//    库里已有 apply-platform / AI 策划 / 编辑器写好的提示词时，直接使用，
+	//    不调已经连不上的 nxf，更不被空模板覆盖。
+	var synth *nxfBatchResult
+	if ecommerceSlotsNeedSynthesis(plans, slotIndex) {
+		var synthErr error
+		synth, synthErr = s.synthesizeEcommercePrompts(preset, product, plans)
+		if synthErr != nil {
+			degraded = append(degraded, "nxf 视觉DNA 引擎不可用（"+synthErr.Error()+"），已改用库内提示词/平台模板兜底")
+		}
+	} else {
+		degraded = append(degraded, "库内已有各屏提示词，直接使用（未调用 nxf 引擎）")
 	}
 	anchorCard := ""
 	if synth != nil {
@@ -223,14 +242,6 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 	result := &EcommerceStartResult{
 		ProductID: productID, Status: ecommerce.ProductStatusQueued,
 		PresetKey: preset.Key, PresetName: preset.Name, AnchorCard: anchorCard, Degraded: degraded,
-	}
-	existingSlots, err := s.repo.ListEcommerceSlots(productID)
-	if err != nil {
-		return nil, err
-	}
-	slotIndex := map[string]*model.EcommerceSlot{}
-	for index := range existingSlots {
-		slotIndex[existingSlots[index].SlotKey] = &existingSlots[index]
 	}
 
 	// 先审方案：槽位先落库（带提示词与方案摘要供人工审阅），但**不派发生图子任务**，
@@ -268,10 +279,12 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 			Slots: result.Slots, GeneratedAt: time.Now().Format(time.RFC3339),
 			ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
 		}
-		planJSON, _ := json.Marshal(snapshot)
-		if err := s.repo.UpdateEcommerceProductRun(userID, productID, status, titleStatus, string(planJSON), product.PlanRevision+1); err != nil {
+		// 阶段 5 返工：编排摘要只写 diag_json，**不污染 plan_json**（plan_json 只存 AI 策划）。
+		s.writeEcommerceDiag(userID, productID, snapshot)
+		if err := s.repo.UpdateEcommerceProductRun(userID, productID, status, titleStatus, "", 0); err != nil {
 			return nil, err
 		}
+		s.surfaceEcommerceDispatchError(userID, productID, result.Slots)
 		result.Status = status
 		result.Degraded = append(degraded, "先审方案：已生成各屏方案，确认后才派发生图任务")
 		return result, nil
@@ -334,7 +347,7 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		}
 	}
 
-	// 商品状态与方案快照。
+	// 商品状态与编排诊断（写 diag_json，不动 plan_json）。
 	slots, err := s.repo.ListEcommerceSlots(productID)
 	if err != nil {
 		return nil, err
@@ -346,10 +359,11 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		GeneratedAt: time.Now().Format(time.RFC3339),
 		ChannelID:   channelID, Model: modelName, Size: size, Quality: quality,
 	}
-	planJSON, _ := json.Marshal(snapshot)
-	if err := s.repo.UpdateEcommerceProductRun(userID, productID, status, titleStatus, string(planJSON), product.PlanRevision+1); err != nil {
+	s.writeEcommerceDiag(userID, productID, snapshot)
+	if err := s.repo.UpdateEcommerceProductRun(userID, productID, status, titleStatus, "", 0); err != nil {
 		return nil, err
 	}
+	s.surfaceEcommerceDispatchError(userID, productID, result.Slots)
 	result.Status = status
 	if len(deferred) > 0 {
 		degraded = append(degraded, fmt.Sprintf("%d 屏因同时在途任务已达上限顺延派发，容量释放后自动继续", len(deferred)))
@@ -371,18 +385,69 @@ type ecommerceSlotDispatchInput struct {
 	Existing     *model.EcommerceSlot
 }
 
-// ecommerceSlotDraft 槽位草稿：建/复用的槽位 + 已过 S5 门禁的最终提示词与负向词。
+// ecommerceSlotDraft 槽位草稿。
+//
+// 【返工铁律】两个提示词严格分离：
+//   - prompt：落库/展示用（generation_prompt、版本快照、前端「画面构图简述」与
+//     「画面描述」）——只含本屏专属的产品视角/场景道具/光影色调/构图描述；
+//   - dispatch：真正发往生图模型的提示词 = prompt + 文字排版后缀 + 内部防走形护栏。
+//
+// 通用护栏与排版指令绝不进 generation_prompt（主人返工令）。
 type ecommerceSlotDraft struct {
 	slot     *model.EcommerceSlot
 	prompt   string
+	dispatch string
 	negative string
 	gateHits []string
 }
 
+// buildEcommerceDispatchPrompt 组装「真正发往模型」的提示词。
+//
+// 结构：本屏场景描述（= 落库那一段） → 文字排版后缀 → 内部防走形护栏（含上游铁律段）。
+// 上游铁律段为空时跳过，不注入空段、不重复注入。
+func buildEcommerceDispatchPrompt(prompt string, slotCopy string, textMode string, upstreamRule string) string {
+	parts := make([]string, 0, 3)
+	if base := strings.TrimSpace(prompt); base != "" {
+		parts = append(parts, base)
+	}
+	parts = append(parts, ecommerce.SlotCopyDirective(slotCopy, textMode))
+	guardrail := ecommerce.SlotDispatchGuardrail()
+	if rule := ecommerce.UpstreamRuleSegment(upstreamRule); rule != "" {
+		guardrail = guardrail + "\n主体一致性铁律（上游预设）：" + rule
+	}
+	parts = append(parts, guardrail)
+	return strings.Join(parts, "\n")
+}
+
+// ecommerceSlotTextMode 取本屏对应的文字排版模式（主图/详情页各自的 textMode）。
+// 读不到用户配置时回落 typeset（有文案就排版、无文案纯图），不阻断派发。
+func (s *Service) ecommerceSlotTextMode(userID string, kind string) string {
+	config, err := s.EcommerceConfig(userID)
+	if err != nil || config == nil {
+		return ecommerce.TextModeTypeset
+	}
+	if strings.TrimSpace(kind) == ecommerce.SlotKindDetail {
+		return config.Detail.TextMode
+	}
+	return config.Hero.TextMode
+}
+
 // prepareEcommerceSlot 建/复用槽位并算出最终提示词（不派发子任务）。
 //
-// 提示词优先级：slot.PromptOverride（用户完整覆盖，最高）> nxf 合成/上游模板。
-// S5 出口门禁在派发前强制执行；比例冲突直接返回错误。
+// 提示词优先级（阶段 5 返工 · 主人铁律）：
+//  1. `slot.PromptOverride`（人工完整覆盖，最高）；
+//  2. `slot.GenerationPrompt`（**数据库已有方案**：apply-platform / AI 策划 /
+//     编辑器 / Agent 写入的提示词，直接使用，绝不重新合成、绝不洗成空串）；
+//  3. nxf 合成结果（仅当库里确实没有提示词时才尝试）；
+//  4. 平台模板兜底（platforms.PlatformSlotBasePrompt + 商品名称/卖点/附加要求 +
+//     本屏 Title/SceneType 组装）——**保证 prompt 永不为空**。
+//
+// 阶段 5 实测教训：旧逻辑先跑 nxf/上游再回退，nxf 连不上时若上游模板缺失，
+// 会把库里有方案的槽位判成「提示词为空」并直接失败；主人要求「严禁用空模板洗掉已有方案」。
+//
+// 【返工铁律】本函数产出的 draft.prompt **只含本屏场景与构图描述**（落 generation_prompt
+// 给用户看的那一段），通用防走形护栏与文字排版指令一律不进这里，只在
+// draft.dispatch 里作为发往模型的内部后缀拼接。
 func (s *Service) prepareEcommerceSlot(userID string, product *model.EcommerceProduct, preset ecommerce.PresetConfig, plan ecommerce.SlotPlan, input ecommerceSlotDispatchInput) (ecommerceSlotDraft, error) {
 	draft := ecommerceSlotDraft{}
 	slot := input.Existing
@@ -399,41 +464,60 @@ func (s *Service) prepareEcommerceSlot(userID string, product *model.EcommercePr
 		slot = &created
 	}
 	draft.slot = slot
+	slotCopy := firstNonEmpty(slot.Copy, plan.Copy)
+	textMode := s.ecommerceSlotTextMode(userID, firstNonEmpty(slot.Kind, plan.Kind))
+	// 收口：落库用纯净提示词，派发用「纯净 + 排版后缀 + 内部护栏」。
+	finish := func(prompt string, negative string, gateHits []string) ecommerceSlotDraft {
+		draft.prompt = prompt
+		draft.negative = negative
+		draft.gateHits = gateHits
+		draft.dispatch = buildEcommerceDispatchPrompt(prompt, slotCopy, textMode, input.UpstreamRule)
+		return draft
+	}
+	negative := ecommerce.MergeNegative(preset.Negative)
 
-	// 用户完整提示词覆盖优先（阶段 1：pr(1) 纪律 —— AI 重策划不覆盖该字段）。
+	// 1) 人工完整覆盖最高优先（pr(1) 纪律：AI 重策划不覆盖该字段）。
 	if override := strings.TrimSpace(slot.PromptOverride); override != "" {
 		gate := ecommerce.ComplianceGate(override)
 		if gate.Rejected {
 			return draft, errors.New("S5 门禁拒绝：" + gate.RejectReason)
 		}
-		draft.prompt = gate.Filtered
-		draft.gateHits = gate.Hits
-		draft.negative = ecommerce.MergeNegative(preset.Negative)
-		return draft, nil
+		return finish(gate.Filtered, negative, gate.Hits), nil
 	}
 
-	prompt, negative := ecommercePromptFor(plan, input.Synthesized)
-	prompt = ecommerce.FusePromptWithUpstreamRule(prompt, input.UpstreamRule)
-	if strings.TrimSpace(prompt) == "" {
-		// 阶段 4 修复：先审方案的确认/恢复派发不会再带合成结果（synth 为空），
-		// 此时沿用 review 阶段已落库的提示词——stage 写入、分屏编辑器改稿都落在
-		// generation_prompt。否则确认后所有槽位都会以「提示词为空」失败。
-		// PromptOverride 非空时上面已提前返回，此处优先级天然正确。
-		if staged := strings.TrimSpace(slot.GenerationPrompt); staged != "" {
-			prompt = staged
+	// 2) 数据库已有提示词：直接使用（这是 apply-platform/AI 策划/编辑器的成果，
+	//    不重新合成、不调 nxf、不被空模板覆盖）。
+	if staged := strings.TrimSpace(slot.GenerationPrompt); staged != "" {
+		gate := ecommerce.ComplianceGate(staged)
+		if gate.Rejected {
+			return draft, errors.New("S5 门禁拒绝：" + gate.RejectReason)
 		}
+		return finish(gate.Filtered, negative, gate.Hits), nil
+	}
+
+	// 3) 库里没有提示词才尝试 nxf 合成（nxf 不可用时 input.Synthesized 为 nil）。
+	prompt, synthNegative := ecommercePromptFor(plan, input.Synthesized)
+	if strings.TrimSpace(prompt) == "" {
+		// 4) 平台模板兜底：用商品事实 + 本屏信息组装，绝不让 prompt 为空。
+		prompt = ecommerce.ComposeSlotFallbackPrompt(ecommerce.SlotPromptContext{
+			ProductName:       product.Name,
+			SellingPoints:     product.SellingPoints,
+			ExtraRequirements: product.ExtraRequirements,
+			SlotTitle:         firstNonEmpty(slot.Title, plan.Title),
+			SlotSceneType:     firstNonEmpty(slot.SceneType, plan.Variant),
+			PlatformKey:       s.ecommercePlatformKey(userID),
+			Aspect:            firstNonEmpty(plan.Aspect, slot.AspectRatio, "1:1"),
+		})
 	}
 	if strings.TrimSpace(prompt) == "" {
-		return draft, errors.New("槽位提示词为空：nxf 与上游预设均不可用")
+		// 理论上兜底函数永不为空；真为空说明平台字典被清空，仍要给出可读原因。
+		return draft, errors.New("无法为该屏组装生图提示词：商品名称与平台模板均为空，请先填写商品名称或切换平台")
 	}
 	gate := ecommerce.ComplianceGate(prompt)
 	if gate.Rejected {
 		return draft, errors.New("S5 门禁拒绝：" + gate.RejectReason)
 	}
-	draft.prompt = gate.Filtered
-	draft.gateHits = gate.Hits
-	draft.negative = ecommerce.MergeNegative(negative, preset.Negative)
-	return draft, nil
+	return finish(gate.Filtered, ecommerce.MergeNegative(synthNegative, preset.Negative), gate.Hits), nil
 }
 
 // stageEcommerceSlot 只建槽位与方案（不派发 canvas_image 子任务）——先审方案用。
@@ -487,7 +571,9 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 		return dispatch, err
 	}
 	slot := draft.slot
+	// prompt：落库/展示用（只含本屏场景与构图）；dispatchPrompt：真正发往模型的完整提示词。
 	prompt := draft.prompt
+	dispatchPrompt := draft.dispatch
 	negative := draft.negative
 	dispatch.SlotID = slot.ID
 	dispatch.Prompt = prompt
@@ -496,7 +582,9 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 		dispatch.GateHits = draft.gateHits
 	}
 
-	versionNo := slot.CurrentVersion + 1
+	// 版本号取「current_version 与版本表最大值」的较大者 +1：历史失败态下
+	// current_version 可能没随版本行推进，只取前者会撞唯一约束 (slot_id, version)。
+	versionNo := s.nextEcommerceSlotVersion(slot.ID, slot.CurrentVersion)
 	dispatch.Version = versionNo
 	version := model.EcommerceSlotVersion{
 		ID: kernel.NewID(), SlotID: slot.ID, Version: versionNo,
@@ -508,11 +596,11 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 		ProjectID: input.ProjectID,
 		Type:      "canvas_image",
 		Operation: "image",
-		Prompt:    prompt,
+		Prompt:    dispatchPrompt,
 		Model:     input.Model,
 		Input: map[string]any{
 			"mode":           "image",
-			"prompt":         prompt,
+			"prompt":         dispatchPrompt,
 			"negativePrompt": negative,
 			"config": map[string]any{
 				"channelId": input.ChannelID,
@@ -626,6 +714,29 @@ func (s *Service) dispatchEcommerceSubjectLayer(userID string, product *model.Ec
 	return task.ID, nil
 }
 
+// dispatchSnapshotFor 取本商品「派发口径快照」（渠道/模型/尺寸/质量）。
+//
+// 阶段 5 返工：编排摘要已从 plan_json 迁到 diag_json（plan_json 只存 AI 策划方案，
+// 主人要求严禁用诊断覆盖它）。补派必须优先读 diag_json；
+// 但老数据（返工前确认的商品）只有 plan_json 带派发快照，故保留只读回退，
+// 命中条件是必须真的能解出 ChannelID+Model，否则视为无快照（不盲派）。
+func dispatchSnapshotFor(product *model.EcommerceProduct) (ecommercePlanSnapshot, bool) {
+	for _, raw := range []string{product.DiagJSON, product.PlanJSON} {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		var snapshot ecommercePlanSnapshot
+		if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
+			continue
+		}
+		if strings.TrimSpace(snapshot.ChannelID) == "" || strings.TrimSpace(snapshot.Model) == "" {
+			continue
+		}
+		return snapshot, true
+	}
+	return ecommercePlanSnapshot{}, false
+}
+
 // continueEcommerceDispatch 顺延补派：对「已确认（running/queued）但仍有
 // draft/pending 屏未派发」的商品，按当前容量继续派发。
 //
@@ -642,14 +753,9 @@ func (s *Service) continueEcommerceDispatch(userID string, product *model.Ecomme
 	if product.Status != ecommerce.ProductStatusRunning && product.Status != ecommerce.ProductStatusQueued {
 		return 0, nil
 	}
-	var snapshot ecommercePlanSnapshot
-	if strings.TrimSpace(product.PlanJSON) != "" {
-		if err := json.Unmarshal([]byte(product.PlanJSON), &snapshot); err != nil {
-			return 0, nil // 快照损坏不阻断对账，等下轮
-		}
-	}
-	if strings.TrimSpace(snapshot.ChannelID) == "" || strings.TrimSpace(snapshot.Model) == "" {
-		return 0, nil
+	snapshot, ok := dispatchSnapshotFor(product)
+	if !ok {
+		return 0, nil // 无派发快照（渠道/模型不可知）不盲派，等下轮或等用户确认
 	}
 	preset, err := s.resolveEcommercePreset(userID, "")
 	if err != nil {
@@ -1170,6 +1276,57 @@ func uniqueStrings(values []string) []string {
 		}
 	}
 	return result
+}
+
+// ecommerceSlotsNeedSynthesis 判断是否还需要调用 nxf 合成：
+// 只要任一目标槽位在库里既没有 PromptOverride 也没有 GenerationPrompt，才需要。
+// 全部槽位都已有提示词时直接复用，不再调已经连不上的 nxf（阶段 5 返工铁律）。
+func ecommerceSlotsNeedSynthesis(plans []ecommerce.SlotPlan, slotIndex map[string]*model.EcommerceSlot) bool {
+	for _, plan := range plans {
+		slot := slotIndex[plan.SlotKey]
+		if slot == nil {
+			return true
+		}
+		if strings.TrimSpace(slot.PromptOverride) == "" && strings.TrimSpace(slot.GenerationPrompt) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// writeEcommerceDiag 把编排摘要写进 diag_json（失败只记日志，不阻断主流程）。
+func (s *Service) writeEcommerceDiag(userID, productID string, snapshot ecommercePlanSnapshot) {
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return
+	}
+	if err := s.repo.UpdateEcommerceProductDiag(userID, productID, string(encoded)); err != nil {
+		log.Printf("[ecommerce] write diag failed product=%s: %v", productID, err)
+	}
+}
+
+// surfaceEcommerceDispatchError 把派发失败的真实原因写到商品级 error_message。
+//
+// 阶段 5 返工：主人要求「下游渠道报错必须把人话原因写进 slot.ErrorMessage 和
+// product.ErrorMessage」。这里取第一条失败原因聚合展示；全部成功则清空。
+func (s *Service) surfaceEcommerceDispatchError(userID, productID string, dispatches []EcommerceSlotDispatch) {
+	failed := make([]string, 0, 2)
+	for _, dispatch := range dispatches {
+		if dispatch.Status != ecommerce.SlotStatusFailed || strings.TrimSpace(dispatch.Error) == "" {
+			continue
+		}
+		failed = append(failed, fmt.Sprintf("%s：%s", firstNonEmpty(dispatch.Title, dispatch.SlotKey), truncateError(errors.New(dispatch.Error))))
+	}
+	message := ""
+	if len(failed) > 0 {
+		message = "生图失败：" + strings.Join(failed, "；")
+		if len(failed) > 1 {
+			message = fmt.Sprintf("生图失败（%d 屏）：%s", len(failed), strings.Join(failed, "；"))
+		}
+	}
+	if err := s.repo.UpdateEcommerceProductError(userID, productID, message); err != nil {
+		log.Printf("[ecommerce] write product error failed product=%s: %v", productID, err)
+	}
 }
 
 // hasInFlightSlotVersion 判断是否存在"已派发且未终态"的槽位版本。

@@ -13,7 +13,7 @@ import { App, Button, Input, Select } from "antd";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 
 import type { EcommerceSlotSummary } from "@/services/api/ecommerce";
-import { regenerateEcommerceSlot, saveEcommerceSlotPrompt, type EcommerceSlotPromptBody } from "@/services/api/ecommerce";
+import { ECOMMERCE_SLOT_STATUS_LABELS, regenerateEcommerceSlot, saveEcommerceSlotPrompt, type EcommerceSlotPromptBody } from "@/services/api/ecommerce";
 import { AppModal } from "@/components/ui/product/app-modal";
 
 const RATIO_OPTIONS = [
@@ -96,7 +96,20 @@ export function EcommerceSlotEditorDialog({ slot, index, total, onClose, onNavig
             onOk: async () => {
                 setGenerating(true);
                 try {
-                    await regenerateEcommerceSlot(slot.id, body());
+                    // 渠道/模型必须显式带上（与确认整组方案同一口径），否则后端只能报
+                    // 「请先选择生图模型与渠道」——老商品没有派发快照时带不出来。
+                    const { useConfigStore } = await import("@/stores/use-config-store");
+                    const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
+                    const config = useConfigStore.getState().config;
+                    if (!config?.imageModel) {
+                        message.error("请先在右侧「生成配置」选择可用的生图模型，再生成此屏");
+                        return;
+                    }
+                    const requestConfig = resolveModelRequestConfig(config, config.imageModel);
+                    await regenerateEcommerceSlot(slot.id, body(), {
+                        channelId: requestConfig.channelId,
+                        model: modelOptionName(config.imageModel),
+                    });
                     message.success("已提交该屏生成任务");
                     await onChanged();
                 } catch (error) {
@@ -139,7 +152,7 @@ export function EcommerceSlotEditorDialog({ slot, index, total, onClose, onNavig
                         上一屏
                     </Button>
                     <span className="text-xs text-foreground/55">
-                        {index + 1} / {total} · 状态 {slot.status} · 版本 v{slot.currentVersion}
+                        {index + 1} / {total} · 状态 {ECOMMERCE_SLOT_STATUS_LABELS[slot.status] || slot.status} · 版本 v{slot.currentVersion}
                     </span>
                     <Button size="small" icon={<ChevronRight className="size-3.5" />} disabled={index === total - 1} onClick={() => onNavigate(1)}>
                         下一屏
@@ -173,13 +186,13 @@ export function EcommerceSlotEditorDialog({ slot, index, total, onClose, onNavig
                 </label>
 
                 <label className="flex flex-col gap-1">
-                    <span className="text-xs text-foreground/55">画面描述</span>
+                    <span className="text-xs text-foreground/55">画面描述（本屏专属）</span>
                     <Input.TextArea
                         value={prompt}
                         rows={3}
                         maxLength={12000}
                         onChange={(event) => setPrompt(event.target.value)}
-                        placeholder="具体机位、主体占比、场景道具、光影材质、配色与文案留白"
+                        placeholder="只写本屏专属：产品视角、场景道具、光影色调与构图。防走形护栏与文字排版规则由系统在派发时自动追加，不用手写"
                     />
                 </label>
 

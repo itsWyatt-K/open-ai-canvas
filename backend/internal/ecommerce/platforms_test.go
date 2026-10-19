@@ -101,15 +101,31 @@ func TestPlatformSlotKeysMatchGeneralPreset(t *testing.T) {
 	}
 }
 
-func TestPlatformSlotBasePromptIncludesPlatformRules(t *testing.T) {
+// 返工令 B 二：槽位基底只准写「本屏专属的产品视角 / 场景道具 / 光影色调 / 构图描述」，
+// 严禁把平台规范套话、通用防走形护栏、文字排版指令写进 generation_prompt。
+func TestPlatformSlotBasePromptIsSceneOnly(t *testing.T) {
 	spec := PlatformSpecOrDefault(PlatformJD)
 	plans := PlatformSlotPlans(spec)
 	first := PlatformSlotBasePrompt(plans[0], spec)
-	if !strings.Contains(first, "京东") {
-		t.Fatalf("基底应含平台名：%s", first)
+	for _, want := range []string{"【本屏主题】", "【场景与道具】", "【视角与构图】", "【光影与色调】"} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("基底应含本屏描述字段 %s：%s", want, first)
+		}
 	}
-	if !strings.Contains(first, "纯白底") {
-		t.Fatalf("京东首屏基底应含白底硬性规范：%s", first)
+	// 京东白底首图：背景规范属于本屏描述，应予保留。
+	if !strings.Contains(first, "纯白背景") {
+		t.Fatalf("京东首屏基底应含白底背景规范：%s", first)
+	}
+	// 通用护栏与文字排版指令属于派发后缀，绝不能出现在落库基底里。
+	for _, forbidden := range []string{
+		"保持主体结构、颜色、比例、材质和可见细节稳定",
+		"画面不生成文字",
+		"画面预留干净排版区",
+		"画面纯图无文字",
+	} {
+		if strings.Contains(first, forbidden) {
+			t.Fatalf("基底严禁包含系统套话 %q：%s", forbidden, first)
+		}
 	}
 	amazon := PlatformSpecOrDefault(PlatformAmazon)
 	amazonFirst := PlatformSlotBasePrompt(PlatformSlotPlans(amazon)[0], amazon)

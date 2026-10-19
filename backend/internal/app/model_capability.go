@@ -233,9 +233,9 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 			input.Image.ResolutionUsesQuality = strings.TrimSpace(protocol) == string(model.ChannelInterfaceGeminiImage)
 		}
 		// 旧配置缺换算表时按声明的档位与比例补齐后再校验，保存即把旧线路归一化成当前形态。
-		if input.Image.Parameters == nil {
-			fillMissingImageSizePresets(input.Image, protocol)
-		}
+		// 补表对「旧式声明」与「参数合同形态」都要生效：合同投影后 Parameters 非空，
+		// 若在此把关会让旧线路永远补不到表（yingce-image-2.5 现场故障根因）。
+		fillMissingImageSizePresets(input.Image, protocol)
 		value := &ModelCapabilityConfig{Version: 1, Image: input.Image}
 		if err := validateImageCapabilityConfig(value.Image); err != nil {
 			return nil, err

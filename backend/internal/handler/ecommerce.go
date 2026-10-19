@@ -359,13 +359,18 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 		}
 		var body struct {
 			service.EcommerceSlotPromptPatch
-			ConfirmCost bool `json:"confirmCost"`
+			ChannelID   string `json:"channelId"`
+			Model       string `json:"model"`
+			ConfirmCost bool   `json:"confirmCost"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
 			return
 		}
-		slot, err := svc.RegenerateEcommerceSlot(c.Request.Context(), user.ID, c.Param("id"), body.EcommerceSlotPromptPatch, body.ConfirmCost)
+		slot, err := svc.RegenerateEcommerceSlot(c.Request.Context(), user.ID, c.Param("id"), body.EcommerceSlotPromptPatch, service.EcommerceSlotRegenerateOptions{
+			ChannelID: body.ChannelID,
+			Model:     body.Model,
+		}, body.ConfirmCost)
 		if err != nil {
 			failService(c, err)
 			return

@@ -233,9 +233,7 @@ func (s *Service) validateResolvedImageCapability(input *canvasGenerationInput) 
 		input.ImageCapability = fallback
 	}
 	// 与任务输入边界同一套补齐/失败关闭规则：旧线路没有换算表时先按声明补齐，补不齐再报错。
-	if input.ImageCapability.Parameters == nil {
-		fillMissingImageSizePresets(input.ImageCapability, input.Config.InterfaceType)
-	}
+	fillMissingImageSizePresets(input.ImageCapability, input.Config.InterfaceType)
 	if presetErr := imageSizePresetReadyError(input.ImageCapability, input.Config.InterfaceType); presetErr != nil {
 		return presetErr
 	}

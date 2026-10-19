@@ -2,7 +2,7 @@
 // + 预设（保存/应用/删除）+「保存并应用」。桌面版 1:1 全字段面板由 F7 细排。
 import { useEffect, useMemo } from "react";
 import { App, Button, InputNumber, Segmented, Select } from "antd";
-import { PanelRightClose, PanelRightOpen, Plus, Trash2 } from "lucide-react";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 
 import type { EcommerceConfig } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
@@ -26,7 +26,6 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
     const config = useEcommerceWorkspaceStore((state) => state.config);
     const presets = useEcommerceWorkspaceStore((state) => state.presets);
     const saving = useEcommerceWorkspaceStore((state) => state.saving);
-    const configDirty = useEcommerceWorkspaceStore((state) => state.configDirty);
     const refreshConfig = useEcommerceWorkspaceStore((state) => state.refreshConfig);
     const refreshPresets = useEcommerceWorkspaceStore((state) => state.refreshPresets);
     const saveConfig = useEcommerceWorkspaceStore((state) => state.saveConfig);
@@ -83,33 +82,9 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
                     <p className="text-sm text-foreground/55">正在读取配置…</p>
                 ) : (
                     <div className="flex flex-col gap-5 text-sm">
-                        {/* 预设 */}
-                        <section className="flex flex-col gap-2">
-                            <div className="flex items-center justify-between">
-                                <span className="font-medium opacity-75">创作预设</span>
-                                <Button size="small" type="text" onClick={() => void handleSavePreset()} icon={<Plus className="size-3.5" />}>
-                                    保存预设
-                                </Button>
-                            </div>
-                            {presets.length === 0 ? (
-                                <p className="text-xs text-foreground/50">暂无预设，调好配置后可保存复用</p>
-                            ) : (
-                                <ul className="flex flex-col gap-1">
-                                    {presets.map((preset) => (
-                                        <li key={preset.id} className="flex items-center justify-between gap-2 rounded border border-border/40 px-2 py-1">
-                                            <button
-                                                type="button"
-                                                className="min-w-0 flex-1 truncate text-left text-xs hover:text-primary"
-                                                onClick={() => void saveConfig(preset.config).then((ok) => ok && message.success(`已应用「${preset.name}」`))}
-                                            >
-                                                {preset.name}
-                                            </button>
-                                            <Button size="small" type="text" danger onClick={() => void removePreset(preset.id)} icon={<Trash2 className="size-3" />} aria-label={`删除预设 ${preset.name}`} />
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </section>
+                        {/* 阶段 5 返工：面向小白的「创作预设」列表已隐藏（预设属于高级能力，
+                            上位入口是「模型与高级设置」，不再占据默认视线的第一屏）。
+                            预设数据与保存/应用能力仍在（store 未改），需要时通过高级入口恢复。 */}
 
                         {/* 执行策略 */}
                         <section className="flex flex-col gap-3">
@@ -200,8 +175,8 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
             </div>
 
             <footer className="z-10 shrink-0 border-t border-border/60 bg-surface px-4 py-3">
-                {/* 显式保存：patch 已是即存即用，但这里给用户一个可确认的落库动作，
-                    并保证「改完立刻去点开始生成」时配置已经写到服务端。 */}
+                {/* 返工令 B：改动即存即用，不再提示「有改动未落库」吓唬用户；
+                    这里保留一个可确认的显式落库动作，保证「改完立刻去点开始生成」时配置已写到服务端。 */}
                 <Button
                     type="primary"
                     block
@@ -216,7 +191,7 @@ export function EcommerceConfigPanel({ collapsed, onToggle }: { collapsed: boole
                 </Button>
                 <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs leading-5 text-foreground/45">
-                        {configDirty ? "有改动未落库，点上方按钮保存" : "改动即存即用；已发请求按派发时参数收尾"}
+                        改动即存即用；已发请求按派发时参数收尾
                     </span>
                     <Button size="small" type="text" loading={saving} onClick={() => void refreshConfig().then(() => message.success("已读取最新配置"))}>
                         刷新

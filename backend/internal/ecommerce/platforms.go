@@ -248,30 +248,150 @@ func PlatformStyleSeed(spec PlatformSpec) string {
 	return spec.Name + "（" + spec.Tagline + "）：" + spec.Rules
 }
 
-// PlatformSlotBasePrompt 平台槽位的初始 generation_prompt 基底（阶段 5 预建缺省）。
+// PlatformSlotBasePrompt 平台槽位的初始 generation_prompt（阶段 5 预建缺省）。
 //
 // 目的：用户导入商品/切换平台后，点开卡片编辑或看分镜卡就有完整的初始方案，
 // 不再是空壳。AI 策划或人工编辑会覆盖它。
+//
+// 【返工铁律】这里只写**本屏专属的**产品视角、场景道具、光影色调与构图，
+// 通用防走形护栏（「保持主体结构、颜色、比例稳定…画面不生成文字…」）与
+// 文字排版指令**绝不**能进 generation_prompt —— 那是系统内部约束，
+// 只能在派发时由 buildEcommerceDispatchPrompt 作为后缀拼接。
 func PlatformSlotBasePrompt(plan SlotPlan, spec PlatformSpec) string {
 	dna := GeneralDNA()
 	dnaText := func(key string) string {
 		value, _ := dna[key].(string)
 		return value
 	}
+	title := firstNonEmptyString(plan.Title, "商品展示")
+	variant := firstNonEmptyString(plan.Variant, "产品展示")
+	aspect := firstNonEmptyString(plan.Aspect, spec.HeroRatio)
 	lines := []string{
-		"【平台】" + spec.Name + " · " + plan.Aspect + " · " + plan.Title,
-		"【本屏任务】" + plan.Title + "（" + plan.Variant + "）",
+		"【本屏主题】" + title + "（" + variant + "）· " + aspect,
 	}
 	if spec.WhiteBackgroundFirst && plan.SlotNo == 1 && plan.Kind == SlotKindHero {
-		lines = append(lines, "【硬性规范】首屏强制纯白底（RGB 255,255,255），商品主体居中占比 75%~85%，画面无促销文字")
+		lines = append(lines, "【背景规范】"+spec.Name+"首屏强制纯白背景（RGB 255,255,255），商品主体居中、占比约 75%~85%")
 	}
 	lines = append(lines,
-		"【视觉方向】"+firstNonEmptyString(dnaText("artDirection"), "干净现代的商业摄影，主体清晰、背景克制"),
-		"【光影】"+firstNonEmptyString(dnaText("lighting"), "柔和主光加轻微侧逆光勾勒轮廓，阴影干净"),
-		"【排版】"+firstNonEmptyString(dnaText("typography"), "现代无衬线，层级分明；纯图屏不排字"),
-		"【平台规范】"+spec.Rules,
+		"【场景与道具】"+slotSceneProps(plan),
+		"【视角与构图】"+slotComposition(plan),
+		"【光影与色调】"+firstNonEmptyString(dnaText("lighting"), "柔和主光加轻微侧逆光勾勒轮廓，阴影干净")+
+			"；"+firstNonEmptyString(dnaText("palette"), "以商品固有色为主色，搭配中性背景（白/浅灰/米白）"),
 	)
 	return strings.Join(lines, "\n")
+}
+
+// slotSceneProps 本屏专属的场景与道具描述（按场景类型区分，不写通用套话）。
+func slotSceneProps(plan SlotPlan) string {
+	switch firstNonEmptyString(plan.Variant, "") {
+	case "白底主图":
+		return "纯色无干扰背景，画面只留商品本体与随附配件，无任何布景杂物"
+	case "卖点主图":
+		return "商品本体关键局部与卖点示意道具同框，突出材质、结构与功能点"
+	case "场景使用":
+		return "真实使用环境中的生活场景，搭配该商品常见的周边物件与自然生活痕迹"
+	case "场景生活":
+		return "生活化场景一角，台面与常用物件自然陈列，营造可代入的日常氛围"
+	case "细节微距":
+		return "微距视角下的材质与工艺细节，纹理、缝线、镀层清晰可辨"
+	case "结构标注":
+		return "商品各部件平铺或分层展开，结构关系一目了然，便于叠加参数标注"
+	default:
+		return "干净的商品拍摄场景，主体与点缀道具层次分明"
+	}
+}
+
+// slotComposition 本屏专属的视角与构图描述（主图/详情页分别按屏位区分）。
+func slotComposition(plan SlotPlan) string {
+	if plan.Kind == SlotKindHero {
+		if plan.SlotNo == 1 {
+			return "正面微俯视视角，商品居中占据画面主体，四周留白均衡"
+		}
+		return "主体占据画面视觉重心，三分法或对角线构图，近景突出商品"
+	}
+	switch plan.SlotNo {
+	case 1:
+		return "中景竖构图，商品位于视觉中心偏上，下方预留信息区"
+	case 2:
+		return "微距特写构图，局部充满画面，背景自然虚化"
+	case 3:
+		return "平铺俯视构图，部件按逻辑顺序排列，标注区留白充足"
+	default:
+		return "中景竖构图，商品与随附内容同框，画面自上而下分层"
+	}
+}
+
+// SlotCopyDirective 生成派发时的**文字排版后缀**（主人返工令指定的唯一口径）。
+//
+//   - 有文案且文字模式不是 none → 要求画面为文案预留干净排版区；
+//   - 文案为空、或用户显式选择 pure 图（textMode=none）→ 纯图无文字。
+//
+// 这是内部指令，只拼接在真正发往生图模型的提示词里，不写进 generation_prompt。
+func SlotCopyDirective(copyText string, textMode string) string {
+	trimmed := strings.TrimSpace(copyText)
+	if strings.EqualFold(strings.TrimSpace(textMode), TextModeNone) || trimmed == "" {
+		return "画面纯图无文字，不生成任何文字或水印"
+	}
+	return "画面预留干净排版区，清晰呈现文案：「" + truncateRunesForPrompt(trimmed, 400) + "」"
+}
+
+// SlotDispatchGuardrail 系统内部防走形护栏（只用于派发后缀，绝不写进 generation_prompt）。
+func SlotDispatchGuardrail() string {
+	return "保持主体结构、颜色、比例、材质和可见细节稳定；辅助参考仅用于其对应的场景、姿态或风格，" +
+		"不得覆盖主体特征。采用清晰的主体层级、可信透视、自然光影与真实接触关系。" +
+		"画面不生成文字、价格、水印、虚构品牌或未提供的产品信息；输出干净、可用于商业创作的视觉画面。"
+}
+
+// SlotPromptContext 兜底提示词上下文（库里没有任何提示词时的最后一道保险）。
+type SlotPromptContext struct {
+	ProductName       string
+	SellingPoints     string
+	ExtraRequirements string
+	SlotTitle         string
+	SlotSceneType     string
+	SlotCopy          string
+	PlatformKey       string
+	Aspect            string
+	Kind              string
+	SlotNo            int
+}
+
+// ComposeSlotFallbackPrompt 组装兜底生图提示词（**永不为空**）。
+//
+// 阶段 5 返工：主人铁律「绝不允许出现 prompt:""」。当 nxf 不可用、上游模板缺失、
+// 库里也没有提示词时，用「平台模板 + 商品名称/卖点/附加要求 + 本屏标题/场景」
+// 组装出一份可直接生图的完整提示词，而不是把槽位判失败。
+//
+// 注意：本函数产出的是**展示/落库用**的纯净版（不含通用护栏与文字排版指令）；
+// 派发时由 buildEcommerceDispatchPrompt 再拼内部后缀。
+func ComposeSlotFallbackPrompt(ctx SlotPromptContext) string {
+	spec := PlatformSpecOrDefault(ctx.PlatformKey)
+	plan := SlotPlan{
+		Kind: ctx.Kind, SlotNo: ctx.SlotNo,
+		Title:   firstNonEmptyString(ctx.SlotTitle, "商品展示"),
+		Variant: firstNonEmptyString(ctx.SlotSceneType, "产品展示"),
+		Aspect:  firstNonEmptyString(ctx.Aspect, spec.HeroRatio),
+	}
+	lines := []string{PlatformSlotBasePrompt(plan, spec)}
+	if name := strings.TrimSpace(ctx.ProductName); name != "" {
+		lines = append(lines, "【商品】"+truncateRunesForPrompt(name, 200))
+	}
+	if points := strings.TrimSpace(ctx.SellingPoints); points != "" {
+		lines = append(lines, "【核心卖点】"+truncateRunesForPrompt(points, 600))
+	}
+	if extra := strings.TrimSpace(ctx.ExtraRequirements); extra != "" {
+		lines = append(lines, "【附加要求】"+truncateRunesForPrompt(extra, 400))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// truncateRunesForPrompt 按字符截断（不破坏多字节），用于兜底提示词的字段限长。
+func truncateRunesForPrompt(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }
 
 // PlatformPromptRules 注入 AI 策划 Prompt 的平台规范段（空 key 返回空串）。

@@ -264,9 +264,19 @@ export function saveEcommerceSlotPrompt(slotId: string, body: EcommerceSlotPromp
     return http.put<{ ok: boolean }>(`/ecommerce/slots/${encodeURIComponent(slotId)}/prompt`, body);
 }
 
-/** 保存并重新生成该屏（version+1；后端强制 confirmCost=true）。 */
-export function regenerateEcommerceSlot(slotId: string, body: EcommerceSlotPromptBody) {
-    return http.post<{ ok: boolean }>(`/ecommerce/slots/${encodeURIComponent(slotId)}/regenerate`, { ...body, confirmCost: true });
+/** 保存并重新生成该屏（version+1；后端强制 confirmCost=true）。
+ *  渠道/模型必须显式带上（与确认整组方案同一口径）：否则后端只能回退商品派发快照，
+ *  老商品没有快照时会直接报「请先选择生图模型与渠道」。 */
+export function regenerateEcommerceSlot(
+    slotId: string,
+    body: EcommerceSlotPromptBody,
+    options: { channelId: string; model: string },
+) {
+    return http.post<{ ok: boolean }>(`/ecommerce/slots/${encodeURIComponent(slotId)}/regenerate`, {
+        ...body,
+        ...options,
+        confirmCost: true,
+    });
 }
 
 /** 审核模式确认整组方案：review → running 并派发所有待生成槽位。 */

@@ -121,10 +121,36 @@ func (s *Service) UpdateEcommerceSlotPrompt(ctx context.Context, userID, slotID 
 	return s.repo.EcommerceSlotByID(slotID)
 }
 
+// EcommerceSlotRegenerateOptions 单屏重派发的渠道/模型口径。
+//
+// 前端「生成配置」当前所选的生图模型（与确认整组方案时同一口径）。历史商品没有
+// 派发快照时，只能靠调用方显式带；缺参即明确报错，不静默按默认模型出图。
+type EcommerceSlotRegenerateOptions struct {
+	ChannelID string `json:"channelId"`
+	Model     string `json:"model"`
+}
+
+// nextEcommerceSlotVersion 计算槽位下一个版本号：以 max(current_version, 版本表最大值) 为基线 +1。
+//
+// 为什么不能只用 current_version + 1：早期失败路径只写版本表、不推进 current_version，
+// 于是库里会出现「版本行 v1 已存在、current_version 仍为 0」的失败态；此时重派算出的
+// next=1 会撞唯一约束 (slot_id, version)，整条 regenerate 直接 500，用户看到的是
+// 「系统处理失败」。返工令要求「重新生成失败项」必须真能跑，这里必须同时认版本表。
+func (s *Service) nextEcommerceSlotVersion(slotID string, current int) int {
+	next := current + 1
+	max, err := s.repo.MaxEcommerceSlotVersion(slotID)
+	if err == nil && max+1 > next {
+		next = max + 1
+	}
+	return next
+}
+
 // RegenerateEcommerceSlot 保存单屏修改并重新生成（version+1，单卡独立派发）。
 //
 // 收费硬约束：confirmCost 必须为 true；余额不足返回 insufficient_credits。
-func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID string, patch EcommerceSlotPromptPatch, confirmCost bool) (*model.EcommerceSlot, error) {
+// 渠道/模型：优先用 options（前端当前所选）；为空时回退商品派发快照；
+// 两者都取不到即报错——不能带着空渠道去 CreateTask（那样会静默落到别的模型上）。
+func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID string, patch EcommerceSlotPromptPatch, options EcommerceSlotRegenerateOptions, confirmCost bool) (*model.EcommerceSlot, error) {
 	if !confirmCost {
 		return nil, NewAppError(http.StatusBadRequest, "重新生成该屏需确认计费（confirmCost=true）")
 	}
@@ -134,6 +160,20 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 	}
 	if slot.Status == ecommerce.SlotStatusRunning {
 		return nil, NewAppError(http.StatusConflict, "该屏正在生成中，请等当前请求收尾后再重试")
+	}
+	channelID := strings.TrimSpace(options.ChannelID)
+	modelName := strings.TrimSpace(options.Model)
+	if channelID == "" && modelName == "" {
+		// 调用方什么都没带：回退商品派发快照（老商品确认时写下的渠道/模型）。
+		if snapshot, ok := dispatchSnapshotFor(product); ok {
+			channelID = firstNonEmpty(channelID, snapshot.ChannelID)
+			modelName = firstNonEmpty(modelName, snapshot.Model)
+		}
+	}
+	// 只硬性要求模型：私有渠道的 channelId 由后端按 baseUrl 兜底解析（与确认整组
+	// 方案同口径），不能因为 channelId 为空就把私有渠道用户挡死。
+	if modelName == "" {
+		return nil, NewAppError(http.StatusBadRequest, "请先选择生图模型与渠道，再重新生成该屏")
 	}
 	saved, err := s.UpdateEcommerceSlotPrompt(ctx, userID, slotID, patch)
 	if err != nil {
@@ -154,7 +194,7 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 		return nil, NewAppError(http.StatusBadRequest, "S5 门禁拒绝："+gate.RejectReason)
 	}
 
-	versionNo := saved.CurrentVersion + 1
+	versionNo := s.nextEcommerceSlotVersion(slotID, saved.CurrentVersion)
 	version := model.EcommerceSlotVersion{
 		ID: kernel.NewID(), SlotID: slotID, Version: versionNo,
 		Prompt: gate.Filtered, Status: ecommerce.SlotStatusQueued, CreatedAt: time.Now(),
@@ -164,14 +204,17 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 		Type:      "canvas_image",
 		Operation: "image",
 		Prompt:    gate.Filtered,
+		Model:     modelName,
 		Input: map[string]any{
 			"mode":           "image",
 			"prompt":         gate.Filtered,
 			"negativePrompt": ecommerce.MergeNegative(ecommerce.SoloIslandNegative),
 			"config": map[string]any{
-				"size":    firstNonEmpty(saved.AspectRatio, "1:1"),
-				"quality": "auto",
-				"count":   "1",
+				"channelId": channelID,
+				"model":     modelName,
+				"size":      firstNonEmpty(saved.AspectRatio, "1:1"),
+				"quality":   "auto",
+				"count":     "1",
 			},
 			"referenceImages": []map[string]any{{
 				"storageKey":  "resource:" + product.SourceResourceID,
@@ -270,6 +313,7 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 	}
 	// 逐槽派发：仅对尚未派发过子任务的槽位（已有 ChildTaskID 的跳过，避免重复计费）。
 	dispatched, deferred := 0, 0
+	dispatchResults := make([]EcommerceSlotDispatch, 0, len(slots))
 	for index := range slots {
 		slot := slots[index]
 		if slot.Status == ecommerce.SlotStatusCompleted || slot.Status == ecommerce.SlotStatusFailed {
@@ -289,21 +333,28 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 		}
 		// 阶段 4 修复：渠道/模型/比例/质量必须随行传入——此前整组漏传，
 		// 即使提示词兜底成功，CreateTask 也会因空模型失败。
-		if _, dispatchErr := s.dispatchEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
+		dispatch, dispatchErr := s.dispatchEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
 			Existing: &slots[index], ProjectID: options.ProjectID,
 			ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
 			Count: options.Count,
-		}); dispatchErr != nil {
+		})
+		if dispatchErr != nil {
 			// 容量竞态（预检后、落库前被别的任务占了名额）：同样算顺延，不判失败。
 			if errors.Is(dispatchErr, errEcommerceQueueFull) {
 				deferred++
 				continue
 			}
 			_ = s.repo.UpdateEcommerceSlotStatus(slot.ID, ecommerce.SlotStatusFailed)
+			dispatch.Status = ecommerce.SlotStatusFailed
+			dispatch.Error = dispatchErr.Error()
+			dispatchResults = append(dispatchResults, dispatch)
 		} else {
 			dispatched++
+			dispatchResults = append(dispatchResults, dispatch)
 		}
 	}
+	// 阶段 5 返工：把下游真实失败原因写到商品级 error_message（人话，前端顶部直接展示）。
+	s.surfaceEcommerceDispatchError(userID, productID, dispatchResults)
 	// 终态一次算清：全部顺延（在途已满）时商品落 queued 而不是 running。
 	// ComputeProductStatus 会把「全 draft/pending」推导成 draft，那等于把用户
 	// 的确认悄悄撤销；queued 是「已确认、等容量」的诚实中间态，Sync 会继续补派。
@@ -315,10 +366,9 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 			finalStatus = ecommerce.ProductStatusQueued
 		}
 	}
-	// 用确认时的参数重写方案快照：Sync 顺延补派据此取渠道/模型，
-	// 断链即补派失败（空模型 CreateTask 必错）。保留原快照的降级说明。
+	// 用确认时的参数更新编排诊断（写 diag_json；plan_json 只存 AI 策划，绝不被覆盖）。
 	snapshot := ecommercePlanSnapshot{ChannelID: channelID, Model: modelName, Size: size, Quality: quality}
-	if existing := strings.TrimSpace(product.PlanJSON); existing != "" {
+	if existing := strings.TrimSpace(product.DiagJSON); existing != "" {
 		_ = json.Unmarshal([]byte(existing), &snapshot)
 		snapshot.ChannelID, snapshot.Model = channelID, modelName
 		snapshot.Size, snapshot.Quality = size, quality
@@ -334,8 +384,8 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 		}
 		snapshot.Slots = views
 	}
-	planJSON, _ := json.Marshal(snapshot)
-	if err := s.repo.UpdateEcommerceProductRun(userID, productID, finalStatus, product.TitleStatus, string(planJSON), 0); err != nil {
+	s.writeEcommerceDiag(userID, productID, snapshot)
+	if err := s.repo.UpdateEcommerceProductRun(userID, productID, finalStatus, product.TitleStatus, "", 0); err != nil {
 		return nil, err
 	}
 	if statusReason != "" {

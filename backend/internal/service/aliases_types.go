@@ -290,6 +290,7 @@ type (
 	EcommerceStartResult                   = app.EcommerceStartResult
 	EcommerceSlotDispatch                  = app.EcommerceSlotDispatch
 	EcommerceSlotPromptPatch               = app.EcommerceSlotPromptPatch
+	EcommerceSlotRegenerateOptions         = app.EcommerceSlotRegenerateOptions
 	EcommercePlanOptions                   = app.EcommercePlanOptions
 	EcommercePlanResult                    = app.EcommercePlanResult
 	ShotRevisionInput                      = app.ShotRevisionInput

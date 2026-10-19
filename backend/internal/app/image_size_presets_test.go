@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/protocol"
 )
 
 func TestImageSizePresetsValidationAndRoundTrip(t *testing.T) {
@@ -308,5 +309,100 @@ func TestValidateImageTaskAcceptsResolvedPresetPixelSize(t *testing.T) {
 	wrongTier.Config.Size = "2304x1728"
 	if err := validateImageTask(profile, wrongTier); err == nil || !strings.Contains(err.Error(), "图片尺寸") {
 		t.Fatalf("other-tier pixel size should stay rejected, got %v", err)
+	}
+}
+
+// TestLegacyRatioOnlyPixelLineSelfHealsPresetTable 回归 yingce-image-2.5 现场故障
+// （2026-10「确认后 7 屏全 failed」）：手工配的旧式线路
+// （parameter=size + 比例取值 + 关闭 quality）在运行期会被投影成图片参数合同
+// （Parameters != nil），而补齐换算表的调用当时被 `if Parameters == nil` 挡住
+// → 必然在 imageSizePresetReadyError 处失败关闭，报「当前线路缺少像素尺寸换算表」。
+//
+// 本用例走真实读取路径（NormalizeModelCapabilityConfigForModel + 真实协议注册表），
+// 断言旧式线路在读边界即自愈出**内置标准兜底换算表**（主人指定：缺表时严禁报错阻断），
+// 且比例能换算成可出网的像素尺寸。
+func TestLegacyRatioOnlyPixelLineSelfHealsPresetTable(t *testing.T) {
+	s, _, _, _ := creationTestService(t)
+	protocolName := string(model.ChannelInterfaceOpenAIImage)
+	legacy := &ModelCapabilityConfig{Version: 1, Image: &ImageCapabilityConfig{
+		References: ImageReferenceConfig{PromptMaxChars: 4000, MaxImages: 10, MaxImageBytes: 30 * 1024 * 1024},
+		Size: ImageSizeConfig{
+			Parameter:   "size",
+			Values:      []string{"1:1", "16:9", "9:16", "4:3", "3:4", "2K", "4K"},
+			Default:     "1:1",
+			AllowCustom: true,
+		},
+		Quality:    ImageQualityConfig{Supported: false, Values: []string{}, Default: "auto"},
+		MaxOutputs: 4,
+	}}
+	normalized, err := NormalizeModelCapabilityConfigForModel("image", protocolName, "yingce-image-2.5", legacy, s.protocolRegistry())
+	if err != nil {
+		t.Fatalf("归一化旧式线路失败: %v", err)
+	}
+	profile := normalized.Image
+	if err := imageSizePresetReadyError(profile, protocolName); err != nil {
+		t.Fatalf("旧式线路读边界应自愈出换算表，仍失败关闭：%v", err)
+	}
+	if len(profile.Size.Presets) == 0 {
+		t.Fatal("旧式线路应补出像素换算表")
+	}
+	// 标准兜底表落在 1K 基准；无档位选择器（quality / resolution 都未开）时必须钉住，
+	// 否则 singleImageSizeTier 判定不出唯一致命档位 → 换算被静默跳过。
+	if profile.Size.DefaultTier != "1k" {
+		t.Fatalf("默认档位应为 1k，实际 %q", profile.Size.DefaultTier)
+	}
+	// 比例 → 像素：3:4 按主人指定的标准兜底表应换算成 768x1024。
+	config := providerConfig{InterfaceType: protocolName, Model: "yingce-image-2.5", Size: "3:4", Count: "1"}
+	if err := applyImageParameterValues(&config, profile); err != nil {
+		t.Fatalf("应用参数失败: %v", err)
+	}
+	if config.Size != "768x1024" {
+		t.Fatalf("3:4 应换算成标准兜底像素 768x1024，实际 %q", config.Size)
+	}
+}
+
+// TestStandardImageSizeFallbackTableMatchesInstruction 锁定主人指定的标准兜底换算表：
+// 1:1→1024x1024、3:4→768x1024、4:3→1024x768、9:16→720x1280、16:9→1280x720、
+// 2:3→832x1216、3:2→1216x832、21:9→1344x576。任何一项被改动都必须让本用例失败。
+func TestStandardImageSizeFallbackTableMatchesInstruction(t *testing.T) {
+	want := map[string]string{
+		"1:1": "1024x1024", "3:4": "768x1024", "4:3": "1024x768", "9:16": "720x1280",
+		"16:9": "1280x720", "2:3": "832x1216", "3:2": "1216x832", "21:9": "1344x576",
+	}
+	if len(standardImageSizeFallbackTable) != len(want) {
+		t.Fatalf("标准兜底表应有 %d 项，实际 %d", len(want), len(standardImageSizeFallbackTable))
+	}
+	for ratio, size := range want {
+		preset, ok := standardImageSizeFallbackPreset(ratio)
+		if !ok {
+			t.Fatalf("标准表缺少比例 %s", ratio)
+		}
+		if preset.Size != size || preset.Tier != "1k" {
+			t.Fatalf("%s 应为 %s（1k），实际 %s（%s）", ratio, size, preset.Size, preset.Tier)
+		}
+	}
+	// 线路一个比例都没声明时，也要覆盖标准表全部比例（保证有表可用、不阻断生图）。
+	if got := len(standardImageSizePresetsForRatios(standardImageSizeFallbackRatios())); got != len(want) {
+		t.Fatalf("全量比例应生成 %d 条预设，实际 %d", len(want), got)
+	}
+}
+
+// TestRatioOnlyPixelLineWithNonStandardRatioStaysFailedClosed 反向保护：
+// 线路只声明了标准兜底表与非标表都覆盖不到的比例（7:5）时，自愈补不出换算表，
+// 必须继续失败关闭——不能因为「兜底」而静默按某个尺寸出图。
+func TestRatioOnlyPixelLineWithNonStandardRatioStaysFailedClosed(t *testing.T) {
+	enabled := true
+	profile := &ImageCapabilityConfig{
+		Size:    ImageSizeConfig{Parameter: "size", Values: []string{"7:5"}, Default: "7:5", AllowCustom: true},
+		Quality: ImageQualityConfig{Supported: false, Values: []string{}, Default: "auto"},
+		Parameters: []protocol.ImageParameter{
+			{Name: "size", Label: "Size", Type: "string", Binding: "aspectRatio", Encoding: "pixels", Enabled: &enabled},
+		},
+	}
+	if fillMissingImageSizePresets(profile, string(model.ChannelInterfaceOpenAIImage)) {
+		t.Fatal("非标比例不应被补出换算表")
+	}
+	if err := imageSizePresetReadyError(profile, string(model.ChannelInterfaceOpenAIImage)); err == nil {
+		t.Fatal("标准表也覆盖不到的比例应继续失败关闭")
 	}
 }

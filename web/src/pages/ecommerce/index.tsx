@@ -1,10 +1,14 @@
 // 电商工坊 · 三栏骨架（B4 可操作版）：任务列表 | 任务详情 | 生成配置。
 // 交互主线：导入 → 列表筛选/搜索/批量删除 → 点卡看详情 → 右侧调配置即存即用。
+//
+// 阶段 5 返工：右侧「模型与高级设置」默认折叠（小白第一步只需要「平台 + 卖点 + 确认生图」），
+// 折叠态只在右上角留一个带当前模型名的入口按钮，把屏幕高度让给分镜卡。
 import { useEffect, useState } from "react";
 import { App } from "antd";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
+import { modelOptionName, useConfigStore } from "@/stores/use-config-store";
 import { EcommerceConfigPanel } from "./config-panel";
 import { EcommerceTaskDetail } from "./task-detail";
 import { EcommerceTaskList } from "./task-list";
@@ -12,10 +16,11 @@ import { EcommerceTaskList } from "./task-list";
 export default function EcommercePage() {
     const { message } = App.useApp();
     const [activeId, setActiveId] = useState<string | null>(null);
-    const [configCollapsed, setConfigCollapsed] = useState(false);
+    const [configCollapsed, setConfigCollapsed] = useState(true);
     const refreshProducts = useEcommerceWorkspaceStore((state) => state.refreshProducts);
     const openProduct = useEcommerceWorkspaceStore((state) => state.openProduct);
     const error = useEcommerceWorkspaceStore((state) => state.error);
+    const aiConfig = useConfigStore((state) => state.config);
 
     useEffect(() => {
         void refreshProducts();
@@ -32,19 +37,30 @@ export default function EcommercePage() {
         void openProduct(id);
     };
 
+    // 折叠态入口上的「当前模型」摘要（文案/生图各自取真实选用模型名）。
+    const textModelName = modelOptionName(aiConfig?.textModel || "") || "未选";
+    const imageModelName = modelOptionName(aiConfig?.imageModel || "") || "未选";
+
     return (
         <WorkspacePage>
             <div className="relative flex h-[calc(100vh-104px)] overflow-hidden rounded-lg border border-border/50">
                 <EcommerceTaskList activeId={activeId} onOpen={handleOpen} />
-                <EcommerceTaskDetail productId={activeId} onBack={() => setActiveId(null)} />
+                <EcommerceTaskDetail
+                    productId={activeId}
+                    onBack={() => setActiveId(null)}
+                    onOpenConfig={() => setConfigCollapsed(false)}
+                />
                 {!configCollapsed ? <EcommerceConfigPanel collapsed={configCollapsed} onToggle={() => setConfigCollapsed(true)} /> : null}
-                {configCollapsed ? (
+                {/* 返工令 B：任务详情 Header 第二行已内置「⚙️ 模型与尺寸设置」入口，
+                    这里只在「还没选中商品」时才留一个悬浮入口（避免与详情顶部按钮重叠）。 */}
+                {configCollapsed && !activeId ? (
                     <button
                         type="button"
-                        className="absolute right-4 top-3 z-10 rounded-md border border-border/50 bg-surface px-3 py-1.5 text-xs text-foreground/70 shadow-sm hover:text-foreground"
+                        className="absolute right-4 top-3 z-10 max-w-[calc(100%-2rem)] truncate rounded-md border border-border/50 bg-surface px-3 py-1.5 text-xs text-foreground/70 shadow-sm hover:text-foreground"
                         onClick={() => setConfigCollapsed(false)}
+                        title="展开模型与高级设置"
                     >
-                        生成配置
+                        ⚙️ 模型与高级设置（当前：{textModelName} / {imageModelName}）
                     </button>
                 ) : null}
             </div>

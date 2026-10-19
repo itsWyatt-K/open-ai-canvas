@@ -153,6 +153,24 @@ func (r *Repository) ListEcommerceSlotVersions(slotID string) ([]model.Ecommerce
 	return versions, nil
 }
 
+// MaxEcommerceSlotVersion 取槽位已有版本的最大号（没有任何版本时返回 0）。
+//
+// 用途：与 slot.current_version 并列作为「下一个版本号」的基线。历史数据里存在
+// 「版本行已写入、但 current_version 未推进」的失败态（早期失败路径只写版本表），
+// 只用 current_version + 1 会撞唯一约束 (slot_id, version)，重派直接 500。
+func (r *Repository) MaxEcommerceSlotVersion(slotID string) (int, error) {
+	var maxVersion *int64
+	if err := r.db.Model(&model.EcommerceSlotVersion{}).
+		Where("slot_id = ?", slotID).
+		Select("MAX(version)").Scan(&maxVersion).Error; err != nil {
+		return 0, err
+	}
+	if maxVersion == nil {
+		return 0, nil
+	}
+	return int(*maxVersion), nil
+}
+
 // ---------------------------------------------------------------- 编排器写路径
 //
 // 纪律：编排器是写路径，所有更新都带主键或归属条件；批量插入走事务，
@@ -320,6 +338,25 @@ func (r *Repository) UpdateEcommerceProductRun(userID, productID, status, titleS
 	}
 	return r.db.Model(&model.EcommerceProduct{}).Where("user_id = ? AND id = ?", userID, productID).
 		Updates(updates).Error
+}
+
+// UpdateEcommerceProductDiag 写编排诊断快照（diag_json）。
+//
+// 阶段 5 返工铁律：plan_json 只存 AI 策划 JSON；M2 编排器的执行摘要
+// （presetKey/degraded/派发明细）一律落 diag_json，绝不污染「查看原始响应」。
+func (r *Repository) UpdateEcommerceProductDiag(userID, productID, diagJSON string) error {
+	return r.db.Model(&model.EcommerceProduct{}).Where("user_id = ? AND id = ?", userID, productID).
+		Updates(map[string]any{"diag_json": diagJSON, "updated_at": time.Now()}).Error
+}
+
+// UpdateEcommerceProductError 写/清商品级可读错误（前端顶部提示条直接展示）。
+func (r *Repository) UpdateEcommerceProductError(userID, productID, message string) error {
+	trimmed := strings.TrimSpace(message)
+	if len([]rune(trimmed)) > 1000 {
+		trimmed = string([]rune(trimmed)[:1000])
+	}
+	return r.db.Model(&model.EcommerceProduct{}).Where("user_id = ? AND id = ?", userID, productID).
+		Updates(map[string]any{"error_message": trimmed, "updated_at": time.Now()}).Error
 }
 
 // UpdateEcommerceProductStatus 只更新商品状态与原因（对账回写用）。

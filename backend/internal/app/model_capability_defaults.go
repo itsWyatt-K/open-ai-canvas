@@ -141,6 +141,91 @@ func openAIImageDefaultSizePresets() []ImageSizePreset {
 	return presets
 }
 
+// standardImageSizeFallbackTier 是标准兜底换算表所在的档位。
+// 主人指定的兜底像素（1024x1024 / 768x1024 …）全部落在 1K 基准，故钉为 1k，
+// 让 singleImageSizeTier 能判定出唯一致命档位（否则换算会被静默跳过）。
+const standardImageSizeFallbackTier = "1k"
+
+// standardImageSizeFallbackTable 是内置「比例 → 像素」标准兜底换算表（主人 2026-10 指定）。
+//
+// 用途：当模型/渠道**没有配置专属像素换算表**时，不得直接报错阻断生图，
+// 必须用本表把用户选的比例自动换算成可出网的像素尺寸。
+//
+// 取值与主人指令逐项一致：1:1→1024x1024、3:4→768x1024、4:3→1024x768、
+// 9:16→720x1280、16:9→1280x720、2:3→832x1216、3:2→1216x832、21:9→1344x576。
+var standardImageSizeFallbackTable = []struct {
+	ratio string
+	size  string
+}{
+	{"1:1", "1024x1024"},
+	{"3:4", "768x1024"},
+	{"4:3", "1024x768"},
+	{"9:16", "720x1280"},
+	{"16:9", "1280x720"},
+	{"2:3", "832x1216"},
+	{"3:2", "1216x832"},
+	{"21:9", "1344x576"},
+}
+
+// standardImageSizeFallbackRatios 返回标准兜底表覆盖的全部比例（稳定顺序）。
+func standardImageSizeFallbackRatios() []string {
+	ratios := make([]string, 0, len(standardImageSizeFallbackTable))
+	for _, entry := range standardImageSizeFallbackTable {
+		ratios = append(ratios, entry.ratio)
+	}
+	return ratios
+}
+
+// standardImageSizeFallbackPreset 按比例从标准兜底表取像素预设。
+// 匹配按归一化比例（21:9 会被约分成 7:3），但返回的 preset.Ratio 保留表内原始写法，
+// 保证它在 Size.Values 里能被逐字匹配到（保存路径的预设校验要求如此）。
+// 第二参数 ok 为 false 表示该比例不在标准表内（调用方再走 openAIImageDefaultSizeTable 的 1K 列）。
+func standardImageSizeFallbackPreset(ratio string) (ImageSizePreset, bool) {
+	normalized := normalizeDeclaredImageRatio(ratio)
+	if normalized == "" {
+		return ImageSizePreset{}, false
+	}
+	for _, entry := range standardImageSizeFallbackTable {
+		if normalizeDeclaredImageRatio(entry.ratio) != normalized {
+			continue
+		}
+		widthText, heightText, found := strings.Cut(entry.size, "x")
+		width, widthErr := strconv.Atoi(widthText)
+		height, heightErr := strconv.Atoi(heightText)
+		if !found || widthErr != nil || heightErr != nil {
+			return ImageSizePreset{}, false
+		}
+		return ImageSizePreset{
+			Tier: standardImageSizeFallbackTier, Ratio: entry.ratio,
+			Size: entry.size, Width: width, Height: height,
+		}, true
+	}
+	return ImageSizePreset{}, false
+}
+
+// standardImageSizePresetsForRatios 按比例列表生成标准兜底预设：
+// 先查主人指定的标准表；表里没有的比例（如 4:5 / 5:4）退到 openAIImageDefaultSizeTable 的 1K 列，
+// 保证「未配置专属表」的线路也能覆盖到全部已声明比例，不因缺表阻断生图。
+func standardImageSizePresetsForRatios(ratios []string) []ImageSizePreset {
+	presets := make([]ImageSizePreset, 0, len(ratios))
+	seen := make(map[string]bool, len(ratios))
+	for _, ratio := range ratios {
+		normalized := normalizeDeclaredImageRatio(ratio)
+		if normalized == "" || seen[normalized] {
+			continue
+		}
+		seen[normalized] = true
+		if preset, ok := standardImageSizeFallbackPreset(normalized); ok {
+			presets = append(presets, preset)
+			continue
+		}
+		if preset, ok := openAIImageDefaultPixelSize(normalized, standardImageSizeFallbackTier); ok {
+			presets = append(presets, preset)
+		}
+	}
+	return presets
+}
+
 // legacyImageSizeValues 用于修复旧数据中仅保存了 "*" 的图片尺寸能力。
 // 这组值是前后台共同展示的基础预设，不能让历史通配符配置继续污染用户生成参数。
 func legacyImageSizeValues() []string {
