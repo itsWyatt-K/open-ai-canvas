@@ -116,12 +116,13 @@ func TestPlatformSlotBasePromptIsSceneOnly(t *testing.T) {
 	if !strings.Contains(first, "纯白背景") {
 		t.Fatalf("京东首屏基底应含白底背景规范：%s", first)
 	}
-	// 通用护栏与文字排版指令属于派发后缀，绝不能出现在落库基底里。
+	// 通用护栏与文字排版指令属于派发合同，绝不能出现在落库基底里。
 	for _, forbidden := range []string{
 		"保持主体结构、颜色、比例、材质和可见细节稳定",
 		"画面不生成文字",
-		"画面预留干净排版区",
-		"画面纯图无文字",
+		"不要添加任何排版文字",
+		"带中文商业海报排版",
+		"【画面文字与海报排版硬性要求】",
 	} {
 		if strings.Contains(first, forbidden) {
 			t.Fatalf("基底严禁包含系统套话 %q：%s", forbidden, first)

@@ -80,62 +80,6 @@ func TestSoloIslandDNAContract(t *testing.T) {
 	}
 }
 
-// upstreamImageTemplate 复刻 backend/internal/workbench 的 builtinPromptVariants
-// 图像模板拼接结果（standard 变体），用于验证铁律段提取。
-func upstreamImageTemplate() string {
-	anchor := "以参考图1为主体外观与身份的唯一依据，"
-	focus := "把商品置于纯白无缝背景中央，完整呈现轮廓、真实颜色、材质和包装细节，使用柔和棚拍光与克制自然投影"
-	return anchor + focus + "。保持主体结构、颜色、比例、材质和可见细节稳定；辅助参考仅用于其对应的场景、姿态或风格，" +
-		"不得覆盖主体特征。采用清晰的主体层级、可信透视、自然光影与真实接触关系。" +
-		"画面不生成文字、价格、水印、虚构品牌或未提供的产品信息；输出干净、可用于商业创作的视觉画面。"
-}
-
-func TestUpstreamRuleSegmentExtractsIronRule(t *testing.T) {
-	rule := UpstreamRuleSegment(upstreamImageTemplate())
-	if !strings.HasPrefix(rule, "保持主体结构、颜色、比例、材质和可见细节稳定") {
-		t.Fatalf("铁律段起始不符：%q", rule)
-	}
-	if !strings.HasSuffix(rule, "输出干净、可用于商业创作的视觉画面。") {
-		t.Fatalf("铁律段结尾不符：%q", rule)
-	}
-	if strings.Contains(rule, "以参考图1为") {
-		t.Fatal("铁律段不应包含锚定段")
-	}
-}
-
-func TestUpstreamRuleSegmentOnForeignTemplate(t *testing.T) {
-	if got := UpstreamRuleSegment("这是一段普通提示词，没有铁律段。"); got != "" {
-		t.Fatalf("非上游模板应返回空串，得到 %q", got)
-	}
-	if got := UpstreamRuleSegment("   "); got != "" {
-		t.Fatalf("空白模板应返回空串，得到 %q", got)
-	}
-}
-
-func TestFusePromptWithUpstreamRule(t *testing.T) {
-	template := upstreamImageTemplate()
-	local := "【公共锚点卡】产品：潮汐，鼠尾草绿哑光硅胶；本张任务（细节微距）：微距特写。"
-	fused := FusePromptWithUpstreamRule(local, template)
-	if !strings.HasPrefix(fused, local) {
-		t.Fatal("融合后本地提示词应保持在前")
-	}
-	if !strings.Contains(fused, "保持主体结构、颜色、比例、材质和可见细节稳定") {
-		t.Fatal("融合后应含上游铁律段")
-	}
-	// 幂等：重复融合不叠加。
-	if again := FusePromptWithUpstreamRule(fused, template); again != fused {
-		t.Fatal("重复融合应幂等")
-	}
-	// 空铁律段 → 原样返回。
-	if got := FusePromptWithUpstreamRule(local, ""); got != local {
-		t.Fatalf("上游模板为空时应原样返回，得到 %q", got)
-	}
-	// 本地为空 → 只返回铁律段。
-	if got := FusePromptWithUpstreamRule("", template); !strings.HasPrefix(got, "保持主体结构") {
-		t.Fatalf("本地为空时应返回铁律段，得到 %q", got)
-	}
-}
-
 func TestMergeNegativeDedupesAndKeepsOrder(t *testing.T) {
 	merged := MergeNegative("文字、水印、变形的产品", SoloIslandNegative, "水印、低质量")
 	parts := strings.Split(merged, "、")

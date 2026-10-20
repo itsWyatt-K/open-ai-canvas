@@ -1,0 +1,4 @@
+[test]
+# 一键详情 / 一键复刻的 UI 与执行测试需要 DOM 环境；preload 受 HAPPY_DOM=1 门控，
+# 不设置时是完全空转，不影响宿主其它测试文件。
+preload = ["./test/happy-dom-preload.ts"]

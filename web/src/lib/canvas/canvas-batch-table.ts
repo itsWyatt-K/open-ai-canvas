@@ -142,6 +142,30 @@ export function batchRowReady(row: CanvasBatchRow, table: CanvasBatchTableData, 
     });
 }
 
+/**
+ * 某屏当前是否还在生成队列里（commerce 用）。
+ *
+ * 判据：该来源节点的批次未终态且对应项处于 waiting/submitting/queued/running，
+ * 或该行结果卡自身仍在 loading。用于「本屏已在生成队列中，请勿重复提交」的拦截，
+ * 以及看板上「生成中」态的点亮。
+ */
+export function batchRunningRowIds(node: CanvasNodeData, nodes: CanvasNodeData[]): Set<string> {
+    const running = new Set<string>();
+    const byId = new Map(nodes.map((item) => [item.id, item]));
+    for (const batch of node.metadata?.generationBatches || []) {
+        if (batch.status === "completed" || batch.status === "cancelled") continue;
+        for (const item of batch.items) {
+            if (["waiting", "submitting", "queued", "running"].includes(item.status)) running.add(item.rowId);
+            if (byId.get(item.nodeId)?.metadata?.status === "loading") running.add(item.rowId);
+        }
+    }
+    // 单屏生成（不经批次）也点亮：结果卡自己在 loading 就算在跑。
+    for (const row of node.metadata?.batchTable?.rows || []) {
+        if (row.outputNodeId && byId.get(row.outputNodeId)?.metadata?.status === "loading") running.add(row.id);
+    }
+    return running;
+}
+
 export function batchGenerationRows(source: CanvasNodeData, nodes: CanvasNodeData[], requestedRowIds?: string[]) {
     const table = source.metadata?.batchTable;
     if (!table) return [];

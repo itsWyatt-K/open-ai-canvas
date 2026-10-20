@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -245,6 +247,107 @@ var fingerprintDifferentiators = []string{
 	"切换为拆解视角，展示内部结构或组件关系",
 }
 
+// flattenPlanText 把模型返回的「数组 / 对象 / 标量」压平成字符串。
+//
+// 现场：gemini-3.8-flash-high 会把 styleAnalysis 的某个子字段返回成字符串数组，
+// 严格按 string 解会让**整个策划编译失败**（用户看到「策划结构不完整」）。
+// 容错哲学是「能编译成功就绝不中断用户流程」，所以这里先压平再进严格解码。
+func flattenPlanText(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := flattenPlanText(item); ok && strings.TrimSpace(text) != "" {
+				parts = append(parts, strings.TrimSpace(text))
+			}
+		}
+		return strings.Join(parts, "；"), true
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			if text, ok := flattenPlanText(typed[key]); ok && strings.TrimSpace(text) != "" {
+				parts = append(parts, key+"："+strings.TrimSpace(text))
+			}
+		}
+		return strings.Join(parts, "；"), true
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64), true
+	case bool:
+		return strconv.FormatBool(typed), true
+	default:
+		return "", false
+	}
+}
+
+// normalizePlanBlocks 容错整形：把分析块与单屏字段压平成编译期期望的形状。
+//
+//   - styleAnalysis / visualSystem 整体是数组 → 包成 { summary: … }，
+//     子字段留空后由 defaultStyleAnalysis / 视觉系统兜底补齐；
+//   - 分析块或 visualPlan 的子字段是数组/对象 → 压平成字符串；
+//   - 单屏的 title/copy/sceneType/sellingPoints 同理（只压平，不改变已有字符串）。
+func normalizePlanBlocks(document any) any {
+	root, ok := document.(map[string]any)
+	if !ok {
+		return document
+	}
+	wrapBlock := func(key string) {
+		switch block := root[key].(type) {
+		case []any:
+			if text, ok := flattenPlanText(block); ok {
+				root[key] = map[string]any{"summary": text}
+			}
+		case map[string]any:
+			for field, raw := range block {
+				if _, isString := raw.(string); isString {
+					continue
+				}
+				if text, ok := flattenPlanText(raw); ok {
+					block[field] = text
+				}
+			}
+		}
+	}
+	wrapBlock("styleAnalysis")
+	wrapBlock("visualSystem")
+	screens, _ := root["screens"].([]any)
+	for _, item := range screens {
+		screen, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, field := range []string{"title", "copy", "sceneType", "sellingPoints"} {
+			raw, exists := screen[field]
+			if !exists {
+				continue
+			}
+			if _, isString := raw.(string); isString {
+				continue
+			}
+			if text, ok := flattenPlanText(raw); ok {
+				screen[field] = text
+			}
+		}
+		if visual, ok := screen["visualPlan"].(map[string]any); ok {
+			for field, raw := range visual {
+				if _, isString := raw.(string); isString {
+					continue
+				}
+				if text, ok := flattenPlanText(raw); ok {
+					visual[field] = text
+				}
+			}
+		}
+	}
+	return root
+}
+
 // CompileDetailPlanWithFallback 容错编译：能编译成功就绝不中断用户流程。
 //
 // 与旧版的差异（阶段 5）：
@@ -263,6 +366,7 @@ func CompileDetailPlanWithFallback(raw string, wantCount int, fallback PlanFallb
 		return nil, planErrorf("模型返回不是合法 JSON：%v", err)
 	}
 	document = normalizePlanKeys(document)
+	document = normalizePlanBlocks(document)
 	reencoded, err := json.Marshal(document)
 	if err != nil {
 		return nil, planErrorf("模型返回结构无法解析：%v", err)

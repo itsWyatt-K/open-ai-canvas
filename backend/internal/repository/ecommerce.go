@@ -82,6 +82,37 @@ func (r *Repository) GetEcommerceProduct(userID, productID string) (*model.Ecomm
 	return &product, nil
 }
 
+// EcommerceProductByID 按主键取商品（无归属条件）。
+//
+// 仅用于系统级数据自检/清洗（启动自愈），调用方不是用户请求路径，不能拿它绕过归属校验。
+func (r *Repository) EcommerceProductByID(productID string) (*model.EcommerceProduct, error) {
+	var product model.EcommerceProduct
+	if err := r.db.Where("id = ?", productID).First(&product).Error; err != nil {
+		return nil, err
+	}
+	return &product, nil
+}
+
+// LegacyDirtyEcommerceSlots 找出 generation_prompt **同时包含全部标记**的槽位。
+//
+// 用于启动自检清洗历史脏提示词（旧 M2 模板把「保持主体结构…」+「画面不生成文字」
+// 写进了 generation_prompt，导致整组出图无字且构图雷同）。多标记同时命中才判脏，
+// 避免误伤只提到其中一句的正常人工描述。
+func (r *Repository) LegacyDirtyEcommerceSlots(markers []string) ([]model.EcommerceSlot, error) {
+	if len(markers) == 0 {
+		return nil, nil
+	}
+	query := r.db.Model(&model.EcommerceSlot{})
+	for _, marker := range markers {
+		query = query.Where("generation_prompt LIKE ?", "%"+marker+"%")
+	}
+	var slots []model.EcommerceSlot
+	if err := query.Find(&slots).Error; err != nil {
+		return nil, err
+	}
+	return slots, nil
+}
+
 // FindEcommerceProductBySource 同源查重（同一用户同一原图只建一个任务）。
 func (r *Repository) FindEcommerceProductBySource(userID, resourceID string) (*model.EcommerceProduct, error) {
 	var product model.EcommerceProduct

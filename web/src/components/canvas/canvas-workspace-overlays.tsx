@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { Clapperboard, Image as ImageIcon, List, Music2, Pencil, Table2, Video, WandSparkles, Workflow as WorkflowIcon } from "lucide-react";
+import { Clapperboard, Image as ImageIcon, List, ListChecks, Music2, Pencil, Table2, Video, WandSparkles, Workflow as WorkflowIcon } from "lucide-react";
 
 import { useCanvasOverlayLayer } from "@/components/canvas/canvas-overlay-layer";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -199,11 +199,11 @@ export function CanvasConnectionCreateMenu({
     containerRef: RefObject<HTMLDivElement | null>;
     canCreateDrawing: boolean;
     getDisabledReason: (
-        type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Script | CanvasNodeType.BatchTable | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.Drawing | CanvasNodeType.Config | CanvasNodeType.MediaConversion,
+        type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Script | CanvasNodeType.BatchTable | CanvasNodeType.ProductDetail | CanvasNodeType.ProductReplica | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.Drawing | CanvasNodeType.Config | CanvasNodeType.MediaConversion,
         provider?: "runninghub",
     ) => string;
     onCreate: (
-        type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Script | CanvasNodeType.BatchTable | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.Drawing | CanvasNodeType.Config | CanvasNodeType.MediaConversion,
+        type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Script | CanvasNodeType.BatchTable | CanvasNodeType.ProductDetail | CanvasNodeType.ProductReplica | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.Drawing | CanvasNodeType.Config | CanvasNodeType.MediaConversion,
         provider?: "runninghub",
     ) => void;
     onClose: () => void;
@@ -304,6 +304,24 @@ export function CanvasConnectionCreateMenu({
                     description="汇总多张图片，批量执行换装或创意生图"
                     disabledReason={getDisabledReason(CanvasNodeType.BatchTable)}
                     onClick={() => onCreate(CanvasNodeType.BatchTable)}
+                />
+                <ConnectionCreateOption
+                    expanded={activeOption === "一键详情"}
+                    motionEnabled={!reducedMotion}
+                    icon={<ListChecks className="size-4" />}
+                    title="一键详情"
+                    description="产品策划、逐屏出图与长图合并"
+                    disabledReason={getDisabledReason(CanvasNodeType.ProductDetail)}
+                    onClick={() => onCreate(CanvasNodeType.ProductDetail)}
+                />
+                <ConnectionCreateOption
+                    expanded={activeOption === "一键复刻"}
+                    motionEnabled={!reducedMotion}
+                    icon={<WandSparkles className="size-4" />}
+                    title="一键复刻"
+                    description="产品替换、模板文字识别与逐图复刻"
+                    disabledReason={getDisabledReason(CanvasNodeType.ProductReplica)}
+                    onClick={() => onCreate(CanvasNodeType.ProductReplica)}
                 />
                 <ConnectionCreateOption
                     expanded={activeOption === "图片生成"}

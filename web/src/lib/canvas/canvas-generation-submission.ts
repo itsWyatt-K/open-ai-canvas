@@ -11,6 +11,8 @@ export type CanvasGenerationRequestFingerprintInput = {
     mode: CanvasNodeGenerationMode;
     prompt: string;
     model: string;
+    /** 系统提示词也参与指纹：改了系统约束就不能复用未确认请求。 */
+    systemPrompt?: string;
     options: Record<string, unknown>;
     workflow?: {
         provider?: string;
@@ -53,6 +55,7 @@ export function canvasGenerationRequestFingerprint(input: CanvasGenerationReques
         mode: input.mode,
         prompt: input.prompt.trim(),
         model: input.model,
+        systemPrompt: input.systemPrompt,
         options: input.options,
         workflow: input.workflow,
         operation: input.operation,

@@ -33,7 +33,6 @@ import (
 	"yingce/backend/internal/ecommerce"
 	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
-	"yingce/backend/internal/workbench"
 )
 
 // ecommerceDefaultNXFBase 是酿笑坊视觉 DNA 引擎的默认地址。
@@ -60,6 +59,10 @@ type EcommerceStartOptions struct {
 	// 启动时同步落库（导入接口只带名称，卖点需在编排前补齐）。
 	SellingPoints     string `json:"sellingPoints"`
 	ExtraRequirements string `json:"extraRequirements"`
+	// PlannerChannelID / PlannerModel 策划（视觉文本）模型口径：与生图模型分开传。
+	// 不传时回落到用户配置的 plannerModelId，仍为空则拒绝空壳直出。
+	PlannerChannelID string `json:"plannerChannelId"`
+	PlannerModel     string `json:"plannerModel"`
 }
 
 // EcommerceSlotDispatch 单个槽位的派发结果（前端展示编排概览）。
@@ -195,8 +198,19 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		return nil, NewAppError(http.StatusBadRequest, "预设没有可用槽位")
 	}
 
-	// 1) 取上游 54 号表铁律段（供料）。
-	upstreamRules := s.upstreamRuleSegments(plans)
+	// 守卫（对齐 pr(1) direct）：没跑过 AI 视觉策划就不允许直接生图。
+	// 空壳模板只会产出无字、同质的图；这里先同步跑完 12 段策划并写回槽位。
+	if preSlots, listErr := s.repo.ListEcommerceSlots(productID); listErr == nil {
+		if ecommerceNeedsVisualPlan(product, preSlots) {
+			if err := s.ensureEcommerceVisualPlan(context.Background(), userID, product, options); err != nil {
+				return nil, err
+			}
+			if refreshed, reloadErr := s.repo.GetEcommerceProduct(userID, productID); reloadErr == nil {
+				product = refreshed
+			}
+		}
+	}
+
 	degraded := make([]string, 0, 2)
 	// 先读库内槽位：既用于判断「是否还需要 nxf 合成」，也用于按 SlotKey 复用槽位。
 	existingSlots, err := s.repo.ListEcommerceSlots(productID)
@@ -251,7 +265,7 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 			dispatch, dispatchErr := s.stageEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
 				ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
 				Count: options.Count, ProjectID: options.ProjectID,
-				Synthesized: synth, UpstreamRule: upstreamRules[plan.SlotKey], Existing: slotIndex[plan.SlotKey],
+				Synthesized: synth, Existing: slotIndex[plan.SlotKey],
 			})
 			if dispatchErr != nil {
 				dispatch.Status = ecommerce.SlotStatusFailed
@@ -313,7 +327,7 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 		dispatch, dispatchErr := s.dispatchEcommerceSlot(userID, product, preset, plan, ecommerceSlotDispatchInput{
 			ChannelID: channelID, Model: modelName, Size: size, Quality: quality,
 			Count: options.Count, ProjectID: options.ProjectID,
-			Synthesized: synth, UpstreamRule: upstreamRules[plan.SlotKey], Existing: slotIndex[plan.SlotKey],
+			Synthesized: synth, Existing: slotIndex[plan.SlotKey],
 		})
 		if dispatchErr != nil {
 			// 容量竞态：预检后名额被占 → 计顺延不计失败。
@@ -374,25 +388,25 @@ func (s *Service) StartEcommerceProduct(userID, productID string, options Ecomme
 
 // ecommerceSlotDispatchInput 单槽位派发入参。
 type ecommerceSlotDispatchInput struct {
-	ChannelID    string
-	Model        string
-	Size         string
-	Quality      string
-	Count        int
-	ProjectID    string
-	Synthesized  *nxfBatchResult
-	UpstreamRule string
-	Existing     *model.EcommerceSlot
+	ChannelID   string
+	Model       string
+	Size        string
+	Quality     string
+	Count       int
+	ProjectID   string
+	Synthesized *nxfBatchResult
+	Existing    *model.EcommerceSlot
 }
 
 // ecommerceSlotDraft 槽位草稿。
 //
-// 【返工铁律】两个提示词严格分离：
+// 【铁律】两个提示词严格分离：
 //   - prompt：落库/展示用（generation_prompt、版本快照、前端「画面构图简述」与
-//     「画面描述」）——只含本屏专属的产品视角/场景道具/光影色调/构图描述；
-//   - dispatch：真正发往生图模型的提示词 = prompt + 文字排版后缀 + 内部防走形护栏。
+//     「画面描述」）——只含本屏专属的 12 段视觉方案（或降级版场景描述）；
+//   - dispatch：真正发往生图模型的完整提示词（PR 合同：制作说明 + 参考图用途 +
+//     产品/卖点 + 12 段方案 + 本屏场景/卖点 + 海报文字硬性要求 + 收口约束）。
 //
-// 通用护栏与排版指令绝不进 generation_prompt（主人返工令）。
+// 海报排版要求与任何「不许出字」类约束绝不进 generation_prompt。
 type ecommerceSlotDraft struct {
 	slot     *model.EcommerceSlot
 	prompt   string
@@ -401,22 +415,58 @@ type ecommerceSlotDraft struct {
 	gateHits []string
 }
 
-// buildEcommerceDispatchPrompt 组装「真正发往模型」的提示词。
+// ecommerceSlotPromptInput 组装「发往生图模型的最终提示词」所需的全部事实。
+type ecommerceSlotPromptInput struct {
+	PlatformName      string
+	SlotTitle         string
+	SlotNo            int
+	Kind              string
+	ProductName       string
+	ProductSelling    string
+	VisualPlan        string
+	SceneType         string
+	SlotSellingPoints string
+	CopyText          string
+	TextMode          string
+}
+
+// buildEcommerceSlotPrompt 组装真正发往生图模型的最终提示词。
 //
-// 结构：本屏场景描述（= 落库那一段） → 文字排版后缀 → 内部防走形护栏（含上游铁律段）。
-// 上游铁律段为空时跳过，不注入空段、不重复注入。
-func buildEcommerceDispatchPrompt(prompt string, slotCopy string, textMode string, upstreamRule string) string {
-	parts := make([]string, 0, 3)
-	if base := strings.TrimSpace(prompt); base != "" {
-		parts = append(parts, base)
+// 【合同】严格对齐 pr(1) `commerceBatchTable`（commerce-workflow.ts）的最终拼装顺序：
+// 制作说明 → 参考图用途与「不复制原图场景」 → 产品/核心卖点 → 12 段视觉方案 →
+// 本屏场景类型/绑定卖点 → 【画面文字与海报排版硬性要求】 → 收口约束。
+//
+// 与旧实现的根本差别：
+//   - 旧版把「保持主体结构、颜色、比例、材质和可见细节稳定…画面不生成文字…」当护栏追加，
+//     等于命令模型**复制原图构图且不许写字**——这正是「6 张图一模一样 + 全组无字」的根因；
+//   - 新版没有任何「不许出字」字样：有文案时明确要求中文商业海报排版并逐字排版文案。
+func buildEcommerceSlotPrompt(in ecommerceSlotPromptInput) string {
+	blocks := make([]string, 0, 7)
+	blocks = append(blocks,
+		fmt.Sprintf("制作%s 电商详情页单屏：%s（第 %d 屏，%s）。", in.PlatformName, in.SlotTitle, in.SlotNo, in.Kind),
+		"前 1 张参考图是产品，严格保留产品外观、材质、包装、标识。仅作为产品身份依据，"+
+			"不是原产品照片的背景、机位和构图模板。按本屏视觉方案重新组织场景、道具、镜头与光线，不复制原图场景。",
+		"产品："+strings.TrimSpace(in.ProductName)+"\n核心卖点："+firstNonEmpty(strings.TrimSpace(in.ProductSelling), "未提供"),
+	)
+	if plan := strings.TrimSpace(in.VisualPlan); plan != "" {
+		blocks = append(blocks, plan)
 	}
-	parts = append(parts, ecommerce.SlotCopyDirective(slotCopy, textMode))
-	guardrail := ecommerce.SlotDispatchGuardrail()
-	if rule := ecommerce.UpstreamRuleSegment(upstreamRule); rule != "" {
-		guardrail = guardrail + "\n主体一致性铁律（上游预设）：" + rule
+	sceneLines := make([]string, 0, 2)
+	if scene := strings.TrimSpace(in.SceneType); scene != "" {
+		sceneLines = append(sceneLines, "本屏场景类型："+scene)
 	}
-	parts = append(parts, guardrail)
-	return strings.Join(parts, "\n")
+	if points := strings.TrimSpace(in.SlotSellingPoints); points != "" {
+		sceneLines = append(sceneLines, "本屏绑定的已确认卖点："+points)
+	}
+	if len(sceneLines) > 0 {
+		blocks = append(blocks, strings.Join(sceneLines, "\n"))
+	}
+	blocks = append(blocks,
+		"【画面文字与海报排版硬性要求】：\n"+ecommerce.SlotPosterCopyDirective(in.CopyText, in.TextMode),
+		"只制作本屏方案，不扩展为整页或多屏拼图。遵循本屏已确定的视觉设计，"+
+			"整组产品身份和设计风格保持一致。不得虚构产品功效、认证或数据。",
+	)
+	return strings.Join(blocks, "\n\n")
 }
 
 // ecommerceSlotTextMode 取本屏对应的文字排版模式（主图/详情页各自的 textMode）。
@@ -465,13 +515,31 @@ func (s *Service) prepareEcommerceSlot(userID string, product *model.EcommercePr
 	}
 	draft.slot = slot
 	slotCopy := firstNonEmpty(slot.Copy, plan.Copy)
-	textMode := s.ecommerceSlotTextMode(userID, firstNonEmpty(slot.Kind, plan.Kind))
-	// 收口：落库用纯净提示词，派发用「纯净 + 排版后缀 + 内部护栏」。
+	slotKind := firstNonEmpty(slot.Kind, plan.Kind)
+	textMode := s.ecommerceSlotTextMode(userID, slotKind)
+	platformName := ecommerce.PlatformSpecOrDefault(s.ecommercePlatformKey(userID)).Name
+	// 收口：落库用纯净方案，派发用 PR 合同的完整提示词。
 	finish := func(prompt string, negative string, gateHits []string) ecommerceSlotDraft {
 		draft.prompt = prompt
 		draft.negative = negative
 		draft.gateHits = gateHits
-		draft.dispatch = buildEcommerceDispatchPrompt(prompt, slotCopy, textMode, input.UpstreamRule)
+		slotNo := slot.SlotNo
+		if slotNo == 0 {
+			slotNo = plan.SlotNo
+		}
+		draft.dispatch = buildEcommerceSlotPrompt(ecommerceSlotPromptInput{
+			PlatformName:      platformName,
+			SlotTitle:         firstNonEmpty(slot.Title, plan.Title, "商品展示"),
+			SlotNo:            slotNo,
+			Kind:              slotKind,
+			ProductName:       product.Name,
+			ProductSelling:    product.SellingPoints,
+			VisualPlan:        prompt,
+			SceneType:         firstNonEmpty(slot.SceneType, plan.Variant),
+			SlotSellingPoints: slot.SellingPoints,
+			CopyText:          slotCopy,
+			TextMode:          textMode,
+		})
 		return draft
 	}
 	negative := ecommerce.MergeNegative(preset.Negative)
@@ -662,13 +730,11 @@ func (s *Service) dispatchEcommerceSlot(userID string, product *model.EcommerceP
 
 // dispatchEcommerceSubjectLayer 派发「商品透明主体层」任务（三层 PSD 用）。
 //
-// 用上游 product-white-hero 的白底棚拍铁律 + transparentBackground=true，
+// 这是**去背景抠图**任务（不是详情页出图），提示词只描述主体与边缘，
+// 不再拼接任何上游铁律段/防走形护栏。transparentBackground=true，
 // 产出可直接作为 PSD「商品主体」层的透明 PNG。返回子任务 ID（对账后即为资源 ID）。
 func (s *Service) dispatchEcommerceSubjectLayer(userID string, product *model.EcommerceProduct, input ecommerceSlotDispatchInput) (string, error) {
-	prompt := ecommerce.FusePromptWithUpstreamRule(
-		"商品实拍图去背景：保留商品本体的轮廓、颜色、材质与可见细节，纯净棚拍光，边缘干净无白边。",
-		s.upstreamTemplateFor("product-white-hero", ecommerce.UpstreamVariantStandard),
-	)
+	prompt := "商品实拍图去背景：保留商品本体的轮廓、颜色、材质与可见细节，纯净棚拍光，边缘干净无白边。"
 	// S5 出口门禁：主体层任务同样过检（拒绝时不上传无背景图）。
 	gate := ecommerce.ComplianceGate(prompt)
 	if gate.Rejected {
@@ -1051,32 +1117,6 @@ func (s *Service) ensureBuiltinEcommercePresets(userID string) error {
 		}
 	}
 	return nil
-}
-
-// upstreamRuleSegments 取各槽位对应的上游预设铁律段（供料）。
-// 上游表未写入时返回空串（不阻断编排，融合函数会跳过空段）。
-func (s *Service) upstreamRuleSegments(plans []ecommerce.SlotPlan) map[string]string {
-	rules := make(map[string]string, len(plans))
-	for _, plan := range plans {
-		rules[plan.SlotKey] = s.upstreamTemplateFor(plan.UpstreamToolKey, plan.UpstreamVariant)
-	}
-	return rules
-}
-
-// upstreamTemplateFor 按确定性 UUID 取上游内置预设模板全文。
-func (s *Service) upstreamTemplateFor(toolKey, variantKey string) string {
-	toolKey = strings.TrimSpace(toolKey)
-	if toolKey == "" {
-		return ""
-	}
-	if variantKey == "" {
-		variantKey = ecommerce.UpstreamVariantStandard
-	}
-	preset, err := s.repo.WorkbenchPreset(workbench.BuiltinPresetID(toolKey, variantKey))
-	if err != nil || preset == nil {
-		return ""
-	}
-	return preset.PromptTemplate
 }
 
 // ecommercePromptFor 从 nxf 合成结果中挑出该槽位（scene+variant）的提示词与负向词。

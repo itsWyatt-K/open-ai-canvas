@@ -39,6 +39,8 @@ export enum CanvasNodeType {
     ColorGrade = "colorgrade",
     MediaConversion = "media-conversion",
     BatchTable = "batch-table",
+    ProductDetail = "product-detail",
+    ProductReplica = "product-replica",
 }
 
 /** Runtime IDs contributed by plugins share the persisted node type field. */
@@ -193,6 +195,7 @@ export type CanvasBatchReferenceColumn = {
 };
 export type CanvasBatchTableData = {
     operation: CanvasBatchOperation;
+    /** 0 follows runtime task capacity (commerce); ordinary tables select a positive limit. */
     concurrency: number;
     /** AI 输出的业务结构；分镜表会保留标准 StoryboardRow，避免依赖列名猜测。 */
     contentKind?: CanvasBatchTableContentKind;
@@ -221,6 +224,12 @@ export type CanvasSkillSnapshot = {
 };
 
 export type CanvasNodeMetadata = {
+    /** 一键详情 / 一键复刻 配置节点的完整工作流状态（screens / pending / 模板文案映射等）。 */
+    commerceWorkflow?: import("./commerce-workflow").CommerceWorkflow;
+    /** 官方素材身份：原生拼合组重建时复用已有资源，不重复上传。 */
+    officialAssetId?: string;
+    /** 原生拼合组：组内已有图片资源初始无缝隙竖排（只对 Frame 生效，固定枚举 vertical）。 */
+    imageAssembly?: "vertical";
     /** Credential-free editable generation contract; submitted recipes live with tasks. */
     generationSpec?: GenerationSpec;
     /** Namespaced extension ownership for nodes contributed by a unified plugin. */

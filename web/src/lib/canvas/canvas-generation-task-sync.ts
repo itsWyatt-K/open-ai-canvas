@@ -3,6 +3,7 @@ import { commitCanvasGenerationResult } from "@/lib/canvas/canvas-generation-res
 import { findAvailableGenerationGroupPosition, imageGenerationChildPosition } from "@/lib/canvas/canvas-generation-layout";
 import { fitNodeSize, nodeSizeFromRatio, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { compositeEmotionImage } from "@/lib/canvas/canvas-emotion";
+import { applyCommerceOutput, isCommerceNode } from "@/lib/canvas/commerce-workflow";
 import { storeGeneratedAudio } from "@/services/api/audio";
 import { storeGeneratedVideo } from "@/services/api/video";
 import { parseBackendGenerationResult } from "@/services/api/generation-task";
@@ -21,10 +22,16 @@ import { imageLayerTargetName } from "@/lib/canvas/canvas-image-layer-plan";
 import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
 
+/** 策划/生成的客户端操作身份：顶层或 inputJson.metadata 里，不能拿任务 ID 当操作 ID。 */
+export function generationTaskOperationId(task: GenerationTask) {
+    const operation = (task as GenerationTask & { clientOperationId?: string }).clientOperationId || generationTaskInput(task)?.metadata?.clientOperationId;
+    return typeof operation === "string" ? operation : "";
+}
+
 export function generationTaskInput(task: GenerationTask) {
     if (!task.inputJson) return null;
     try {
-        return JSON.parse(task.inputJson) as { mode?: CanvasGenerationMode; metadata?: { nodeId?: string; sourceNodeId?: string; domainProjectId?: string; layerDecomposition?: boolean }; prompt?: string };
+        return JSON.parse(task.inputJson) as { mode?: CanvasGenerationMode; metadata?: { nodeId?: string; sourceNodeId?: string; domainProjectId?: string; layerDecomposition?: boolean; clientOperationId?: string }; prompt?: string };
     } catch {
         return null;
     }
@@ -241,6 +248,18 @@ export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: 
     }
 
     if (!result.text) throw new Error("后端任务没有返回文本");
+    // 一键详情/一键复刻：策划结果回填 commerceWorkflow，而不是把节点改成文本节点。
+    if (isCommerceNode(node) && node.metadata?.commerceWorkflow) {
+        const data = node.metadata.commerceWorkflow;
+        if (!data.pending || generationTaskOperationId(task) !== data.pending.operationId) return node;
+        try {
+            const commerceWorkflow = applyCommerceOutput(data, result.text);
+            return { ...node, metadata: { ...node.metadata, ...completedTaskMetadata(task), status: "success", errorDetails: undefined, commerceWorkflow } };
+        } catch (error) {
+            // 校验失败保留原文与 pending，不能悄悄标成功并自动出图。
+            return { ...node, metadata: { ...node.metadata, ...completedTaskMetadata(task), status: "error", errorDetails: error instanceof Error ? error.message : "策划解析失败", commerceWorkflow: { ...data, rawOutput: result.text } } };
+        }
+    }
     return {
         ...node,
         type: CanvasNodeType.Text,

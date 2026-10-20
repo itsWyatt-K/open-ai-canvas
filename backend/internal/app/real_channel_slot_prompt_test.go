@@ -1,13 +1,10 @@
 package app
 
-// 返工令 B 二 真实库验收：用 bc33eb98…（抖音 3:4）7 个槽位的**真实数据**，
-// 跑修复后的提示词链路，产出两份对照：
-//   - 落库版（generation_prompt，只准写本屏专属描述）；
-//   - 派发版（真正发往生图模型，才拼文字排版后缀 + 内部防走形护栏）。
-//
-// 该商品现存 generation_prompt 是返工前旧代码写的污染文本（prepareEcommerceSlot 第 2 条
-// 纪律「库内已有提示词直接沿用」决定了旧数据不会被自动覆盖），所以这里演示的是
-// 「同一批真实槽位在新代码下会写成什么样」，作为修复生效的证据。
+// 阶段 5 整改 · 真实库验收：用 bc33eb98…（抖音 3:4）7 个槽位的**真实数据**，
+// 跑整改后的提示词链路，产出两份对照：
+//   - 落库版（generation_prompt：12 段视觉方案或降级场景描述，不含任何排版/禁字指令）；
+//   - 派发版（PR 合同：制作说明 + 参考图用途 + 产品/卖点 + 12 段方案 + 本屏场景/卖点
+//     + 【画面文字与海报排版硬性要求】 + 收口约束）。
 //
 // 默认跳过：ECOMMERCE_REAL_DB=<sqlite 路径> 时才运行，CI 不依赖本机数据。
 import (
@@ -49,53 +46,88 @@ func TestRealChannelSlotPromptChannelsOnRealDB(t *testing.T) {
 	if len(slots) == 0 {
 		t.Skip("目标商品没有槽位")
 	}
-	t.Logf("商品：%s（user=%s，平台=%s）", product.Name, product.UserID, svc.ecommercePlatformKey(product.UserID))
-
-	const guardrail = "保持主体结构、颜色、比例、材质和可见细节稳定"
-	const copyTypeset = "画面预留干净排版区"
-	const pureImage = "画面纯图无文字"
+	platformKey := svc.ecommercePlatformKey(product.UserID)
+	spec := ecommerce.PlatformSpecOrDefault(platformKey)
+	t.Logf("商品：%s（平台=%s）", product.Name, platformKey)
 
 	for index := range slots {
 		slot := slots[index]
-		spec := ecommerce.PlatformSpecOrDefault(svc.ecommercePlatformKey(product.UserID))
 		plan := ecommerce.SlotPlan{
 			SlotKey: slot.SlotKey, Kind: slot.Kind, SlotNo: slot.SlotNo,
 			Title: slot.Title, Scene: slot.SceneType, Variant: slot.SceneType,
 			Aspect: firstNonEmpty(strings.TrimSpace(slot.AspectRatio), spec.HeroRatio),
 			Copy:   slot.Copy,
 		}
-		// 落库版：只准有本屏专属描述（平台模板兜底线，等价于「库里没有提示词」时的产物）。
-		clean := ecommerce.ComposeSlotFallbackPrompt(ecommerce.SlotPromptContext{
-			ProductName:       product.Name,
-			SellingPoints:     product.SellingPoints,
-			ExtraRequirements: product.ExtraRequirements,
-			SlotTitle:         firstNonEmpty(slot.Title, plan.Title),
-			SlotSceneType:     firstNonEmpty(slot.SceneType, plan.Variant),
-			PlatformKey:       spec.Key,
-			Aspect:            plan.Aspect,
-		})
-		// 派发版：纯净 + 文案排版后缀 + 内部护栏（只走模型，不落库）。
+		// 落库版：库里已有 12 段方案就用它；否则走平台兜底（等价于「库里没有提示词」）。
+		clean := strings.TrimSpace(slot.GenerationPrompt)
+		if clean == "" {
+			clean = ecommerce.ComposeSlotFallbackPrompt(ecommerce.SlotPromptContext{
+				ProductName:       product.Name,
+				SellingPoints:     product.SellingPoints,
+				ExtraRequirements: product.ExtraRequirements,
+				SlotTitle:         firstNonEmpty(slot.Title, plan.Title),
+				SlotSceneType:     firstNonEmpty(slot.SceneType, plan.Variant),
+				PlatformKey:       spec.Key,
+				Aspect:            plan.Aspect,
+			})
+		}
 		textMode := svc.ecommerceSlotTextMode(product.UserID, firstNonEmpty(slot.Kind, plan.Kind))
-		dispatch := buildEcommerceDispatchPrompt(clean, firstNonEmpty(slot.Copy, plan.Copy), textMode, "")
+		dispatch := buildEcommerceSlotPrompt(ecommerceSlotPromptInput{
+			PlatformName:      spec.Name,
+			SlotTitle:         firstNonEmpty(slot.Title, plan.Title, "商品展示"),
+			SlotNo:            slot.SlotNo,
+			Kind:              firstNonEmpty(slot.Kind, plan.Kind),
+			ProductName:       product.Name,
+			ProductSelling:    product.SellingPoints,
+			VisualPlan:        clean,
+			SceneType:         firstNonEmpty(slot.SceneType, plan.Variant),
+			SlotSellingPoints: slot.SellingPoints,
+			CopyText:          firstNonEmpty(slot.Copy, plan.Copy),
+			TextMode:          textMode,
+		})
 
-		t.Logf("\n=== %s（%s %d/%d，比例 %s，textMode=%s）落库版 ===\n%s",
-			slot.SlotKey, slot.Kind, slot.SlotNo, len(slots), plan.Aspect, textMode, clean)
-		t.Logf("--- %s 派发版（发往模型，含护栏与排版后缀）---\n%s", slot.SlotKey, dispatch)
+		t.Logf("\n=== %s（%s %d，比例 %s，textMode=%s）落库版 ===\n%s",
+			slot.SlotKey, slot.Kind, slot.SlotNo, plan.Aspect, textMode, clean)
+		t.Logf("--- %s 派发版（发往模型）---\n%s", slot.SlotKey, dispatch)
 
-		for _, forbidden := range []string{guardrail, copyTypeset, pureImage} {
+		// 落库版禁含任何「排版指令 / 禁字套话」。
+		for _, forbidden := range []string{
+			"保持主体结构、颜色、比例、材质和可见细节稳定",
+			"画面不生成文字",
+			"画面纯图无文字",
+			"不要添加任何排版文字",
+			"画面文字必须逐字使用",
+			"【画面文字与海报排版硬性要求】",
+		} {
 			if strings.Contains(clean, forbidden) {
 				t.Errorf("%s 落库版严禁包含 %q", slot.SlotKey, forbidden)
 			}
 		}
-		if !strings.Contains(dispatch, guardrail) {
-			t.Errorf("%s 派发版必须带内部防走形护栏", slot.SlotKey)
-		}
-		if slot.Copy == "" || strings.EqualFold(textMode, ecommerce.TextModeNone) {
-			if !strings.Contains(dispatch, pureImage) {
-				t.Errorf("%s 空文案/none 模式应走「%s」", slot.SlotKey, pureImage)
+		// 派发版必须满足 PR 合同的关键块。
+		for _, want := range []string{
+			"制作" + spec.Name + " 电商详情页单屏：" + firstNonEmpty(slot.Title, plan.Title, "商品展示"),
+			"前 1 张参考图是产品",
+			"不是原产品照片的背景、机位和构图模板",
+			"产品：" + product.Name,
+			"【画面文字与海报排版硬性要求】：",
+			"只制作本屏方案，不扩展为整页或多屏拼图",
+			"不得虚构产品功效、认证或数据",
+		} {
+			if !strings.Contains(dispatch, want) {
+				t.Errorf("%s 派发版缺少合同段 %q", slot.SlotKey, want)
 			}
-		} else if !strings.Contains(dispatch, copyTypeset) {
-			t.Errorf("%s 有文案且非 none 应走「%s」", slot.SlotKey, copyTypeset)
+		}
+		// 派发版严禁出现任何「不许出字」字样（这是本次事故根因）。
+		for _, forbidden := range []string{"保持主体结构、颜色、比例、材质和可见细节稳定", "画面不生成文字"} {
+			if strings.Contains(dispatch, forbidden) {
+				t.Errorf("%s 派发版严禁包含 %q", slot.SlotKey, forbidden)
+			}
+		}
+		// 文案非空且非 none → 必须要求中文商业海报排版并逐字排版文案。
+		if strings.TrimSpace(firstNonEmpty(slot.Copy, plan.Copy)) != "" && !strings.EqualFold(textMode, ecommerce.TextModeNone) {
+			if !strings.Contains(dispatch, "带中文商业海报排版") {
+				t.Errorf("%s 有文案时必须要求中文商业海报排版", slot.SlotKey)
+			}
 		}
 	}
 }

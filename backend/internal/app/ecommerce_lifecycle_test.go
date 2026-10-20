@@ -69,6 +69,34 @@ func newEcommerceLifecycleService(t *testing.T) (*Service, *gorm.DB) {
 	return s, db
 }
 
+// markLifecyclePlanned 把商品标记为「已跑过 AI 视觉策划」。
+//
+// 阶段 5 整改后，ConfirmEcommercePlan / StartEcommerceProduct 有前置守卫：没策划过的
+// 空壳槽位不许直接生图。这三个生命周期测试关心的是派发/对账/停止恢复，不是策划本身，
+// 所以在这里按「已策划」前置，让守卫放行（守卫自身有专项测试覆盖）。
+func markLifecyclePlanned(t *testing.T, s *Service, productID string) {
+	t.Helper()
+	product, err := s.repo.GetEcommerceProduct("user", productID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.repo.UpdateEcommerceProductRun("user", productID, product.Status, product.TitleStatus, "", product.PlanRevision+1); err != nil {
+		t.Fatal(err)
+	}
+	slots, err := s.repo.ListEcommerceSlots(productID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := "整组视觉方向：测试用极简科技风\n\n统一配色：白 + 冰川蓝\n\n统一光影：柔光箱冷白光\n\n" +
+		"统一字体：无衬线粗体\n\n产品与主体：产品居中\n\n镜头与构图：特写竖构图\n\n环境与道具：纯色背景\n\n" +
+		"光线与质感：干净高光\n\n色彩与材质：磨砂白\n\n文字与留白：顶部标题区\n\n卖点的视觉表达：结构可见\n\n本屏差异与连续性：本屏独立景别"
+	for _, slot := range slots {
+		if err := s.repo.UpdateEcommerceSlotPlan(slot.ID, map[string]any{"generation_prompt": planned}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // importLifecycleProduct 建一张源图并导入商品（导入即应预建槽位卡）。
 func importLifecycleProduct(t *testing.T, s *Service, name string) string {
 	t.Helper()
@@ -85,6 +113,7 @@ func importLifecycleProduct(t *testing.T, s *Service, name string) string {
 	if len(created) != 1 {
 		t.Fatalf("导入应建 1 件商品，实际 %d", len(created))
 	}
+	markLifecyclePlanned(t, s, created[0].ID)
 	return created[0].ID
 }
 

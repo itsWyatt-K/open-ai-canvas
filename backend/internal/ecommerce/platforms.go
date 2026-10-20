@@ -251,12 +251,11 @@ func PlatformStyleSeed(spec PlatformSpec) string {
 // PlatformSlotBasePrompt 平台槽位的初始 generation_prompt（阶段 5 预建缺省）。
 //
 // 目的：用户导入商品/切换平台后，点开卡片编辑或看分镜卡就有完整的初始方案，
-// 不再是空壳。AI 策划或人工编辑会覆盖它。
+// 不再是空壳。AI 策划（12 段视觉方案）或人工编辑会覆盖它。
 //
-// 【返工铁律】这里只写**本屏专属的**产品视角、场景道具、光影色调与构图，
-// 通用防走形护栏（「保持主体结构、颜色、比例稳定…画面不生成文字…」）与
-// 文字排版指令**绝不**能进 generation_prompt —— 那是系统内部约束，
-// 只能在派发时由 buildEcommerceDispatchPrompt 作为后缀拼接。
+// 【纪律】这里只写**本屏专属的**产品视角、场景道具、光影色调与构图；
+// 文字排版要求与「不许出字」之类的系统约束**绝不**能进 generation_prompt ——
+// 它们只能在派发时由 buildEcommerceSlotPrompt 拼进发往模型的最终提示词。
 func PlatformSlotBasePrompt(plan SlotPlan, spec PlatformSpec) string {
 	dna := GeneralDNA()
 	dnaText := func(key string) string {
@@ -321,25 +320,24 @@ func slotComposition(plan SlotPlan) string {
 	}
 }
 
-// SlotCopyDirective 生成派发时的**文字排版后缀**（主人返工令指定的唯一口径）。
+// SlotPosterCopyDirective 生成派发时的「画面文字与海报排版硬性要求」正文
+// （主人 2026-10 指定的唯一口径，对齐 pr(1) commerceBatchTable 的文字段）。
 //
-//   - 有文案且文字模式不是 none → 要求画面为文案预留干净排版区；
-//   - 文案为空、或用户显式选择 pure 图（textMode=none）→ 纯图无文字。
+//   - 有文案且 textMode != "none" → 明确要求做成**带中文商业海报排版**的电商详情页图，
+//     并把文案逐字交给模型（旧版这里写的是「画面不生成文字」，导致全组出图无字）；
+//   - 文案为空、或用户显式选择纯图（textMode=none）→ 明确不要排版文字。
 //
 // 这是内部指令，只拼接在真正发往生图模型的提示词里，不写进 generation_prompt。
-func SlotCopyDirective(copyText string, textMode string) string {
+func SlotPosterCopyDirective(copyText string, textMode string) string {
 	trimmed := strings.TrimSpace(copyText)
 	if strings.EqualFold(strings.TrimSpace(textMode), TextModeNone) || trimmed == "" {
-		return "画面纯图无文字，不生成任何文字或水印"
+		return "不要添加任何排版文字。"
 	}
-	return "画面预留干净排版区，清晰呈现文案：「" + truncateRunesForPrompt(trimmed, 400) + "」"
-}
-
-// SlotDispatchGuardrail 系统内部防走形护栏（只用于派发后缀，绝不写进 generation_prompt）。
-func SlotDispatchGuardrail() string {
-	return "保持主体结构、颜色、比例、材质和可见细节稳定；辅助参考仅用于其对应的场景、姿态或风格，" +
-		"不得覆盖主体特征。采用清晰的主体层级、可信透视、自然光影与真实接触关系。" +
-		"画面不生成文字、价格、水印、虚构品牌或未提供的产品信息；输出干净、可用于商业创作的视觉画面。"
+	return "这是一张带中文商业海报排版的电商详情页图片（非纯摄影裸图）。" +
+		"画面顶部或留白区必须采用清晰的商业海报字体、副标题色块或卖点图标徽章，" +
+		"逐字醒目排版以下中文文案（字迹清晰锐利，不添加其他乱码文字）：\n" +
+		"画面文字必须逐字使用以下文案，不添加其他文字：\n" +
+		truncateRunesForPrompt(trimmed, planCopyMax)
 }
 
 // SlotPromptContext 兜底提示词上下文（库里没有任何提示词时的最后一道保险）。
@@ -356,14 +354,41 @@ type SlotPromptContext struct {
 	SlotNo            int
 }
 
+// posterLayoutForSlot 按屏位给出**海报版式**描述（标题区/主体区/信息区的位置关系）。
+//
+// 用途：历史脏数据清洗与无 12 段方案时的降级路径，都要给出可执行的版式，
+// 而不是只丢一句「商品拍摄场景」——否则模型会退化成纯产品摆拍、整组雷同。
+func posterLayoutForSlot(plan SlotPlan) string {
+	if plan.Kind == SlotKindHero {
+		switch plan.SlotNo {
+		case 1:
+			return "商品居中满幅构图，顶部预留标题区，底部预留一句利益点区，四周留白干净"
+		case 2:
+			return "上部 1/3 标题区 + 中部卖点图示 + 下部产品特写，信息分块清晰不拥挤"
+		default:
+			return "场景大图铺底，左上角标题块与右下角卖点徽章，留白保证文字可读"
+		}
+	}
+	switch plan.SlotNo {
+	case 1:
+		return "纵向三段式：顶部大标题区 + 中部痛点场景 + 底部产品与结论"
+	case 2:
+		return "左图右文两栏：左侧材质微距，右侧要点列表，行距充足"
+	case 3:
+		return "平铺俯视 + 参数标注线，标注区集中在一侧，不与主体重叠"
+	default:
+		return "清单式排版：标题区在上，条目自上而下等距排列，底部留白"
+	}
+}
+
 // ComposeSlotFallbackPrompt 组装兜底生图提示词（**永不为空**）。
 //
 // 阶段 5 返工：主人铁律「绝不允许出现 prompt:""」。当 nxf 不可用、上游模板缺失、
-// 库里也没有提示词时，用「平台模板 + 商品名称/卖点/附加要求 + 本屏标题/场景」
+// 库里也没有提示词时，用「平台模板 + 海报版式 + 商品名称/卖点/附加要求 + 本屏标题/场景」
 // 组装出一份可直接生图的完整提示词，而不是把槽位判失败。
 //
-// 注意：本函数产出的是**展示/落库用**的纯净版（不含通用护栏与文字排版指令）；
-// 派发时由 buildEcommerceDispatchPrompt 再拼内部后缀。
+// 注意：本函数产出的是**展示/落库用**的纯净版（不含「不许出字」类约束）；
+// 派发时由 buildEcommerceSlotPrompt 再按 PR 合同拼完整提示词。
 func ComposeSlotFallbackPrompt(ctx SlotPromptContext) string {
 	spec := PlatformSpecOrDefault(ctx.PlatformKey)
 	plan := SlotPlan{
@@ -372,7 +397,10 @@ func ComposeSlotFallbackPrompt(ctx SlotPromptContext) string {
 		Variant: firstNonEmptyString(ctx.SlotSceneType, "产品展示"),
 		Aspect:  firstNonEmptyString(ctx.Aspect, spec.HeroRatio),
 	}
-	lines := []string{PlatformSlotBasePrompt(plan, spec)}
+	lines := []string{
+		PlatformSlotBasePrompt(plan, spec),
+		"【海报版式】" + posterLayoutForSlot(plan),
+	}
 	if name := strings.TrimSpace(ctx.ProductName); name != "" {
 		lines = append(lines, "【商品】"+truncateRunesForPrompt(name, 200))
 	}

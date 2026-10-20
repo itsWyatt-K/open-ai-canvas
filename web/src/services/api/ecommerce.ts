@@ -282,7 +282,16 @@ export function regenerateEcommerceSlot(
 /** 审核模式确认整组方案：review → running 并派发所有待生成槽位。 */
 export function confirmEcommercePlan(
     id: string,
-    options?: { channelId: string; model: string; size?: string; quality?: string; projectId?: string },
+    options?: {
+        channelId: string;
+        model: string;
+        size?: string;
+        quality?: string;
+        projectId?: string;
+        /** 策划（视觉文本）模型口径：后端在「未策划过」时会用它先同步跑一次 12 段策划。 */
+        plannerChannelId?: string;
+        plannerModel?: string;
+    },
 ) {
     return http.post<EcommerceProductDetail>(`/ecommerce/products/${encodeURIComponent(id)}/confirm-plan`, options ?? {});
 }

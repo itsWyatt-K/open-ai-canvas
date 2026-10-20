@@ -194,6 +194,31 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 		return nil, NewAppError(http.StatusBadRequest, "S5 门禁拒绝："+gate.RejectReason)
 	}
 
+	// 【PR 合同】单屏重派发与整组派发**同一套最终提示词**：落库的 12 段视觉方案只是
+	// 其中一段，发往模型必须再拼「制作说明 + 参考图用途 + 产品/卖点 + 本屏场景/卖点
+	// + 【画面文字与海报排版硬性要求】+ 收口约束」。
+	// 旧实现把库内提示词原样当 task prompt → 模型既不知道产品是什么，也拿不到
+	// 「必须逐字排版文案」的指令，正是「6 张图一模一样 + 全组无字」的直接原因。
+	platformName := ecommerce.PlatformSpecOrDefault(s.ecommercePlatformKey(userID)).Name
+	slotKind := saved.Kind
+	textMode := s.ecommerceSlotTextMode(userID, slotKind)
+	dispatchPrompt := buildEcommerceSlotPrompt(ecommerceSlotPromptInput{
+		PlatformName:      platformName,
+		SlotTitle:         firstNonEmpty(saved.Title, "商品展示"),
+		SlotNo:            saved.SlotNo,
+		Kind:              slotKind,
+		ProductName:       product.Name,
+		ProductSelling:    product.SellingPoints,
+		VisualPlan:        gate.Filtered,
+		SceneType:         saved.SceneType,
+		SlotSellingPoints: saved.SellingPoints,
+		CopyText:          saved.Copy,
+		TextMode:          textMode,
+	})
+	if strings.TrimSpace(dispatchPrompt) == "" {
+		return nil, NewAppError(http.StatusBadRequest, "生图提示词为空：请先填写画面描述或完整提示词覆盖")
+	}
+
 	versionNo := s.nextEcommerceSlotVersion(slotID, saved.CurrentVersion)
 	version := model.EcommerceSlotVersion{
 		ID: kernel.NewID(), SlotID: slotID, Version: versionNo,
@@ -203,11 +228,11 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 		ProjectID: "",
 		Type:      "canvas_image",
 		Operation: "image",
-		Prompt:    gate.Filtered,
+		Prompt:    dispatchPrompt,
 		Model:     modelName,
 		Input: map[string]any{
 			"mode":           "image",
-			"prompt":         gate.Filtered,
+			"prompt":         dispatchPrompt,
 			"negativePrompt": ecommerce.MergeNegative(ecommerce.SoloIslandNegative),
 			"config": map[string]any{
 				"channelId": channelID,
@@ -305,6 +330,21 @@ func (s *Service) ConfirmEcommercePlan(ctx context.Context, userID, productID st
 		return nil, err
 	}
 	slots = sortEcommerceSlotsForPlan(slots)
+	// 守卫（对齐 pr(1) direct）：确认即派发，但没跑过 AI 视觉策划的空壳槽位不许直出。
+	// 这里同步补跑一次策划并写回 7 个槽位，再继续派发。
+	if ecommerceNeedsVisualPlan(product, slots) {
+		if err := s.ensureEcommerceVisualPlan(ctx, userID, product, options); err != nil {
+			return nil, err
+		}
+		if refreshed, reloadErr := s.repo.GetEcommerceProduct(userID, productID); reloadErr == nil {
+			product = refreshed
+		}
+		slots, err = s.repo.ListEcommerceSlots(productID)
+		if err != nil {
+			return nil, err
+		}
+		slots = sortEcommerceSlotsForPlan(slots)
+	}
 	if err := s.repo.UpdateEcommerceProductRun(userID, productID, ecommerce.ProductStatusRunning, product.TitleStatus, "", 0); err != nil {
 		return nil, err
 	}

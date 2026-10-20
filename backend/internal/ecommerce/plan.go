@@ -281,41 +281,6 @@ func SoloIslandDNA() map[string]any {
 	}
 }
 
-// UpstreamRuleSegment 从上游预设模板中提取「主体稳定铁律段」。
-//
-// 上游内置预设（builtinPromptVariants）的图像模板结构为：
-//
-//	以参考图1为主体外观与身份的唯一依据，{focus}。{铁律段}
-//
-// 本函数返回 `保持主体结构…视觉画面。` 这一段；若模板不符合该结构则返回空串
-// （调用方保持原 prompt，不臆造拼接）。
-func UpstreamRuleSegment(promptTemplate string) string {
-	template := strings.TrimSpace(promptTemplate)
-	if template == "" {
-		return ""
-	}
-	const marker = "保持主体结构、颜色、比例、材质和可见细节稳定"
-	index := strings.Index(template, marker)
-	if index < 0 {
-		return ""
-	}
-	return strings.TrimSpace(template[index:])
-}
-
-// FusePromptWithUpstreamRule 把上游铁律段追加到本地 nxf 合成的提示词之后。
-// 上游段为空时原样返回本地提示词（不注入空段、不重复注入）。
-func FusePromptWithUpstreamRule(localPrompt, upstreamTemplate string) string {
-	local := strings.TrimSpace(localPrompt)
-	rule := UpstreamRuleSegment(upstreamTemplate)
-	if rule == "" || strings.Contains(local, rule) {
-		return local
-	}
-	if local == "" {
-		return rule
-	}
-	return local + "\n主体一致性铁律（上游预设）：" + rule
-}
-
 // MergeNegative 合并本地 nxf 负向词与预设负向词库（去重、保序）。
 func MergeNegative(parts ...string) string {
 	seen := map[string]bool{}

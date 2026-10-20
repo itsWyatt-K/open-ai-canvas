@@ -37,6 +37,7 @@ export async function runBackendCanvasGenerationTask(
         clientOperationId,
         retryOf,
         attemptGroupId,
+        onTextDelta,
     }: {
         projectId: string;
         nodeId: string;
@@ -53,6 +54,8 @@ export async function runBackendCanvasGenerationTask(
         clientOperationId?: string;
         retryOf?: string;
         attemptGroupId?: string;
+        /** 文本任务的增量回调（commerce 策划流式展示用）。 */
+        onTextDelta?: (text: string) => void;
     },
     dependencies?: GenerationTaskDependencies,
 ) {
@@ -73,6 +76,7 @@ export async function runBackendCanvasGenerationTask(
             clientOperationId,
             retryOf,
             attemptGroupId,
+            onTextDelta,
         },
         dependencies,
     );

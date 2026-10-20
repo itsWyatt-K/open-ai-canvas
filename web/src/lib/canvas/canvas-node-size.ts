@@ -94,7 +94,10 @@ export function ensureMediaNodeMinimumSize(node: CanvasNodeData) {
         width = alignedSize.width;
         height = alignedSize.height;
     }
-    if (width < MEDIA_NODE_MIN_SIZE.width || height < MEDIA_NODE_MIN_SIZE.height) {
+    // 引用拼合组（referenceSetId）内的图片按拼合布局精确定位：套用媒体最小尺寸会把
+    // 它们整体放大，无缝长图立刻出现缝隙；手动拉过（manualSize）的节点同样尊重用户选择。
+    const preserveExplicitSize = Boolean(node.metadata?.manualSize) || Boolean(node.metadata?.referenceSetId);
+    if (!preserveExplicitSize && (width < MEDIA_NODE_MIN_SIZE.width || height < MEDIA_NODE_MIN_SIZE.height)) {
         const scale = Math.max(1, MEDIA_NODE_MIN_SIZE.width / Math.max(1, width), MEDIA_NODE_MIN_SIZE.height / Math.max(1, height));
         width *= scale;
         height *= scale;

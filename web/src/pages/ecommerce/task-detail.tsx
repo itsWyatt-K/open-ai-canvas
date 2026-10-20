@@ -62,8 +62,12 @@ const TITLE_STATUS_LABELS: Record<string, string> = {
 };
 
 /** 平台可切换的商品状态（draft/review：未派发，后端才会按平台模板重建槽位）。 */
+/**
+ * 平台切换可用性：生成中（running/queued）禁止切换（会打断在途任务）；
+ * draft/review 直接切；completed/failed 允许但由调用方二次确认。
+ */
 function platformSwitchable(status: string): boolean {
-    return status === "draft" || status === "review";
+    return status !== "running" && status !== "queued";
 }
 
 export function EcommerceTaskDetail({
@@ -131,6 +135,8 @@ export function EcommerceTaskDetail({
     }, [agentOpen, productId, refreshDetail]);
 
     // 阶段 1：确认整组方案（先审方案）→ 服务端派发所有待生成槽位。
+    // 后端守卫：若该商品还没跑过 AI 视觉策划，服务端会先用策划模型同步跑一次
+    // 12 段策划再派发，所以这里必须把策划模型口径一并传下去。
     const handleConfirmPlan = useCallback(async () => {
         if (!productId) return;
         // 未选模型直接拦截（draft 态确认还要用它合成方案，更不能静默失败）。
@@ -147,9 +153,15 @@ export function EcommerceTaskDetail({
             }
             const { resolveModelRequestConfig, modelOptionName } = await import("@/stores/use-config-store");
             const requestConfig = resolveModelRequestConfig(config, config.imageModel);
+            // 策划模型：优先配置栏里的策划模型，回落到当前文本模型。
+            const plannerModel = ecommerceConfig?.plannerModelId || config.textModel;
+            const plannerReady = Boolean(plannerModel) && isAiConfigReady(config, plannerModel);
+            const plannerConfig = plannerReady ? resolveModelRequestConfig(config, plannerModel) : undefined;
             await confirmEcommercePlan(productId, {
                 channelId: requestConfig.channelId,
                 model: modelOptionName(config.imageModel),
+                plannerChannelId: plannerConfig?.channelId,
+                plannerModel: plannerReady ? modelOptionName(plannerModel) : undefined,
             });
             message.success("已确认方案，开始派发生图任务");
             await refreshDetail(productId);
@@ -159,7 +171,7 @@ export function EcommerceTaskDetail({
         } finally {
             setConfirming(false);
         }
-    }, [productId, config, isAiConfigReady, message, refreshDetail, refreshProducts]);
+    }, [productId, config, ecommerceConfig?.plannerModelId, isAiConfigReady, message, refreshDetail, refreshProducts]);
 
     // 阶段 5 返工：单屏重派发必须显式带「渠道 + 模型」——与确认整组方案同一口径。
     // 老商品没有派发快照时，不带参数就只能由后端报「请先选择生图模型与渠道」。
@@ -373,11 +385,27 @@ export function EcommerceTaskDetail({
     }, [agentOpen, detail, message]);
 
     // 阶段 5：平台切换（三步向导第 1 步）——后端一次完成配置更新 + 槽位重建。
+    // 已出图/失败态也允许切换，但必须二次确认：切平台会按新平台规范重建 7 屏槽位。
     const handleApplyPlatform = useCallback(async (key: string) => {
         if (!productId || !detail) return;
         if (!platformSwitchable(detail.product.status)) {
-            message.warning("任务已开始生成，不能切换平台（可停止生成或复制任务后再试）");
+            message.warning("任务正在生成中，暂不能切换平台（可先停止生成，或复制任务后再试）");
             return;
+        }
+        const target = platformByKey(key);
+        const settled = detail.product.status === "completed" || detail.product.status === "failed";
+        if (settled) {
+            const ok = await new Promise<boolean>((resolve) => {
+                modal.confirm({
+                    title: `切换到「${target?.name ?? key}」？`,
+                    content: "该商品已有生成结果。切换平台会按新平台的主图/详情规格重建 7 屏槽位（已生成图片仍保留在历史版本里，不会被删除）。",
+                    okText: "确认切换",
+                    cancelText: "取消",
+                    onOk: () => resolve(true),
+                    onCancel: () => resolve(false),
+                });
+            });
+            if (!ok) return;
         }
         setSwitchingPlatform(true);
         try {
@@ -385,13 +413,13 @@ export function EcommerceTaskDetail({
             await refreshDetail(productId);
             await refreshConfig();
             await refreshProducts();
-            message.success(`已切换到「${platformByKey(key)?.name ?? key}」，各屏模板已按平台规范重置`);
+            message.success(`已切换到「${target?.name ?? key}」，各屏模板已按平台规范重置`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "切换平台失败");
         } finally {
             setSwitchingPlatform(false);
         }
-    }, [productId, detail, message, refreshDetail, refreshConfig, refreshProducts]);
+    }, [productId, detail, message, modal, refreshDetail, refreshConfig, refreshProducts]);
 
     // 阶段 5：风格胶囊 → 写入附加要求（失焦即存的口径：立即 PATCH）。
     const [activeCapsule, setActiveCapsule] = useState<string>("");
@@ -657,13 +685,14 @@ export function EcommerceTaskDetail({
 
             <div className="flex-1 overflow-y-auto px-5 py-4">
                 <div className="flex flex-col gap-4">
-                    {/* 第一步：选择上架平台（可折叠为紧凑摘要条，默认收起以让出分镜高度） */}
+                    {/* 第一步：平台与规格（任何状态都保留可展开入口） */}
                     <StepSection
                         no={1}
-                        title="选择上架平台"
+                        title="平台与规格"
                         open={stepOpen.platform}
                         onToggle={() => setStepOpen((prev) => ({ ...prev, platform: !prev.platform }))}
                         summary={`当前：${platformSpec.name} · ${platformSpecSummary(platformSpec)}`}
+                        action="点击切换"
                         hint="切换后自动套用该平台的主图/详情规格与视觉规范"
                     >
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
@@ -689,17 +718,18 @@ export function EcommerceTaskDetail({
                         </div>
                     </StepSection>
 
-                    {/* 第二步：商品卖点与风格引导（可折叠为紧凑摘要条） */}
+                    {/* 第二步：商品卖点与 AI 策划（任何状态都保留可展开入口） */}
                     <StepSection
                         no={2}
-                        title="商品卖点与风格"
+                        title="商品卖点与 AI 策划"
                         open={stepOpen.product}
                         onToggle={() => setStepOpen((prev) => ({ ...prev, product: !prev.product }))}
                         summary={
                             product.sellingPoints
-                                ? `卖点：${product.sellingPoints}`
-                                : "还没写卖点 —— 展开后可以让 AI 看图自动提炼"
+                                ? `当前卖点：${product.sellingPoints}`
+                                : "当前卖点：未填写（可让 AI 看图自动提炼）"
                         }
+                        action="展开修改 / 重新 AI 策划"
                         hint="改完自动保存；不会写没关系，AI 看图帮你提炼"
                     >
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -946,12 +976,14 @@ export function EcommerceTaskDetail({
  * 主内容区统一外层滚动，第 1/2 步可折叠，第 3 步至少完整露出 2 行卡片）。
  */
 function StepSection({
-    no, title, hint, summary, open, onToggle, children,
+    no, title, hint, summary, action, open, onToggle, children,
 }: {
     no: number;
     title: string;
     hint?: string;
     summary: string;
+    /** 折叠态右侧的动作提示（如「点击切换」「展开修改 / 重新 AI 策划」）。 */
+    action?: string;
     open: boolean;
     onToggle: () => void;
     children: ReactNode;
@@ -971,7 +1003,12 @@ function StepSection({
                 ) : (
                     <span className="min-w-0 flex-1 truncate text-xs text-foreground/55">{summary}</span>
                 )}
-                <span className="ml-auto shrink-0 text-foreground/45">
+                {action ? (
+                    <span className="ml-auto shrink-0 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[11px] text-primary">
+                        {action}
+                    </span>
+                ) : null}
+                <span className={`shrink-0 text-foreground/45 ${action ? "" : "ml-auto"}`}>
                     {open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                 </span>
             </button>
@@ -1009,15 +1046,32 @@ function SlotCard({
             className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-lg border p-2.5 ${highlighted ? "border-primary/60 bg-primary/5" : "border-border/50"}`}
         >
             {generated ? (
-                <div className="relative aspect-square overflow-hidden rounded-md bg-surface-active">
-                    <img src={`/api/resources/${slot.resourceId}/file`} alt={slot.title || slot.slotKey} className="size-full object-cover" />
-                    {slot.currentVersion > 0 ? (
-                        <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">v{slot.currentVersion}</span>
-                    ) : null}
-                    {highlighted ? (
-                        <span className="absolute left-1.5 top-1.5 rounded bg-primary px-1.5 py-0.5 text-xs text-white">Agent 已改</span>
-                    ) : null}
-                </div>
+                <>
+                    <div className="relative aspect-square overflow-hidden rounded-md bg-surface-active">
+                        <img src={`/api/resources/${slot.resourceId}/file`} alt={slot.title || slot.slotKey} className="size-full object-cover" />
+                        {slot.currentVersion > 0 ? (
+                            <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">v{slot.currentVersion}</span>
+                        ) : null}
+                        {highlighted ? (
+                            <span className="absolute left-1.5 top-1.5 rounded bg-primary px-1.5 py-0.5 text-xs text-white">Agent 已改</span>
+                        ) : null}
+                    </div>
+                    {/* 已出图也要显示「屏标题 + 画面文案摘要」：否则用户只能看到
+                        「1/7 详细编辑 单独生成此屏」，根本认不出这一屏讲什么。 */}
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-start justify-between gap-2">
+                            <strong className="min-w-0 flex-1 truncate text-xs" title={slot.title || slot.slotKey}>
+                                {slot.title || slot.slotKey}
+                            </strong>
+                            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${SLOT_STATUS_TONE[slot.status] || SLOT_STATUS_TONE.pending}`}>
+                                {ECOMMERCE_SLOT_STATUS_LABELS[slot.status] || slot.status}
+                            </span>
+                        </div>
+                        <p className="line-clamp-2 whitespace-pre-wrap text-[11px] leading-4 text-foreground/55">
+                            {slot.copy ? `📝 ${slot.copy}` : "📝 纯图屏：本屏无排版文案"}
+                        </p>
+                    </div>
+                </>
             ) : (
                 <div className="flex flex-col gap-1.5 rounded-md bg-surface-active/60 p-2.5">
                     <div className="flex items-center justify-between gap-2">
