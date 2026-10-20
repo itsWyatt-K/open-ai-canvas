@@ -26,7 +26,6 @@ let activeRemoteUserId = "";
 type RemoteUserDataPhase = "inactive" | "hydrating" | "ready" | "failed";
 
 let remoteUserDataPhase: RemoteUserDataPhase = "inactive";
-let syncTimer: number | null = null;
 let syncPromise: Promise<void> | null = null;
 let syncQueued = false;
 let syncRetryAttempt = 0;
@@ -566,10 +565,7 @@ export function resetRemoteUserDataSync() {
     pendingCanvasMutations.clear();
     pendingJournalScope = "";
     pendingJournalLoaded = false;
-    if (syncTimer) {
-        window.clearTimeout(syncTimer);
-        syncTimer = null;
-    }
+    clearSyncTimers();
     syncRetryAttempt = 0;
     syncQueued = false;
     useSyncProgressStore.getState().clearAll();
@@ -599,17 +595,69 @@ export function withRemoteUserDataSyncExclusive<T>(operation: () => Promise<T>):
     return pending;
 }
 
+// 云端同步调度：节流 + 防抖混合。
+//
+// 旧实现是纯 1200ms 防抖：每次画布变更都重置定时器。生图任务收尾时节点 metadata
+// 会被连续写入（loading → 成功 → 资源回填），间隔短于 1200ms 时定时器被无限重置，
+// 保存迟迟不发；等它终于发出去时，又正好撞上任务派发的写锁
+// （SQLite `database is locked` → 前端显示「作品已生成，保存遇到问题」）。
+//
+// 新策略：
+//   - 距上次保存不足 SYNC_MIN_INTERVAL_MS：只记录「有待保存」，不起定时器（合并高频写入）；
+//   - 距上次保存已超过 SYNC_MIN_INTERVAL_MS：起 SYNC_DEBOUNCE_MS 防抖定时器，
+//     期间若有新变更则补一次「最多再等 SYNC_MAX_WAIT_MS」的兜底定时，
+//     保证**任何情况下 SYNC_MAX_WAIT_MS 内必然发出一次**，不会无限推迟。
+const SYNC_DEBOUNCE_MS = 1200;
+const SYNC_MAX_WAIT_MS = 3000;
+const SYNC_MIN_INTERVAL_MS = 250;
+
+let syncTimer: number | undefined;
+let syncMaxWaitTimer: number | undefined;
+let lastSyncScheduledAt = 0;
+
+function clearSyncTimers() {
+    if (syncTimer) window.clearTimeout(syncTimer);
+    if (syncMaxWaitTimer) window.clearTimeout(syncMaxWaitTimer);
+    syncTimer = undefined;
+    syncMaxWaitTimer = undefined;
+}
+
 export function scheduleRemoteUserDataSync() {
     if (!activeRemoteUserId || remoteUserDataPhase !== "ready") return;
     if (syncPromise) {
         syncQueued = true;
         return;
     }
+    const now = Date.now();
+    // 刚刚才发起过保存：先合并这一次变更，等下一个最小间隔到了再发。
+    // 这样连续的高频 metadata 写入会被压成一次请求，而不会无限重置定时器。
+    if (now - lastSyncScheduledAt < SYNC_MIN_INTERVAL_MS) {
+        if (syncTimer) window.clearTimeout(syncTimer);
+        syncTimer = window.setTimeout(() => {
+            syncTimer = undefined;
+            lastSyncScheduledAt = Date.now();
+            void saveRemoteUserDataNow().catch((error) => console.warn("云端自动同步失败", error));
+        }, SYNC_MIN_INTERVAL_MS - (now - lastSyncScheduledAt));
+        return;
+    }
     if (syncTimer) window.clearTimeout(syncTimer);
+    lastSyncScheduledAt = now;
     syncTimer = window.setTimeout(() => {
-        syncTimer = null;
+        syncTimer = undefined;
         void saveRemoteUserDataNow().catch((error) => console.warn("云端自动同步失败", error));
-    }, 1200);
+    }, SYNC_DEBOUNCE_MS);
+    // 兜底：防抖期内持续有变更时，保证 SYNC_MAX_WAIT_MS 内一定发出一次。
+    if (!syncMaxWaitTimer) {
+        syncMaxWaitTimer = window.setTimeout(() => {
+            syncMaxWaitTimer = undefined;
+            if (syncTimer) {
+                window.clearTimeout(syncTimer);
+                syncTimer = undefined;
+                lastSyncScheduledAt = Date.now();
+                void saveRemoteUserDataNow().catch((error) => console.warn("云端自动同步失败", error));
+            }
+        }, SYNC_MAX_WAIT_MS);
+    }
 }
 
 function isRetryableRemoteSyncError(error: unknown) {
@@ -641,7 +689,7 @@ function scheduleRemoteUserDataRetry(error: unknown) {
     if (syncTimer) window.clearTimeout(syncTimer);
     updateRetryProgress(delayMs);
     syncTimer = window.setTimeout(() => {
-        syncTimer = null;
+        syncTimer = undefined;
         void saveRemoteUserDataNow().catch((retryError) => console.warn("云端自动重试失败", retryError));
     }, delayMs);
     return true;
@@ -653,7 +701,7 @@ function scheduleRemoteUserDataHydrationRetry(error: unknown) {
     syncRetryAttempt = Math.min(syncRetryAttempt + 1, REMOTE_SYNC_RETRY_DELAYS_MS.length - 1);
     if (syncTimer) window.clearTimeout(syncTimer);
     syncTimer = window.setTimeout(() => {
-        syncTimer = null;
+        syncTimer = undefined;
         void syncRemoteUserData(activeRemoteUserId).catch((retryError) => console.warn("云端数据基线自动恢复失败", retryError));
     }, delayMs);
     return true;

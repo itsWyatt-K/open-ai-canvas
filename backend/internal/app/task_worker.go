@@ -74,7 +74,9 @@ func (w *taskWorkerCoordinator) start(ctx context.Context) {
 				}
 				claimCtx, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
 				// 每次领取使用独立 owner，防止同一进程内旧执行者恢复后覆盖新执行者。
-				task, err := s.repo.WithContext(claimCtx).ClaimNextTask(globalSlot.Token(), 45*time.Second)
+				// 库忙时退避重试：SQLite 下画布流式保存与任务认领抢写锁，
+				// 直接放弃会让前端看到「作品已生成，保存遇到问题」。
+				task, _, err := s.claimNextTaskWithRetry(claimCtx, globalSlot.Token(), 45*time.Second)
 				cancelClaim()
 				if err != nil || task == nil {
 					globalSlot.Release()
