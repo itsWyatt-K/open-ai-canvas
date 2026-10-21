@@ -8,12 +8,6 @@ export const navigationTools = [
         section: "创作空间",
     },
     {
-        slug: "inspirations",
-        label: "灵感",
-        icon: GalleryVerticalEnd,
-        section: "创作空间",
-    },
-    {
         slug: "projects",
         label: "短剧创作",
         icon: Clapperboard,

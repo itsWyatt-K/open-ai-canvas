@@ -108,7 +108,13 @@ func validateImageCapabilityConfig(value *ImageCapabilityConfig) error {
 			requestValue = preset.Ratio
 		}
 		if !containsCapabilityString(value.Size.Values, requestValue) {
-			return BadAuthRequest("图片预设必须包含在尺寸支持值中")
+			// 允许自定义尺寸的协议（如声明式 Seedream）可自动补齐缺失的预设像素，
+			// 否则预设与支持值顺序不一致会误报 400。
+			if value.Size.AllowCustom {
+				value.Size.Values = append(value.Size.Values, requestValue)
+			} else {
+				return BadAuthRequest("图片预设必须包含在尺寸支持值中")
+			}
 		}
 	}
 	if value.Quality.Supported {
@@ -484,6 +490,20 @@ func validateImagePresetSelection(profile *ImageCapabilityConfig, quality, ratio
 		}
 	}
 	return newModelCapabilityArgumentError("size", "unsupported_value", BadAuthRequest("当前分辨率不支持所选图片宽高比"))
+}
+
+func imageSizeValueForDeclaredPreset(profile *ImageCapabilityConfig, size string, quality string) string {
+	if profile == nil {
+		return ""
+	}
+	preset, ok := declaredImageSizePreset(profile.Size.Presets, size, quality, imagePresetDefaultTier(profile))
+	if !ok {
+		return ""
+	}
+	if profile.Size.Parameter == "size" {
+		return strings.TrimSpace(preset.Size)
+	}
+	return normalizeDeclaredImageRatio(preset.Ratio)
 }
 
 // imageSizeRatioForDeclaredPreset 把已声明的 preset 像素值还原成它对应的比例。比例型线路

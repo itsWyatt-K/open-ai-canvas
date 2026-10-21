@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"yingce/backend/internal/model"
@@ -31,6 +32,17 @@ func TestTaskForOutputRedactsRoutingAndSecrets(t *testing.T) {
 	}
 }
 
+func TestTaskForOutputRedactsHistoricalFailure(t *testing.T) {
+	task := model.Task{Error: `模型服务暂时不可用（HTTP 503）；上游：{"error":{"code":"model_not_found","message":"request id abc at https://private.example/task_abc123"}}`, ProviderCancelError: "取消失败 task_abc123"}
+	output := taskForOutput(task)
+	if strings.Contains(output.Error, "private.example") || strings.Contains(output.Error, "request id") || strings.Contains(output.Error, "task_abc123") || !strings.Contains(output.Error, "更换模型") {
+		t.Fatalf("unsafe task error: %q", output.Error)
+	}
+	if strings.Contains(output.ProviderCancelError, "task_abc123") {
+		t.Fatalf("unsafe cancel error: %q", output.ProviderCancelError)
+	}
+}
+
 func TestTaskOutputIncludesOnlySafeWorkbenchRestoreData(t *testing.T) {
 	task := model.Task{InputJSON: `{"mode":"video","metadata":{"source":"workbench","workbenchKind":"video","workbenchToolId":"tool-1","workbenchPresetId":"preset-1","workbench":{"kind":"video","parameters":{"seconds":8,"ratio":"16:9","resolution":"1080p","generateAudio":true},"references":[{"resourceId":"resource-1","kind":"image","role":"first_frame","slotKey":"subject"}]}},"config":{"apiKey":"private-key","videoSeconds":"8","size":"16:9","vquality":"1080p"},"referenceImages":[{"resourceId":"resource-1","storageKey":"resource:resource-1","role":"first_frame","slotKey":"subject"}]}`}
 	publicJSON := publicTaskInputJSON(task.InputJSON)
@@ -56,6 +68,22 @@ func TestTaskOutputIncludesOnlySafeWorkbenchRestoreData(t *testing.T) {
 	reference := references[0].(map[string]any)
 	if reference["resourceId"] != "resource-1" || reference["kind"] != "image" || reference["role"] != "first_frame" || reference["slotKey"] != "subject" {
 		t.Fatalf("safe reference fields not preserved: %#v", reference)
+	}
+}
+
+func TestTaskOutputRestoresWorkbenchImageResolution(t *testing.T) {
+	task := model.Task{InputJSON: `{"mode":"image","metadata":{"source":"workbench","workbenchKind":"image","workbench":{"kind":"image","parameters":{"size":"1824x1024","imageResolution":"2k","quality":"auto","count":1}}},"config":{"size":"1824x1024","imageResolution":"2k","quality":"auto","count":"1"}}`}
+	var output map[string]any
+	if err := json.Unmarshal([]byte(publicTaskInputJSON(task.InputJSON)), &output); err != nil {
+		t.Fatal(err)
+	}
+	workbench, ok := output["workbench"].(map[string]any)
+	if !ok {
+		t.Fatalf("workbench restore data missing: %#v", output)
+	}
+	parameters, ok := workbench["parameters"].(map[string]any)
+	if !ok || parameters["imageResolution"] != "2k" {
+		t.Fatalf("image resolution not preserved for restore: %#v", workbench)
 	}
 }
 

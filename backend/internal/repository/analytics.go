@@ -126,6 +126,26 @@ func (r *Repository) PublicModelAvailabilityLogs(filter PublicModelAvailabilityF
 	return logs, query.Find(&logs).Error
 }
 
+// PublicModelRecentLogs 从当前时间往前推查询指定渠道最近的调用日志（按时间倒序），用于计算每个模型最近的执行结果状态点。
+func (r *Repository) PublicModelRecentLogs(channelIDs []string, limit int) ([]model.ApiCallLog, error) {
+	var logs []model.ApiCallLog
+	if len(channelIDs) == 0 {
+		return logs, nil
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 500
+	}
+	query := r.db.Select("channel_id", "model", "status", "created_at").
+		Where("api_call_logs.channel_id IN ?", channelIDs).
+		Where("api_call_logs.user_id <> ''").
+		Where("api_call_logs.model <> ''").
+		Where("api_call_logs.request_kind = ?", "create").
+		Where("api_call_logs.status IN ?", []model.ApiCallStatus{model.ApiCallStatusSucceeded, model.ApiCallStatusFailed}).
+		Order("api_call_logs.created_at desc").
+		Limit(limit)
+	return logs, query.Find(&logs).Error
+}
+
 func (r *Repository) AnalyticsActivities(filter AnalyticsFilter) ([]model.UserDailyActivity, error) {
 	var activities []model.UserDailyActivity
 	query := r.db.Where("day >= ? AND day < ?", filter.From, filter.To)
@@ -302,9 +322,9 @@ func visibleAPICallLogQuery(query *gorm.DB) *gorm.DB {
 	return query.Where("api_call_logs.request_kind <> ?", "poll")
 }
 
-func (r *Repository) VideoAPICallRoot(log model.ApiCallLog) (*model.ApiCallLog, error) {
+func (r *Repository) AsyncMediaAPICallRoot(log model.ApiCallLog) (*model.ApiCallLog, error) {
 	var root model.ApiCallLog
-	query := r.db.Where("capability = ? AND request_kind = ?", "video", "create")
+	query := r.db.Where("capability = ? AND request_kind = ?", log.Capability, "create")
 	if log.TaskID != "" {
 		query = query.Where("task_id = ?", log.TaskID)
 	} else {
@@ -314,6 +334,12 @@ func (r *Repository) VideoAPICallRoot(log model.ApiCallLog) (*model.ApiCallLog, 
 		return nil, err
 	}
 	return &root, nil
+}
+
+// VideoAPICallRoot 保留旧调用面的兼容别名。
+func (r *Repository) VideoAPICallRoot(log model.ApiCallLog) (*model.ApiCallLog, error) {
+	log.Capability = "video"
+	return r.AsyncMediaAPICallRoot(log)
 }
 
 // whereTimeRange compares instants. SQLite stores time.Time as offset text, so a
@@ -326,7 +352,8 @@ func whereTimeRange(query *gorm.DB, column string, from, to time.Time) *gorm.DB 
 		return query.Where("1 = 0")
 	}
 	if query.Dialector.Name() == "sqlite" {
-		return query.Where("unixepoch("+column+") >= ? AND unixepoch("+column+") < ?", from.Unix(), to.Unix())
+		epochColumn := column + "_epoch"
+		return query.Where(epochColumn+" >= ? AND "+epochColumn+" < ?", from.Unix(), to.Unix())
 	}
 	return query.Where(column+" >= ? AND "+column+" < ?", from, to)
 }

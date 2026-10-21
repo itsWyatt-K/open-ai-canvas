@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 56
+const CurrentSchemaVersion int64 = 58
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -211,6 +211,22 @@ var schemaMigrations = []migration{
 		}
 		return nil
 	}},
+	{version: 57, name: "provider_catalog_source", checksum: "sha256:provider-catalog-source-v57", apply: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn(&model.ModelChannel{}, "CatalogProviderID") {
+			if err := tx.Migrator().AddColumn(&model.ModelChannel{}, "CatalogProviderID"); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasColumn(&model.ChannelModel{}, "CatalogModelKey") {
+			return tx.Migrator().AddColumn(&model.ChannelModel{}, "CatalogModelKey")
+		}
+		return nil
+	}},
+	// v57/v58 来自上游 v1.6.8.x 的 provider_catalog_source 与 sql_perf_indexes。
+	// 本地 v55=ecommerce_workshop、v56=ecommerce_plan_review 已占用同样号段，
+	// 按 7608d59e3 合入 v1.6.8 时的惯例（新来者顺延拿新号）改号为 57/58；
+	// 真库 1..56 记录齐全且身份一致，57/58 首次 apply 后按新 checksum 记账。
+	{version: 58, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v58-20261016", apply: migrateSchemaV56},
 }
 
 func migratePrefixedIDSequenceReconcile(tx *gorm.DB) error {
@@ -580,6 +596,21 @@ func normalizeLegacyWorkbenchMigration(tx *gorm.DB) error {
 }
 
 const workbenchToolsMigrationVersion int64 = 54
+
+func migrateSchemaV56(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.ApiCallLog{}, &model.Task{}, &model.CreditLedgerEntry{}); err != nil {
+		return fmt.Errorf("迁移 SQL 性能索引：%w", err)
+	}
+	if tx.Dialector.Name() == "sqlite" {
+		if err := tx.Exec("UPDATE api_call_logs SET created_at_epoch = unixepoch(created_at) WHERE created_at_epoch = 0 OR created_at_epoch IS NULL").Error; err != nil {
+			return fmt.Errorf("回填 api_call_logs 时间戳：%w", err)
+		}
+		if err := tx.Exec("UPDATE tasks SET created_at_epoch = unixepoch(created_at) WHERE created_at_epoch = 0 OR created_at_epoch IS NULL").Error; err != nil {
+			return fmt.Errorf("回填 tasks 时间戳：%w", err)
+		}
+	}
+	return nil
+}
 
 func MigrateSchema(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {

@@ -46,10 +46,35 @@ func (s *Service) publicModelAvailability(channels []PublicChannelCatalog, now t
 		return result, nil
 	}
 
+	// 30 秒 TTL 缓存，避免每次模型目录请求都全量扫描 api_call_logs。
+	s.modelAvailabilityMu.RLock()
+	if s.modelAvailabilityCache != nil && time.Since(s.modelAvailabilityAt) < 30*time.Second {
+		cached := make(map[publicModelAvailabilityKey]*PublicModelAvailability, len(s.modelAvailabilityCache))
+		for k, v := range s.modelAvailabilityCache {
+			cached[k] = v
+		}
+		s.modelAvailabilityMu.RUnlock()
+		return cached, nil
+	}
+	s.modelAvailabilityMu.RUnlock()
+
 	from := trendFrom
 	logs, err := s.repo.PublicModelAvailabilityLogs(repository.PublicModelAvailabilityFilter{From: from, To: now, ChannelIDs: channelIDs})
 	if err != nil {
 		return nil, err
+	}
+
+	// 从趋势数据逆序遍历导出最近结果，避免第二次全表扫描。
+	recentMap := make(map[publicModelAvailabilityKey][]bool)
+	for i := len(logs) - 1; i >= 0; i-- {
+		log := logs[i]
+		key := publicModelAvailabilityKey{channelID: log.ChannelID, modelKey: log.Model}
+		if _, ok := known[key]; !ok {
+			continue
+		}
+		if len(recentMap[key]) < 10 {
+			recentMap[key] = append(recentMap[key], log.Status == model.ApiCallStatusSucceeded)
+		}
 	}
 
 	last24 := make(map[publicModelAvailabilityKey]*publicModelAvailabilityAccumulator)
@@ -73,10 +98,17 @@ func (s *Service) publicModelAvailability(channels []PublicChannelCatalog, now t
 
 	for key := range known {
 		primary := last24[key]
+		results := make([]bool, len(recentMap[key]))
+		copy(results, recentMap[key])
+		// 将倒序取出的切片反转，使得从左到右表示时间演进（最右侧为最新一次调用）
+		for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
+			results[i], results[j] = results[j], results[i]
+		}
 		item := &PublicModelAvailability{
-			Trend7d:    make([]PublicModelAvailabilityDay, 0, 7),
-			DataState:  publicAvailabilityState(sampleCount(primary), publicModelAvailabilityMinimumSamples),
-			ComputedAt: now,
+			Trend7d:       make([]PublicModelAvailabilityDay, 0, 7),
+			RecentResults: results,
+			DataState:     publicAvailabilityState(sampleCount(primary), publicModelAvailabilityMinimumSamples),
+			ComputedAt:    now,
 		}
 		if primary != nil {
 			item.SampleCount = primary.total
@@ -109,6 +141,10 @@ func (s *Service) publicModelAvailability(channels []PublicChannelCatalog, now t
 		}
 		result[key] = item
 	}
+	s.modelAvailabilityMu.Lock()
+	s.modelAvailabilityCache = result
+	s.modelAvailabilityAt = time.Now()
+	s.modelAvailabilityMu.Unlock()
 	return result, nil
 }
 
