@@ -103,19 +103,31 @@ func TestMigrateSchemaRecordsAndValidatesVersion(t *testing.T) {
 	}
 }
 
-func TestMigrateSchemaV56UpgradesProviderCatalogV55(t *testing.T) {
-	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-sql-perf-v56?mode=memory&cache=shared"})
+// 本地 v55=ecommerce_workshop / v56=ecommerce_plan_review 先占号，上游
+// provider_catalog_source 与 sql_perf_indexes 顺延为 v57/v58，故此用例按
+// 本地 schema 现实核对两条身份，并继续验证上游性能索引的行为。
+func TestMigrateSchemaV58UpgradesProviderCatalogV57(t *testing.T) {
+	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-sql-perf-v58?mode=memory&cache=shared"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}
-	var catalogMigration schemaMigration
-	if err := db.First(&catalogMigration, "version = ?", 55).Error; err != nil {
+	// 本地电商迁移身份必须原样保留（不得被上游覆盖）。
+	var localMigration schemaMigration
+	if err := db.First(&localMigration, "version = ?", 55).Error; err != nil {
 		t.Fatal(err)
 	}
-	if catalogMigration.Name != "provider_catalog_source" || catalogMigration.Checksum != "sha256:provider-catalog-source-v55" {
+	if localMigration.Name != "ecommerce_workshop" || localMigration.Checksum != "sha256:ecommerce-workshop-v55-20261014" {
+		t.Fatalf("本地电商迁移身份被改动：%#v", localMigration)
+	}
+	// 上游渠道目录迁移顺延后在 v57。
+	var catalogMigration schemaMigration
+	if err := db.First(&catalogMigration, "version = ?", 57).Error; err != nil {
+		t.Fatal(err)
+	}
+	if catalogMigration.Name != "provider_catalog_source" || catalogMigration.Checksum != "sha256:provider-catalog-source-v57" {
 		t.Fatalf("provider catalog migration identity changed: %#v", catalogMigration)
 	}
 	for _, item := range []struct {
@@ -137,7 +149,8 @@ func TestMigrateSchemaV56UpgradesProviderCatalogV55(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := db.Where("version = ?", 56).Delete(&schemaMigration{}).Error; err != nil {
+	// 重放的是 sql_perf_indexes，改号后位于 v58；误删 v56 会删掉本地电商迁移。
+	if err := db.Where("version = ?", 58).Delete(&schemaMigration{}).Error; err != nil {
 		t.Fatal(err)
 	}
 	createdAt := time.Date(2026, 10, 15, 12, 30, 0, 0, time.UTC)
@@ -170,12 +183,13 @@ func TestMigrateSchemaV56UpgradesProviderCatalogV55(t *testing.T) {
 			t.Fatalf("v56 did not restore %s", item.index)
 		}
 	}
+	// provider_catalog_source 改号后位于 v57，按 v57 核对身份未被重写。
 	var after schemaMigration
-	if err := db.First(&after, "version = ?", 55).Error; err != nil {
+	if err := db.First(&after, "version = ?", 57).Error; err != nil {
 		t.Fatal(err)
 	}
 	if after != catalogMigration {
-		t.Fatalf("v56 rewrote provider catalog migration: before=%#v after=%#v", catalogMigration, after)
+		t.Fatalf("v58 rewrote provider catalog migration: before=%#v after=%#v", catalogMigration, after)
 	}
 	if !db.Migrator().HasColumn(&model.ModelChannel{}, "CatalogProviderID") || !db.Migrator().HasColumn(&model.ChannelModel{}, "CatalogModelKey") {
 		t.Fatal("provider catalog columns missing after v56 upgrade")
