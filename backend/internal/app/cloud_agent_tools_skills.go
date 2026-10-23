@@ -31,6 +31,10 @@ type cloudAgentSkill struct {
 	// 就只能在描述层拿 2 分，拿不到 4 分卡级权重。标题索引让 cards/、
 	// references/、assets/ 三类目录真正平权：slug 或标题命中均记 4 分。
 	CardTitles map[string]string `json:"cardTitles,omitempty"`
+	// CardTitleH1 卡的 H1 标题（文档身份）。平分时 H1 命中优先于小节标题命中：
+	// 「生产路线」在 references/production_routes.md 的 H1 与台账模板的 H2
+	// 同时命中，权威文档应当胜出。
+	CardTitleH1 map[string]string `json:"cardTitleH1,omitempty"`
 }
 
 const cloudAgentSkillEntryPath = "SKILL.md"
@@ -118,11 +122,13 @@ func cloudAgentSkillCardPaths(skill cloudAgentSkill) []string {
 	return paths
 }
 
-// cloudAgentSkillCardHeadingIndex 抽取卡的标题结构（H1 与各级小节标题，代码围栏内不计），
-// 作为卡的身份索引供中文关键词命中。索引有 400 字上限，防止异常大文件把快照撑爆。
-func cloudAgentSkillCardHeadingIndex(content string) string {
+// cloudAgentSkillCardHeadingIndex 抽取卡的标题结构，返回（全标题索引, H1 索引）。
+// 全索引用于 4 分命中判定；H1 索引用于平分时的身份裁决。代码围栏内不计，
+// 全索引有 400 字上限，防止异常大文件把快照撑爆。
+func cloudAgentSkillCardHeadingIndex(content string) (all, h1 string) {
 	const maxIndexRunes = 400
 	headings := make([]string, 0, 16)
+	h1s := make([]string, 0, 2)
 	total := 0
 	inFence := false
 	for _, line := range strings.Split(content, "\n") {
@@ -138,13 +144,17 @@ func cloudAgentSkillCardHeadingIndex(content string) string {
 		if heading == "" {
 			continue
 		}
+		depth := len(trimmed) - len(strings.TrimLeft(trimmed, "#"))
+		if depth == 1 {
+			h1s = append(h1s, heading)
+		}
 		headings = append(headings, heading)
 		total += utf8.RuneCountInString(heading) + 1
 		if total >= maxIndexRunes {
 			break
 		}
 	}
-	return strings.Join(headings, " ")
+	return strings.Join(headings, " "), strings.Join(h1s, " ")
 }
 
 // cloudAgentSkillCardTextFile 与快照收录口径一致：只有文本文件参与卡索引。
@@ -174,18 +184,39 @@ func cloudAgentSkillMatch(skill cloudAgentSkill, tokens []string) (int, string) 
 	cards := cloudAgentSkillCardPaths(skill)
 	bestCard := ""
 	cardScore := 0
+	bestRank := 0
 	for _, path := range cards {
-		slug := cloudAgentSkillCardSlug(path)
+		slug := strings.ToLower(cloudAgentSkillCardSlug(path))
 		headings := strings.ToLower(skill.CardTitles[path])
+		h1 := strings.ToLower(skill.CardTitleH1[path])
 		hit := 0
+		slugHit := false
+		h1Hit := false
 		for _, token := range tokens {
-			if strings.Contains(slug, token) || (headings != "" && strings.Contains(headings, token)) {
+			if strings.Contains(slug, token) {
 				hit += 4
+				slugHit = true
+			} else if headings != "" && strings.Contains(headings, token) {
+				hit += 4
+				if h1 != "" && strings.Contains(h1, token) {
+					h1Hit = true
+				}
 			}
 		}
-		if hit > cardScore {
+		// 平分裁决优先级：文件名 slug > H1 标题 > 小节标题。
+		// 只决定"同分选哪张卡"，不影响 4 分权重本身；hit=0 不参与裁决，
+		// 否则无卡命中时会错误地把 path 从 SKILL.md 改成某张卡。
+		rank := 1
+		switch {
+		case slugHit:
+			rank = 3
+		case h1Hit:
+			rank = 2
+		}
+		if hit > 0 && (hit > cardScore || (hit == cardScore && rank > bestRank)) {
 			cardScore = hit
 			bestCard = path
+			bestRank = rank
 		}
 	}
 	score += cardScore
@@ -376,6 +407,7 @@ func (s *Service) cloudAgentSkills(userID string, ids []string) ([]cloudAgentSki
 			return nil, err
 		}
 		titles := make(map[string]string, len(bundle.Files))
+		h1s := make(map[string]string, len(bundle.Files))
 		for _, file := range bundle.Files {
 			if file.Path == cloudAgentSkillEntryPath || !cloudAgentSkillCardTextFile(file.Path) {
 				continue
@@ -384,11 +416,15 @@ func (s *Service) cloudAgentSkills(userID string, ids []string) ([]cloudAgentSki
 			if err != nil {
 				return nil, fmt.Errorf("解码技能 %s 的文件 %s 失败: %w", id, file.Path, err)
 			}
-			if index := cloudAgentSkillCardHeadingIndex(string(content)); index != "" {
+			if index, h1 := cloudAgentSkillCardHeadingIndex(string(content)); index != "" {
 				titles[file.Path] = index
+				if h1 != "" {
+					h1s[file.Path] = h1
+				}
 			}
 		}
 		snapshot.CardTitles = titles
+		snapshot.CardTitleH1 = h1s
 		// Detect an update during package reads instead of mixing two versions.
 		latest, err := s.SkillDetail(userID, id)
 		if err != nil {
