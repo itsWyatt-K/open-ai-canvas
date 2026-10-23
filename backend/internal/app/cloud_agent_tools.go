@@ -310,6 +310,20 @@ func compileCloudAgentTools(req CloudAgentRequest, includeProfileTool bool) []ma
 			"promptOverride": str("完整提示词覆盖（非空时最高优先；传空字符串表示清除覆盖）"),
 		}, "productId", "slotId")
 	}
+	// Chaoge 导演校验工具：纯内存语法/结构门禁（internal/director 与 Python 校验器 1:1），
+	// 不写库、不扣费、不碰画布，因此只读模式下也始终下发——只读会话同样要在交付
+	// 即梦/LibTV 提示词与项目台账前自检。errors 非空即不得交付。
+	add("director_validate_prompt", "交付即梦/LibTV 视频提示词前的确定性门禁自检。校验栏目存在与顺序、字符预算（正文5000硬上限/4200常规目标、分栏软上限）、平台素材语法（即梦裸@与绑定后简称、LibTV占位符、外部【本批上传ID映射】双向对齐）、声音模式（干声绑定/模型配音/后期配音）、镜头固定字段与景别、一镜到底声明、时间码连续性与单批时长上限。返回 ok/charCount/errors/warnings；errors 必须逐项修复后重跑。", map[string]any{
+		"text":         str("完整提示词文本，可含外部【本批上传ID映射】表"),
+		"platform":     str("jimeng=即梦；libtv=LibTV。默认 jimeng"),
+		"mode":         str("new=全新生成；extend=视频延长；edit=视频编辑。默认 new"),
+		"modelVersion": str("Seedance 2.5 或 2.0（决定单批时长上限 30s/15s）。默认 2.5"),
+		"assetMode":    str("mapped=素材映射；text=纯文字；hybrid=混合。默认 mapped"),
+		"voiceMode":    str("mapped_dry_voice=干声绑定；model_voice=模型配音；post_dub=后期配音。默认 mapped_dry_voice"),
+	}, "text")
+	add("director_validate_ledger", "交付 Chaoge 项目完整资产台账或轻量制作状态 Markdown 前的确定性门禁自检。校验 YAML 前置区 11 个必填字段与枚举、full_ledger 13 个/light_state 9 个必选二级标题、轻量状态本地核验禁用词、稳定 ID 重复。返回 ok/recordType/stage/route/errors/warnings。", map[string]any{
+		"text": str("完整台账或制作状态的 Markdown 正文"),
+	}, "text")
 	return tools
 }
 

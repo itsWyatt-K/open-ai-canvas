@@ -81,3 +81,6 @@ backend/tmp_*
 
 # 本地临时取证材料（不入库）
 _work_tmp/
+
+# director parity 夹具再生成暂存（由 scripts/gen_director_parity_fixtures.py 产出）
+scripts/_out/

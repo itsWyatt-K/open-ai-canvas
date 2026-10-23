@@ -1,0 +1,4 @@
+interface:
+  display_name: "Chaoge AI导演 2.0.0 Flex"
+  short_description: "三路线AI导演：完整资产、分批资产提示词或直接视频制作"
+  default_prompt: "使用 $chaoge-film-director-flex 读取我的定稿剧本，先完成十项深度分析，再让我选择完整资产、分批资产提示词或直接视频制作路线。"
