@@ -82,5 +82,8 @@ backend/tmp_*
 # 本地临时取证材料（不入库）
 _work_tmp/
 
+# 一次性前端验证构建产物（吸收上游时用，不入库）
+web/dist-verify/
+
 # director parity 夹具再生成暂存（由 scripts/gen_director_parity_fixtures.py 产出）
 scripts/_out/

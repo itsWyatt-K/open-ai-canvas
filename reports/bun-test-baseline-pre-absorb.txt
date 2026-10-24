@@ -1,0 +1,34 @@
+bun test v1.4.3 (c6da4a4d3)
+
+test\asset-batch-delete.test.ts:
+(pass) 素材批量删除 > 100 个素材只发一个 POST 数组请求，成功后只更新一次本地素材集合 [17.41ms]
+(pass) 素材批量删除 > 真实分页查询刷新不阻塞删除完成（刷新失败：%s） [11.86ms]
+(pass) 素材批量删除 > 真实分页查询刷新不阻塞删除完成（刷新失败：%s） [6.89ms]
+(pass) 素材批量删除 > 业务失败不会先删本地素材或回退到逐条请求 [1.88ms]
+(pass) 素材批量删除 > 删除响应返回前切换账号，不删除新账号本地素材 [1.10ms]
+(pass) 素材批量删除 > 空 ID 不发请求，重复 ID 合并到一个请求 [1.28ms]
+(pass) 素材批量删除 > 素材页和选择器的批量及清空入口使用数组同步方法 [6.56ms]
+
+test\canvas-appearance.test.ts:
+(pass) canvas custom appearance > uses point grid as the default for new canvases [0.09ms]
+(pass) canvas custom appearance > resolves the black preset to a black background and fully opaque black grid [1.06ms]
+(pass) canvas custom appearance > selecting either fixed theme resets the spatial grid to dots [5.57ms]
+(pass) canvas custom appearance > inherits the active fixed theme the first time custom mode is selected [0.38ms]
+(pass) canvas custom appearance > restores a previous custom profile only under the same base theme [0.15ms]
+(pass) canvas custom appearance > keeps color-picker popups inside the appearance interaction boundary [2.40ms]
+(pass) canvas custom appearance > commits custom colors immediately instead of discarding them when the panel closes [0.39ms]
+(pass) canvas custom appearance > keeps hex editing live across parent updates and common hex formats [1.02ms]
+(pass) canvas custom appearance > adjusts only the custom canvas substrate and grid [0.70ms]
+(pass) canvas custom appearance > switches the custom interface style without changing custom canvas colors [0.10ms]
+(pass) canvas custom appearance > does not expose background opacity after legacy values are ignored [0.47ms]
+(pass) canvas custom appearance > stores defaults locally with the active account scope [0.33ms]
+
+test\commerce-detail-planning.test.ts:
+(pass) detail planning requests visible evidence, style analysis and an executable visual plan [1.07ms]
+(pass) structured visual design is compiled into editable per-screen prompts, not discarded [2.10ms]
+(pass) new planning cannot auto-generate from a vague legacy outline or incomplete analysis [0.43ms]
+(pass) detail global and single-screen style images are planner-only, including prompt overrides [0.71ms]
+(pass) detailed replanning preserves manual fields and only replaces the target screen [0.35ms]
+(pass) new plans fail explicitly rather than silently truncate visual decisions or copy [0.62ms]
+
+test\commerce-image-assembly.test.ts:
