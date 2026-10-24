@@ -797,5 +797,11 @@ func (s *Service) CancelCloudAgent(ctx context.Context, userID, id string) error
 	if err != nil {
 		return err
 	}
-	return s.finishCloudAgentCleanup(ctx, latest)
+	// 控制面取消（status=cancelled）已在上面提交；清理是可重试的收尾——
+	// 与并发写者撞出 revision 冲突时不算失败：CleanupPending 保持为真，
+	// 调度器/卡死清扫器会继续收尾（否则对已取消运行重复取消会报冲突）。
+	if cleanupErr := s.finishCloudAgentCleanup(ctx, latest); cleanupErr != nil && !errors.Is(cleanupErr, repository.ErrCreationConflict) {
+		return cleanupErr
+	}
+	return nil
 }

@@ -197,7 +197,13 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 		}
 	}()
 	if run.CleanupPending {
-		return s.finishCloudAgentCleanup(context.Background(), run)
+		// 清理是可重试的收尾：与并发写者撞 revision 冲突不算失败——
+		// CleanupPending 保持为真，调度器下一轮继续；重放（对已终态 run
+		// 再推进）不应把良性冲突当作运行错误上抛。
+		if cleanupErr := s.finishCloudAgentCleanup(context.Background(), run); cleanupErr != nil && !errors.Is(cleanupErr, repository.ErrCreationConflict) {
+			return cleanupErr
+		}
+		return nil
 	}
 	if run.Status != "running" && run.Status != "queued" {
 		return nil
