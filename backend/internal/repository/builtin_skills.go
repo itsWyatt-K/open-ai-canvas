@@ -18,6 +18,17 @@ func (r *Repository) BuiltinSkillTombstoned(skillID string) (bool, error) {
 	return count > 0, nil
 }
 
+// BuiltinSourcedSkillIDs lists skill IDs that claim builtin provenance
+// (source_type = "builtin"), regardless of whether they are still shipped
+// in the embedded packages.
+func (r *Repository) BuiltinSourcedSkillIDs() ([]string, error) {
+	var ids []string
+	if err := r.db.Model(&model.Skill{}).Where("source_type = ?", "builtin").Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 func (r *Repository) DeleteBuiltinSkill(skillID string, actorID string) error {
 	now := time.Now().UTC()
 	return r.db.Transaction(func(tx *gorm.DB) error {

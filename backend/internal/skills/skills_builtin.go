@@ -75,6 +75,35 @@ func (s *Service) EnsureBuiltinSkills() error {
 			return fmt.Errorf("同步内置技能 %s 文件包失败: %w", item.skill.ID, err)
 		}
 	}
+	return s.pruneRetiredBuiltinSkills(packages)
+}
+
+// pruneRetiredBuiltinSkills removes catalog rows that claim builtin provenance
+// (source_type = "builtin") but are no longer shipped in the embedded packages,
+// so skills dropped from the code tree cannot linger as ghosts after upgrades.
+// Rows are removed through DeleteBuiltinSkill so versions, files and user
+// states are cleaned up and a tombstone records the retirement.
+func (s *Service) pruneRetiredBuiltinSkills(packages []builtinSkillPackage) error {
+	if s.repo == nil {
+		return nil
+	}
+	current := make(map[string]struct{}, len(packages))
+	for _, item := range packages {
+		current[item.skill.ID] = struct{}{}
+	}
+	ids, err := s.repo.BuiltinSourcedSkillIDs()
+	if err != nil {
+		return fmt.Errorf("盘点内置技能目录行失败: %w", err)
+	}
+	for _, id := range ids {
+		if _, ok := current[id]; ok {
+			continue
+		}
+		if err := s.repo.DeleteBuiltinSkill(id, "yingce-system"); err != nil {
+			return fmt.Errorf("清理废弃内置技能 %s 失败: %w", id, err)
+		}
+		log.Printf("已清理废弃内置技能 %s（代码树中不存在，已留墓碑）", id)
+	}
 	return nil
 }
 
