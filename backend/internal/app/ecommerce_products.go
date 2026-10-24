@@ -405,10 +405,11 @@ func sanitizeProductName(name string) string {
 }
 
 // UpdateEcommerceProductBrief 更新卖点与附加要求（第 1 步引导区失焦即存）。
+// 卖点走 SanitizeSellingPoints：剥 markdown 复杂格式 + 500 字符硬上限（L1 入口防御）。
 func (s *Service) UpdateEcommerceProductBrief(userID, productID string, sellingPoints, extraRequirements *string) error {
 	updates := map[string]any{"updated_at": time.Now()}
 	if sellingPoints != nil {
-		updates["selling_points"] = strings.TrimSpace(*sellingPoints)
+		updates["selling_points"] = ecommerce.SanitizeSellingPoints(*sellingPoints)
 	}
 	if extraRequirements != nil {
 		updates["extra_requirements"] = strings.TrimSpace(*extraRequirements)

@@ -747,8 +747,9 @@ export function EcommerceTaskDetail({
                                 <Input
                                     size="small"
                                     defaultValue={product.sellingPoints || ""}
+                                    maxLength={500}
                                     onBlur={(event) => void saveProductField("sellingPoints", event.target.value)}
-                                    placeholder="例如：抗菌 · 可水洗"
+                                    placeholder="例如：抗菌 · 可水洗（最长 500 字；历史超长数据编译时会被自动截断）"
                                 />
                             </label>
                             <label className="flex flex-col gap-1">

@@ -176,8 +176,13 @@ export function EcommerceSlotEditorDialog({ slot, index, total, onClose, onNavig
                 </div>
 
                 <label className="flex flex-col gap-1">
-                    <span className="text-xs text-foreground/55">卖点绑定（仅填写已确认事实）</span>
-                    <Input value={sellingPoints} onChange={(event) => setSellingPoints(event.target.value)} placeholder="如：38dB 静音 · IPX7 防水" />
+                    <span className="flex items-center justify-between text-xs text-foreground/55">
+                        <span>卖点绑定（仅填写已确认事实）</span>
+                        <span className={"text-[10px] " + (sellingPoints.length > 450 ? "text-amber-500" : "text-foreground/40")}>
+                            {sellingPoints.length}/500
+                        </span>
+                    </span>
+                    <Input value={sellingPoints} maxLength={500} onChange={(event) => setSellingPoints(event.target.value)} placeholder="如：38dB 静音 · IPX7 防水（最长 500 字，超长部分不进提示词）" />
                 </label>
 
                 <label className="flex flex-col gap-1">

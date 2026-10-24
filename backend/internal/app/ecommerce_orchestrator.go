@@ -436,6 +436,9 @@ type ecommerceSlotPromptInput struct {
 // 制作说明 → 参考图用途与「不复制原图场景」 → 产品/核心卖点 → 12 段视觉方案 →
 // 本屏场景类型/绑定卖点 → 【画面文字与海报排版硬性要求】 → 收口约束。
 //
+// 卖点字段过 SanitizeSellingPoints（L3 最终防线）：即使库里已有历史脏数据，
+// 进入生图提示词前也会剥离 markdown 并限长 500。
+//
 // 与旧实现的根本差别：
 //   - 旧版把「保持主体结构、颜色、比例、材质和可见细节稳定…画面不生成文字…」当护栏追加，
 //     等于命令模型**复制原图构图且不许写字**——这正是「6 张图一模一样 + 全组无字」的根因；
@@ -446,7 +449,7 @@ func buildEcommerceSlotPrompt(in ecommerceSlotPromptInput) string {
 		fmt.Sprintf("制作%s 电商详情页单屏：%s（第 %d 屏，%s）。", in.PlatformName, in.SlotTitle, in.SlotNo, in.Kind),
 		"前 1 张参考图是产品，严格保留产品外观、材质、包装、标识。仅作为产品身份依据，"+
 			"不是原产品照片的背景、机位和构图模板。按本屏视觉方案重新组织场景、道具、镜头与光线，不复制原图场景。",
-		"产品："+strings.TrimSpace(in.ProductName)+"\n核心卖点："+firstNonEmpty(strings.TrimSpace(in.ProductSelling), "未提供"),
+		"产品："+strings.TrimSpace(in.ProductName)+"\n核心卖点："+firstNonEmpty(ecommerce.SanitizeSellingPoints(in.ProductSelling), "未提供"),
 	)
 	if plan := strings.TrimSpace(in.VisualPlan); plan != "" {
 		blocks = append(blocks, plan)
@@ -455,7 +458,7 @@ func buildEcommerceSlotPrompt(in ecommerceSlotPromptInput) string {
 	if scene := strings.TrimSpace(in.SceneType); scene != "" {
 		sceneLines = append(sceneLines, "本屏场景类型："+scene)
 	}
-	if points := strings.TrimSpace(in.SlotSellingPoints); points != "" {
+	if points := ecommerce.SanitizeSellingPoints(in.SlotSellingPoints); points != "" {
 		sceneLines = append(sceneLines, "本屏绑定的已确认卖点："+points)
 	}
 	if len(sceneLines) > 0 {
@@ -803,7 +806,7 @@ func dispatchSnapshotFor(product *model.EcommerceProduct) (ecommercePlanSnapshot
 	return ecommercePlanSnapshot{}, false
 }
 
-// continueEcommerceDispatch 顺延补派：对「已确认（running/queued）但仍有
+// continueEcommerceDispatch 顺延补派：对「已确认（running/queued/failed）但仍有
 // draft/pending 屏未派发」的商品，按当前容量继续派发。
 //
 // 背景（阶段 4 容量修复）：平台默认同时在途任务上限 5，而一组方案通常 7 屏，
@@ -811,12 +814,18 @@ func dispatchSnapshotFor(product *model.EcommerceProduct) (ecommercePlanSnapshot
 // SyncEcommerceProduct（前端轮询详情即隐式对账）中按容量补派。
 //
 // 安全边界：
-//   - 只补派 running/queued 商品（用户已确认，非 review/draft 待确认态）；
+//   - 补派 running/queued 商品；failed 商品同样参与——它常见形态是
+//     「某屏失败 + 其余屏仍在途/顺延」，容量随失败释放，顺延屏应继续派发
+//     （返工令 B 遗留：此前只补 running/queued，failed 商品一旦落库即卡死顺延屏）；
 //   - 槽位必须带 stage 落库的提示词（generation_prompt），否则跳过等用户编辑；
+//   - failed/uncertain 槽位永不自动重发（等用户手动重试），槽位级守卫保证；
 //   - 渠道/模型取自确认时写入的方案快照（plan_json），缺参即跳过不盲派；
 //   - 每屏仅派发一次：成功即转 queued 并落带 child_task_id 的版本，幂等。
 func (s *Service) continueEcommerceDispatch(userID string, product *model.EcommerceProduct) (int, error) {
-	if product.Status != ecommerce.ProductStatusRunning && product.Status != ecommerce.ProductStatusQueued {
+	switch product.Status {
+	case ecommerce.ProductStatusRunning, ecommerce.ProductStatusQueued, ecommerce.ProductStatusFailed:
+		// 参与顺延补派。
+	default:
 		return 0, nil
 	}
 	snapshot, ok := dispatchSnapshotFor(product)
@@ -909,8 +918,11 @@ func (s *Service) SyncEcommerceProduct(userID, productID string) (*ProductDetail
 		}
 	}
 	// 顺延补派（阶段 4 容量修复）：已确认商品中因在途满额而顺延的屏，
-	// 在容量释放后自动继续派发（幂等，仅在 running/queued 且快照带参数时生效）。
-	if product.Status == ecommerce.ProductStatusRunning || product.Status == ecommerce.ProductStatusQueued {
+	// 在容量释放后自动继续派发（幂等；running/queued/failed 均参与，
+	// failed 商品仍可有顺延屏，失败屏本身不自动重发）。
+	if product.Status == ecommerce.ProductStatusRunning ||
+		product.Status == ecommerce.ProductStatusQueued ||
+		product.Status == ecommerce.ProductStatusFailed {
 		if _, contErr := s.continueEcommerceDispatch(userID, product); contErr != nil {
 			return nil, contErr
 		}
@@ -1287,9 +1299,10 @@ func (s *Service) synthesizeEcommercePrompts(preset ecommerce.PresetConfig, prod
 }
 
 // ecommerceProductPayload 组装 nxf product 入参（卖点解析为数组）。
+// 卖点先过 SanitizeSellingPoints（L3 守卫）：历史脏数据（markdown 报告）在此被剥离并限长。
 func ecommerceProductPayload(product *model.EcommerceProduct) map[string]any {
 	sellingPoints := make([]string, 0, 5)
-	for _, line := range strings.FieldsFunc(product.SellingPoints, func(r rune) bool {
+	for _, line := range strings.FieldsFunc(ecommerce.SanitizeSellingPoints(product.SellingPoints), func(r rune) bool {
 		return r == '\n' || r == '、' || r == ',' || r == '，' || r == ';' || r == '；'
 	}) {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {

@@ -504,3 +504,74 @@ func TestEcommerceLifecycle_单屏失败暴露原因(t *testing.T) {
 		t.Fatalf("应剩余 %d 屏顺延（draft/pending），实际 %d", 7-limit-1, deferred)
 	}
 }
+
+// TestEcommerceLifecycle_失败态顺延补派 覆盖返工令 B 遗留 3：
+// failed 商品落库后的**下一次对账**仍须为顺延屏补派。
+// 此前的守卫只放行 running/queued——第一次对账时 DB 商品态还是 running 能侥幸
+// 补派一轮；状态落库为 failed 后，后续对账全部被拦，顺延屏永远卡在 draft。
+func TestEcommerceLifecycle_失败态顺延补派(t *testing.T) {
+	s, db := newEcommerceLifecycleService(t)
+	limit := lifecycleActiveTaskLimit(t, s)
+	productID := importLifecycleProduct(t, s, "智能恒温壶.png")
+	confirmLifecycleProduct(t, s, productID)
+
+	tasks := lifecycleChildTasks(t, s, productID)
+	if len(tasks) != limit {
+		t.Fatalf("首波应派发 %d 条子任务，实际 %d", limit, len(tasks))
+	}
+	// 第一次对账：只释放 1 个名额（1 屏失败）→ 补派 1 屏，商品转 failed 落库，
+	// 仍剩 1 屏顺延（7-limit>1 时）或恰好补完（7-limit==1 时）。
+	settleLifecycleChildTask(t, db, tasks[0].ID, false, "", "上游返回 429 限流")
+	first, err := s.SyncEcommerceProduct("user", productID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Product.Status != ecommerce.ProductStatusFailed {
+		t.Fatalf("存在失败屏时商品应为 failed，实际 %s", first.Product.Status)
+	}
+	afterFirst := countLifecycleImageTasks(t, db)
+	if afterFirst <= int64(limit) {
+		t.Fatalf("第一次对账应按释放的名额补派（任务数 %d → 应大于 %d）", limit, limit)
+	}
+
+	// 第二次对账前的准备：再释放 2 个名额（2 屏成功）。
+	// 此时商品在 DB 中已是 failed——这正是旧守卫的盲区：
+	// 若仍有顺延屏，必须继续被补派。
+	inFlight := make([]model.Task, 0)
+	for _, task := range tasks[1:] {
+		if task.Status == model.TaskStatusQueued || task.Status == model.TaskStatusRunning {
+			inFlight = append(inFlight, task)
+		}
+	}
+	settleCount := 2
+	if len(inFlight) < settleCount {
+		settleCount = len(inFlight)
+	}
+	for _, task := range inFlight[:settleCount] {
+		resourceID := kernel.NewID()
+		seedLifecycleGeneratedResource(t, s, resourceID)
+		settleLifecycleChildTask(t, db, task.ID, true, resourceID, "")
+	}
+	before := countLifecycleImageTasks(t, db)
+	second, err := s.SyncEcommerceProduct("user", productID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := countLifecycleImageTasks(t, db)
+	// 失败屏保持 failed（不自动重发）；对账后不应再有卡死的 draft/pending 顺延屏。
+	failedSlots, stuck := 0, 0
+	for _, slot := range second.Slots {
+		switch slot.Status {
+		case ecommerce.SlotStatusFailed:
+			failedSlots++
+		case ecommerce.SlotStatusDraft, ecommerce.SlotStatusPending:
+			stuck++
+		}
+	}
+	if failedSlots != 1 {
+		t.Fatalf("失败屏应保持 1 屏（不自动重发），实际 %d", failedSlots)
+	}
+	if stuck != 0 && after <= before {
+		t.Fatalf("仍有 %d 屏卡在 draft/pending 且未发生补派（任务数 %d → %d）", stuck, before, after)
+	}
+}
