@@ -1,12 +1,13 @@
-// 任务列表栏：顶部工具栏（计数/全选/搜索/筛选/删除/导入）+ 任务卡。
+// 任务列表栏：顶部工具栏（计数/全选/搜索/筛选/删除/导入/批量矩阵）+ 任务卡。
 // 交互原则：状态徽章一眼懂、进度摘要一行明、危险操作必确认、空态有引导。
 import { useMemo, useState } from "react";
 import { App, Button, Checkbox, Input, Select } from "antd";
-import { Plus, Trash2 } from "lucide-react";
+import { Grid3x3, Plus, Trash2 } from "lucide-react";
 
 import { ECOMMERCE_STATUS_LABELS, summarizeProgress, type EcommerceProductSummary } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
 import { EcommerceImportDialog } from "./import-dialog";
+import { EcommerceBatchMatrixDialog } from "./batch-matrix-dialog";
 
 const STATUS_FILTERS = [
     { label: "全部任务", value: "all" },
@@ -43,6 +44,8 @@ export function EcommerceTaskList({ activeId, onOpen }: { activeId: string | nul
     const clearSelected = useEcommerceWorkspaceStore((state) => state.clearSelected);
     const removeProducts = useEcommerceWorkspaceStore((state) => state.removeProducts);
     const [importOpen, setImportOpen] = useState(false);
+    // v60：批量企划矩阵（商品 × 屏序）。
+    const [matrixOpen, setMatrixOpen] = useState(false);
 
     const allChecked = products.length > 0 && selectedIds.length === products.length;
     const selectedNames = useMemo(
@@ -84,6 +87,16 @@ export function EcommerceTaskList({ activeId, onOpen }: { activeId: string | nul
                     <span className="whitespace-nowrap text-sm font-medium">商品任务 {products.length > 0 ? `(${products.length})` : ""}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                        size="small"
+                        type="text"
+                        disabled={products.length === 0}
+                        onClick={() => setMatrixOpen(true)}
+                        icon={<Grid3x3 className="size-3.5" />}
+                        aria-label="批量企划矩阵"
+                    >
+                        矩阵
+                    </Button>
                     <Button size="small" type="text" danger disabled={selectedIds.length === 0} onClick={handleDeleteSelected} icon={<Trash2 className="size-3.5" />} aria-label="删除勾选商品">
                         删除{selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
                     </Button>
@@ -146,6 +159,7 @@ export function EcommerceTaskList({ activeId, onOpen }: { activeId: string | nul
             </div>
 
             <EcommerceImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
+            <EcommerceBatchMatrixDialog open={matrixOpen} products={products} onClose={() => setMatrixOpen(false)} onOpenProduct={onOpen} />
         </aside>
     );
 }

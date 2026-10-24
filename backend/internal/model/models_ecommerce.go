@@ -73,6 +73,13 @@ type EcommerceSlot struct {
 	ReferenceIDsJSON string `json:"referenceIdsJson,omitempty" gorm:"type:text"`
 	// PlanFingerprint 视觉方案去重指纹（防 7 屏雷同，对齐 pr(1) compileCommerceDetailPlan）。
 	PlanFingerprint string `json:"planFingerprint,omitempty" gorm:"size:128"`
+
+	// ---- v60：电商实战升级（双层企划 + 分层交付）----
+	// UserBriefJSON L1 人话企划卡（给小白看/改；改后自动触发 L2 重编译）。
+	// 结构见 app.EcommerceUserBrief：screen_title/sub_title/scene_desc/layout_type/preserve_product_exact。
+	UserBriefJSON string `json:"-" gorm:"type:text"`
+	// LayerManifestJSON 四层交付清单最新态：背景/阴影/商品主体/文字层（对接 PSD 导出与精修台）。
+	LayerManifestJSON string `json:"-" gorm:"type:text"`
 }
 
 func (EcommerceSlot) TableName() string { return "ecommerce_slots" }
@@ -89,7 +96,9 @@ type EcommerceSlotVersion struct {
 	ResourceID           string    `json:"resourceId,omitempty" gorm:"size:36;index"`
 	ErrorMessage         string    `json:"errorMessage,omitempty" gorm:"size:1000"`
 	DiagJSON             string    `json:"-" gorm:"type:text"`
-	CreatedAt            time.Time `json:"createdAt"`
+	// LayerManifestJSON 该版产物的四层交付清单（历史态；slot 上存最新态）。
+	LayerManifestJSON string    `json:"-" gorm:"type:text"`
+	CreatedAt         time.Time `json:"createdAt"`
 }
 
 func (EcommerceSlotVersion) TableName() string { return "ecommerce_slot_versions" }

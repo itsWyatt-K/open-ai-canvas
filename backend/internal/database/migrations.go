@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 58
+const CurrentSchemaVersion int64 = 60
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -227,6 +227,24 @@ var schemaMigrations = []migration{
 	// 按 7608d59e3 合入 v1.6.8 时的惯例（新来者顺延拿新号）改号为 57/58；
 	// 真库 1..56 记录齐全且身份一致，57/58 首次 apply 后按新 checksum 记账。
 	{version: 58, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v58-20261016", apply: migrateSchemaV56},
+	// v59 预留给上游 v1.6.8.12 的 canvas_multi_session_sync（吸收时按顺延惯例占号）。
+	// v60：电商实战升级——L1 人话企划 + 四层交付清单（2026-10-24 指令单阶段二）。
+	{version: 60, name: "ecommerce_layer_manifest", checksum: "sha256:ecommerce-layer-manifest-v60-20261024", apply: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn(&model.EcommerceSlot{}, "user_brief_json") {
+			if err := tx.Migrator().AddColumn(&model.EcommerceSlot{}, "UserBriefJSON"); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasColumn(&model.EcommerceSlot{}, "layer_manifest_json") {
+			if err := tx.Migrator().AddColumn(&model.EcommerceSlot{}, "LayerManifestJSON"); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasColumn(&model.EcommerceSlotVersion{}, "layer_manifest_json") {
+			return tx.Migrator().AddColumn(&model.EcommerceSlotVersion{}, "LayerManifestJSON")
+		}
+		return nil
+	}},
 }
 
 func migratePrefixedIDSequenceReconcile(tx *gorm.DB) error {

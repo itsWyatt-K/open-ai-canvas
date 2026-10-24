@@ -293,6 +293,10 @@ type (
 	EcommerceSlotDispatch                  = app.EcommerceSlotDispatch
 	EcommerceSlotPromptPatch               = app.EcommerceSlotPromptPatch
 	EcommerceSlotRegenerateOptions         = app.EcommerceSlotRegenerateOptions
+	EcommerceBriefPatch                    = app.EcommerceBriefPatch
+	EcommerceUserBrief                     = app.EcommerceUserBrief
+	EcommerceLayerManifest                 = app.EcommerceLayerManifest
+	EcommerceTextLayer                     = app.EcommerceTextLayer
 	EcommercePlanOptions                   = app.EcommercePlanOptions
 	EcommercePlanResult                    = app.EcommercePlanResult
 	ShotRevisionInput                      = app.ShotRevisionInput

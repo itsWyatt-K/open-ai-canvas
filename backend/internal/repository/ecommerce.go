@@ -271,6 +271,12 @@ func (r *Repository) UpdateEcommerceSlotVersionResult(versionID, status, resourc
 	return r.db.Model(&model.EcommerceSlotVersion{}).Where("id = ?", versionID).Updates(updates).Error
 }
 
+// UpdateEcommerceSlotVersionManifest 写该版本的四层交付清单（历史态留档）。
+func (r *Repository) UpdateEcommerceSlotVersionManifest(versionID, manifestJSON string) error {
+	return r.db.Model(&model.EcommerceSlotVersion{}).Where("id = ?", versionID).
+		Updates(map[string]any{"layer_manifest_json": manifestJSON}).Error
+}
+
 // UpdateEcommerceSlotDispatch 写槽位派发态：状态 + 生成提示词 + 视觉方案快照。
 func (r *Repository) UpdateEcommerceSlotDispatch(slotID, status, generationPrompt, visualPlanJSON string, currentVersion int) error {
 	updates := map[string]any{"status": status, "updated_at": time.Now()}

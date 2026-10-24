@@ -350,6 +350,44 @@ func RegisterEcommerceRoutes(api *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, slot)
 	})
+	// v60：L1 人话企划保存（改完自动重编译 L2；ai_hint=AI 换个思路，秒级确定性变体）。
+	group.PUT("/slots/:id/brief", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var patch service.EcommerceBriefPatch
+		if err := c.ShouldBindJSON(&patch); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+			return
+		}
+		slot, brief, err := svc.UpdateEcommerceSlotBrief(c.Request.Context(), user.ID, c.Param("id"), patch)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"slot": slot, "brief": brief})
+	})
+	// v60：四层交付清单回写（图层精修台保存）。
+	group.PUT("/slots/:id/layers", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var manifest service.EcommerceLayerManifest
+		if err := c.ShouldBindJSON(&manifest); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("参数格式无效"))
+			return
+		}
+		slot, err := svc.SaveEcommerceSlotLayers(c.Request.Context(), user.ID, c.Param("id"), manifest)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, slot)
+	})
 	// 单屏保存并重新生成（version+1，必须 confirmCost=true）。
 	group.POST("/slots/:id/regenerate", func(c *gin.Context) {
 		user, err := currentUser(c, svc)

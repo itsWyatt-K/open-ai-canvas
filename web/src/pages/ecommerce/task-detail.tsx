@@ -6,14 +6,15 @@
 // 顶栏只保留纯工具按钮（历史轮次/复制/重试/下载）；编排动作全部收进向导动线。
 // M3 编排器：确认方案 → 服务端按容量派发 → 轮询对账；Agent 面板为悬浮直挂（无 Drawer 空壳）。
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { App, Button, Empty, Input } from "antd";
+import { App, Button, Empty, Input, Select } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import {
-    ArrowLeft, ChevronDown, ChevronUp, CopyPlus, Download, FileArchive, History, MessageCircle,
+    ArrowLeft, ChevronDown, ChevronUp, CopyPlus, Download, FileArchive, History, Layers, MessageCircle,
     Pencil, RotateCcw, Rocket, Settings2, Square, Wand2, Zap,
 } from "lucide-react";
 
 import {
+    ECOMMERCE_LAYOUT_LABELS,
     ECOMMERCE_SLOT_STATUS_LABELS,
     ECOMMERCE_STATUS_LABELS,
     applyEcommercePlatform,
@@ -28,14 +29,18 @@ import {
     applyEcommercePlan,
     updateEcommercePlanResponse,
     updateEcommerceProduct,
+    updateEcommerceSlotBrief,
     pauseEcommerceProduct,
+    type EcommerceBriefBody,
     type EcommerceProductDetail,
     type EcommerceSlotPromptBody,
+    type EcommerceUserBrief,
 } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
 import { useConfigStore } from "@/stores/use-config-store";
 import { AgentWorkbenchPanel, useEcommerceWorkbenchCanvas } from "./agent-panel-adapter";
 import { EcommerceSlotEditorDialog } from "./slot-editor-dialog";
+import { EcommerceRetouchDialog } from "./retouch-dialog";
 import { downloadBlob, mergeSlotImagesToLongImage } from "./long-image";
 import { resourceFileUrl } from "@/services/api/resources";
 import { queryGenerationTask } from "@/services/api/task-center";
@@ -96,6 +101,8 @@ export function EcommerceTaskDetail({
     const [retryingFailed, setRetryingFailed] = useState(false);
     const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
     const [generatingSlotId, setGeneratingSlotId] = useState<string | null>(null);
+    // v60：图层精修台（已出图屏）。
+    const [retouchSlotId, setRetouchSlotId] = useState<string | null>(null);
     // 阶段 5 返工：第 1/2 步可折叠（默认收起为紧凑摘要条），把屏幕高度让给第 3 步分镜卡。
     // 收起/展开的默认值按任务状态决定：已生成方案 / 生成中 / 失败 / 完成态一律默认折叠；
     // 仅「全新 draft（还没任何方案）」才展开，让第一次上手的小白看到向导动线。
@@ -534,6 +541,17 @@ export function EcommerceTaskDetail({
         }
     }, [productId, message, refreshDetail]);
 
+    // v60：L1 人话企划保存（后端自动重编译 L2；ai_hint 触发确定性变体）。
+    const handleBriefSave = useCallback(async (slotId: string, body: EcommerceBriefBody) => {
+        try {
+            await updateEcommerceSlotBrief(slotId, body);
+            await refreshDetail(productId!);
+            message.success(body.ai_hint ? "已生成新企划思路（底层提示词同步重编译）" : "企划已保存，底层提示词已重编译");
+        } catch (error) {
+            throw error instanceof Error ? error : new Error("企划保存失败");
+        }
+    }, [productId, message, refreshDetail]);
+
     // 打开 Agent：refine（只预填）/ advisor（预填后自动提交，AI 主动给建议）。
     const openAgent = useCallback((advisor: boolean) => {
         setAdvisorMode(advisor);
@@ -892,6 +910,8 @@ export function EcommerceTaskDetail({
                                         onEdit={() => setEditingSlotId(slot.id)}
                                         onGenerate={() => handleGenerateSlot(slot)}
                                         onCopyBlur={(value) => handleSlotCopyBlur(slot.id, value, slot.copy || "")}
+                                        onBriefSave={(body) => handleBriefSave(slot.id, body)}
+                                        onRetouch={() => setRetouchSlotId(slot.id)}
                                     />
                                 ))}
                             </div>
@@ -953,6 +973,18 @@ export function EcommerceTaskDetail({
                     onChanged={async () => {
                         await refreshDetail(productId);
                         await refreshProducts();
+                    }}
+                />
+            ) : null}
+
+            {/* v60：图层精修台（四层结构 + 小白四工具 + PNG/PSD 导出） */}
+            {retouchSlotId ? (
+                <EcommerceRetouchDialog
+                    slot={detail.slots.find((item) => item.id === retouchSlotId)!}
+                    productSourceResourceId={product.sourceResourceId}
+                    onClose={() => setRetouchSlotId(null)}
+                    onChanged={async () => {
+                        await refreshDetail(productId);
                     }}
                 />
             ) : null}
@@ -1024,7 +1056,7 @@ function StepSection({
  *   - 未出图 → 分镜脚本卡：场景定位 + 可快改的画面文案 + 构图摘要 + 详细编辑/单独生成。
  */
 function SlotCard({
-    slot, index, total, highlighted, generating, onEdit, onGenerate, onCopyBlur,
+    slot, index, total, highlighted, generating, onEdit, onGenerate, onCopyBlur, onBriefSave, onRetouch,
 }: {
     slot: EcommerceProductDetail["slots"][number];
     index: number;
@@ -1034,7 +1066,12 @@ function SlotCard({
     onEdit: () => void;
     onGenerate: () => void;
     onCopyBlur: (value: string) => void;
+    /** v60：L1 企划保存（body 全量来自本卡表单；aiHint 触发确定性变体）。 */
+    onBriefSave: (body: EcommerceBriefBody) => Promise<void>;
+    /** v60：打开图层精修台（仅已出图屏）。 */
+    onRetouch: () => void;
 }) {
+    const { message } = App.useApp();
     const generated = Boolean(slot.resourceId);
     const promptLines = (slot.promptOverride || slot.generationPrompt || "")
         .split("\n")
@@ -1042,6 +1079,35 @@ function SlotCard({
         .filter(Boolean)
         .slice(0, 3);
     const aspect = slot.aspectRatio || "1:1";
+    // ---- v60 L1 人话企划卡（小白编辑层；失焦保存后自动重编译 L2）----
+    const [briefDraft, setBriefDraft] = useState<EcommerceUserBrief>(() => ({
+        screen_title: slot.brief?.screen_title ?? slot.title ?? "",
+        sub_title: slot.brief?.sub_title ?? "",
+        scene_desc: slot.brief?.scene_desc ?? "",
+        layout_type: slot.brief?.layout_type ?? "",
+        preserve_product_exact: slot.brief?.preserve_product_exact ?? true,
+    }));
+    const [aiHint, setAiHint] = useState("");
+    const [briefBusy, setBriefBusy] = useState(false);
+    useEffect(() => {
+        setBriefDraft({
+            screen_title: slot.brief?.screen_title ?? slot.title ?? "",
+            sub_title: slot.brief?.sub_title ?? "",
+            scene_desc: slot.brief?.scene_desc ?? "",
+            layout_type: slot.brief?.layout_type ?? "",
+            preserve_product_exact: slot.brief?.preserve_product_exact ?? true,
+        });
+    }, [slot.brief, slot.title, slot.updatedAt]);
+    const saveBrief = useCallback(async (patch: Partial<EcommerceUserBrief> & { ai_hint?: string }) => {
+        setBriefBusy(true);
+        try {
+            await onBriefSave({ ...briefDraft, ...patch });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "企划保存失败");
+        } finally {
+            setBriefBusy(false);
+        }
+    }, [briefDraft, onBriefSave, message]);
     return (
         <article
             className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-lg border p-2.5 ${highlighted ? "border-primary/60 bg-primary/5" : "border-border/50"}`}
@@ -1109,6 +1175,82 @@ function SlotCard({
                     ) : null}
                 </div>
             )}
+            {/* v60：L1 人话企划卡（两种卡通用；失焦自动保存并重编译 L2） */}
+            <div className="flex flex-col gap-1.5 rounded-md border border-border/40 bg-surface-active/40 p-2.5">
+                <span className="text-[11px] font-medium text-foreground/55">📝 本屏企划（人话版，改完自动生效）</span>
+                <Input
+                    size="small"
+                    value={briefDraft.screen_title}
+                    onChange={(event) => setBriefDraft((prev) => ({ ...prev, screen_title: event.target.value }))}
+                    onBlur={() => void saveBrief({})}
+                    maxLength={80}
+                    placeholder="主标题：一句话卖点（如 38dB 深度静音）"
+                />
+                <Input
+                    size="small"
+                    value={briefDraft.sub_title}
+                    onChange={(event) => setBriefDraft((prev) => ({ ...prev, sub_title: event.target.value }))}
+                    onBlur={() => void saveBrief({})}
+                    maxLength={120}
+                    placeholder="副标题：支撑卖点 / 人群限定"
+                />
+                <Input.TextArea
+                    size="small"
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    value={briefDraft.scene_desc}
+                    onChange={(event) => setBriefDraft((prev) => ({ ...prev, scene_desc: event.target.value }))}
+                    onBlur={() => void saveBrief({})}
+                    maxLength={600}
+                    placeholder="场景大白话：背景、道具、光线氛围、商品摆哪（如 暖色儿童房，婴儿床边，柔光台灯）"
+                />
+                <div className="flex items-center gap-1.5">
+                    <Select
+                        size="small"
+                        className="min-w-0 flex-1"
+                        value={briefDraft.layout_type || undefined}
+                        options={Object.entries(ECOMMERCE_LAYOUT_LABELS).map(([value, label]) => ({ value, label }))}
+                        onChange={(value: string | undefined) => void saveBrief({ layout_type: value ?? "" })}
+                        placeholder="构图版式"
+                        allowClear
+                    />
+                    <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-foreground/55" title="开启后商品原图像素不变，仅按场景重打光融合">
+                        <input
+                            type="checkbox"
+                            checked={briefDraft.preserve_product_exact}
+                            onChange={(event) => void saveBrief({ preserve_product_exact: event.target.checked })}
+                        />
+                        锁主体
+                    </label>
+                </div>
+                <div className="flex items-center gap-1">
+                    <Input
+                        size="small"
+                        className="min-w-0 flex-1"
+                        value={aiHint}
+                        onChange={(event) => setAiHint(event.target.value)}
+                        onPressEnter={() => { if (aiHint.trim()) { void saveBrief({ ai_hint: aiHint.trim() }); setAiHint(""); } }}
+                        maxLength={200}
+                        placeholder="✨ 让 AI 换个思路（如 改成户外露营草地背景）"
+                    />
+                    <Button
+                        size="small"
+                        type="text"
+                        className="!h-auto !px-1 text-[11px]"
+                        loading={briefBusy}
+                        disabled={!aiHint.trim()}
+                        onClick={() => { void saveBrief({ ai_hint: aiHint.trim() }); setAiHint(""); }}
+                    >
+                        换！
+                    </Button>
+                </div>
+                {/* 🔧 高阶折叠：底层编译提示词（L2，默认隐藏） */}
+                <details className="text-[10px] text-foreground/40">
+                    <summary className="cursor-pointer select-none">🔧 底层生图提示词（L2，自动编译）</summary>
+                    <p className="mt-1 whitespace-pre-wrap rounded bg-background/60 px-2 py-1 leading-4">
+                        {slot.promptOverride || slot.generationPrompt || "（保存企划后自动生成）"}
+                    </p>
+                </details>
+            </div>
             {/* 阶段 4：失败原因直接展示，不再假装排队中 */}
             {slot.status === "failed" && slot.errorMessage ? (
                 <p className="rounded bg-destructive/10 px-2 py-1 text-xs leading-4 text-destructive">{slot.errorMessage}</p>
@@ -1116,6 +1258,11 @@ function SlotCard({
             <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] text-foreground/40">{index + 1} / {total}</span>
                 <div className="flex items-center gap-1">
+                    {generated ? (
+                        <Button size="small" type="link" className="!h-auto !p-0 text-xs" icon={<Layers className="size-3" />} onClick={onRetouch}>
+                            图层精修
+                        </Button>
+                    ) : null}
                     <Button size="small" type="link" className="!h-auto !p-0 text-xs" icon={<Pencil className="size-3" />} onClick={onEdit}>
                         详细编辑
                     </Button>

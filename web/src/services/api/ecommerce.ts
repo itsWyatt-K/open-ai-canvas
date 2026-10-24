@@ -112,7 +112,73 @@ export type EcommerceSlotSummary = {
     sellingPoints?: string;
     generationPrompt?: string;
     promptOverride?: string;
+    /** ---- v60：L1 人话企划卡 + 四层交付清单（电商实战升级）---- */
+    brief?: EcommerceUserBrief;
+    layerManifest?: EcommerceLayerManifest;
 };
+
+/** L1 人话企划卡（小白看/改；改完自动触发 L2 重编译）。 */
+export type EcommerceUserBrief = {
+    screen_title: string;
+    sub_title: string;
+    scene_desc: string;
+    layout_type: string;
+    preserve_product_exact: boolean;
+};
+
+/** L1 编辑补丁（只传要改的字段）+ AI 换思路提示。 */
+export type EcommerceBriefBody = {
+    screen_title?: string;
+    sub_title?: string;
+    scene_desc?: string;
+    layout_type?: string;
+    preserve_product_exact?: boolean;
+    /** 「✨让 AI 换个思路」：秒级确定性变体（轮换构图 + 融合提示）。 */
+    ai_hint?: string;
+};
+
+/** 文字层（独立于背景像素，双击改字的基础）。 */
+export type EcommerceTextLayer = {
+    text: string;
+    color?: string;
+    font?: string;
+    size?: number;
+    x: number;
+    y: number;
+};
+
+/** 四层交付清单：背景/阴影/商品主体/文字层（对接 PSD 导出与精修台）。 */
+export type EcommerceLayerManifest = {
+    background_layer_url: string;
+    shadow_layer_url: string;
+    product_cutout_url: string;
+    product_rect: [number, number, number, number];
+    text_layers: EcommerceTextLayer[];
+    composed_image_url: string;
+    updated_at?: string;
+};
+
+/** 构图版式胶囊（key → 中文标签；与后端 ecommerceLayoutTypes 一致）。 */
+export const ECOMMERCE_LAYOUT_LABELS: Record<string, string> = {
+    "center-closeup": "居中特写",
+    "left-image-right-text": "左图右文",
+    "top-text-bottom-image": "上文下图",
+    "scene-interspersed": "场景穿插",
+    "contrast-split": "对比分屏",
+};
+
+/** 保存 L1 企划（后端自动重编译 L2；ai_hint 触发确定性变体）。 */
+export function updateEcommerceSlotBrief(slotId: string, body: EcommerceBriefBody) {
+    return http.put<{ slot: EcommerceSlotSummary; brief: EcommerceUserBrief }>(
+        `/ecommerce/slots/${encodeURIComponent(slotId)}/brief`,
+        body,
+    );
+}
+
+/** 图层精修台回写四层交付清单。 */
+export function saveEcommerceSlotLayers(slotId: string, manifest: EcommerceLayerManifest) {
+    return http.put<{ ok: boolean }>(`/ecommerce/slots/${encodeURIComponent(slotId)}/layers`, manifest);
+}
 
 export type EcommerceProductDetail = {
     product: {

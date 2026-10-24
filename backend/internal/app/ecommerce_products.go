@@ -59,6 +59,9 @@ type SlotSummary struct {
 	SellingPoints    string `json:"sellingPoints,omitempty"`
 	GenerationPrompt string `json:"generationPrompt,omitempty"`
 	PromptOverride   string `json:"promptOverride,omitempty"`
+	// ---- v60：L1 人话企划 + 四层交付清单（电商实战升级）----
+	Brief         *EcommerceUserBrief     `json:"brief,omitempty"`
+	LayerManifest *EcommerceLayerManifest `json:"layerManifest,omitempty"`
 }
 
 // ProductDetail 详情聚合。
@@ -264,6 +267,11 @@ func (s *Service) EcommerceProductDetail(userID, productID string) (*ProductDeta
 			SellingPoints:    slot.SellingPoints,
 			GenerationPrompt: slot.GenerationPrompt,
 			PromptOverride:   slot.PromptOverride,
+		}
+		// v60：L1 企划卡与四层交付清单透出（电商实战升级）。
+		if extras := ecommerceSlotExtras(slot); extras.Brief != nil || extras.Manifest != nil {
+			summary.Brief = extras.Brief
+			summary.LayerManifest = extras.Manifest
 		}
 		versions, err := s.repo.ListEcommerceSlotVersions(slot.ID)
 		if err != nil {
