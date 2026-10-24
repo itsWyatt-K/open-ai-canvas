@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"syscall"
@@ -21,8 +22,12 @@ func TestSettingsEncryptionKeyPublication(t *testing.T) {
 			t.Fatalf("incomplete temporary key: %v", err)
 		}
 		info, err := os.Stat(temp)
-		if err != nil || info.Mode().Perm() != 0600 {
-			t.Fatalf("temporary permissions: %v", err)
+		if err != nil {
+			t.Fatalf("temporary key stat: %v", err)
+		}
+		// Windows 的文件权限只有只读位，CreateTemp 落 0666——0600 断言仅 POSIX 成立。
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+			t.Fatalf("temporary permissions: mode=%o", info.Mode().Perm())
 		}
 		if _, err := os.Stat(target); !os.IsNotExist(err) {
 			t.Fatalf("key visible before publication: %v", err)
@@ -65,8 +70,11 @@ func TestSettingsEncryptionKeyLinkFallback(t *testing.T) {
 				t.Fatalf("key changed: %v", err)
 			}
 			info, err := os.Stat(path)
-			if err != nil || info.Mode().Perm() != 0600 {
-				t.Fatalf("permissions: %v", err)
+			if err != nil {
+				t.Fatalf("key stat: %v", err)
+			}
+			if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+				t.Fatalf("permissions: mode=%o", info.Mode().Perm())
 			}
 		})
 	}
@@ -105,7 +113,7 @@ func TestSettingsEncryptionKeyConcurrentFirstUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatalf("key permissions = %o", info.Mode().Perm())
 	}
 }

@@ -67,7 +67,8 @@ def list_app_tests(go: str) -> list[str]:
 
 
 def run_shard(go: str, label: str, run_arg: str, skip_arg: str | None, timeout: int, matched: int) -> tuple[str, str, float]:
-    cmd = [go, "test", "-run", run_arg, "-count=1", "./internal/app/"]
+    # go test 自带 10 分钟包级超时会 panic 杀掉大批次——透传 -timeout 与门禁一致。
+    cmd = [go, "test", "-run", run_arg, "-count=1", "-timeout", f"{timeout}s", "./internal/app/"]
     if skip_arg:
         # -skip 追加到尾部：插在 -run 前会被 -run 当值吞掉。
         cmd += ["-skip", skip_arg]
@@ -80,7 +81,17 @@ def run_shard(go: str, label: str, run_arg: str, skip_arg: str | None, timeout: 
     elapsed = time.time() - started
     status = "PASS" if code == 0 else "FAIL"
     if code != 0:
-        print(f"[{status}] {label} ({matched} 例, {elapsed:.0f}s)\n{out[-5000:]}", flush=True)
+        # 失败时全量输出落盘，避免尾部截断吞掉失败名单。
+        dump = REPO / "reports" / ("shard-fail-" + label.replace("/", "_") + ".log")
+        dump.parent.mkdir(exist_ok=True)
+        dump.write_text(out, encoding="utf-8", errors="replace")
+        fail_lines = [line for line in out.splitlines()
+                      if line.startswith("--- FAIL") or line.startswith("    --- FAIL") or "panic:" in line]
+        print(f"[{status}] {label} ({matched} 例, {elapsed:.0f}s) 完整输出: {dump}", flush=True)
+        for line in fail_lines[:60]:
+            print("  " + line, flush=True)
+        if not fail_lines:
+            print(out[-2000:], flush=True)
     else:
         print(f"[{status}] {label} ({matched} 例, {elapsed:.0f}s)", flush=True)
     return label, status, elapsed
@@ -89,7 +100,8 @@ def run_shard(go: str, label: str, run_arg: str, skip_arg: str | None, timeout: 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--app-only", action="store_true", help="跳过非 app 包")
-    parser.add_argument("--timeout", type=int, default=900, help="每批超时秒数")
+    parser.add_argument("--timeout", type=int, default=900, help="每批超时秒数（透传 go test -timeout）")
+    parser.add_argument("--shard", default="", help="只跑指定批（如 S5-画布核心），调试用")
     args = parser.parse_args()
 
     go = find_go()
@@ -119,6 +131,8 @@ def main() -> int:
     print(f"internal/app 共 {len(all_names)} 个测试", flush=True)
     combined = re.compile("|".join("(?:" + pattern[1:] + ")" for _, pattern in SHARDS))
     for label, pattern in SHARDS:
+        if args.shard and label != args.shard:
+            continue
         matched = sum(1 for name in all_names if re.match(pattern, name))
         if matched == 0:
             continue
@@ -127,13 +141,14 @@ def main() -> int:
         if status == "FAIL":
             failed = True
     # S5 兜底批：-skip 掉前四批前缀，-run 全量——覆盖保证由构造保证。
-    rest = [name for name in all_names if not combined.match(name)]
-    if rest:
-        shard_label, status, elapsed = run_shard(
-            go, S5_LABEL, ".*", combined.pattern, args.timeout, len(rest))
-        results.append((shard_label, status, elapsed))
-        if status == "FAIL":
-            failed = True
+    if not args.shard or args.shard == S5_LABEL:
+        rest = [name for name in all_names if not combined.match(name)]
+        if rest:
+            shard_label, status, elapsed = run_shard(
+                go, S5_LABEL, ".*", combined.pattern, args.timeout, len(rest))
+            results.append((shard_label, status, elapsed))
+            if status == "FAIL":
+                failed = True
 
     print("\n===== 分片测试汇总 =====", flush=True)
     for label, status, elapsed in results:
