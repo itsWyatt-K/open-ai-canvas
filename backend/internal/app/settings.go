@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -488,12 +489,18 @@ func publishSettingsKey(path string, key []byte, link func(string, string) error
 		}
 	}
 	// Persist the published name, not only the inode's contents.
+	// Directory fsync is a POSIX durability idiom; Windows has no equivalent
+	// syscall and returns EPERM ("Access is denied"), so the dir sync is
+	// best-effort there while staying strict on POSIX.
 	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
 	defer dir.Close()
-	return dir.Sync()
+	if syncErr := dir.Sync(); syncErr != nil && runtime.GOOS != "windows" {
+		return syncErr
+	}
+	return nil
 }
 
 func (s *Service) protectTaskSecrets(value interface{}) error {
