@@ -94,7 +94,22 @@ func (s *Service) stageInlineMedia(data []byte) (string, error) {
 	return filepath.Base(file.Name()), nil
 }
 
+// downloadTaskMedia 结果媒体下载（媒体恢复路径）：带抖动指数退避重试
+// （返工令 B 遗留 4：上游 CDN 不稳，固定 3 次重试耗时数分钟才救回）。
+// 每次尝试独立建/清临时文件，重试不会留下垃圾文件。
 func (s *Service) downloadTaskMedia(ctx context.Context, config providerConfig, url, mode string) (name, mimeType string, err error) {
+	err = retryWithDownloadBackoff(ctx, nil, func() error {
+		var attemptErr error
+		name, mimeType, attemptErr = s.downloadTaskMediaOnce(ctx, config, url, mode)
+		return attemptErr
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return name, mimeType, nil
+}
+
+func (s *Service) downloadTaskMediaOnce(ctx context.Context, config providerConfig, url, mode string) (name, mimeType string, err error) {
 	policy, err := s.RuntimePolicy()
 	if err != nil {
 		return "", "", err

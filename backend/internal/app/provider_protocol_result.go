@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/url"
 	"strings"
-	"time"
 
 	"yingce/backend/internal/protocol"
 )
@@ -160,20 +159,15 @@ func protocolResultHasOutput(mode string, result *protocol.Result) bool {
 func protocolMediaBytes(ctx context.Context, config providerConfig, reference protocol.MediaReference) ([]byte, string, error) {
 	var data []byte
 	var mimeType string
-	var err error
-	for attempt := 0; attempt < 3; attempt++ {
-		data, mimeType, err = protocolMediaBytesOnce(ctx, config, reference)
-		if err == nil {
-			return data, mimeType, nil
-		}
-		if attempt == 2 || !retryableProtocolMediaDownload(err) {
-			break
-		}
-		if waitErr := sleepContext(ctx, time.Duration(attempt+1)*time.Second); waitErr != nil {
-			return nil, "", fmt.Errorf("声明式协议媒体结果下载失败：%w", waitErr)
-		}
+	err := retryWithDownloadBackoff(ctx, retryableProtocolMediaDownload, func() error {
+		var onceErr error
+		data, mimeType, onceErr = protocolMediaBytesOnce(ctx, config, reference)
+		return onceErr
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("声明式协议媒体结果下载失败：%w", err)
 	}
-	return nil, "", fmt.Errorf("声明式协议媒体结果下载失败：%w", err)
+	return data, mimeType, nil
 }
 
 func protocolMediaBytesOnce(ctx context.Context, config providerConfig, reference protocol.MediaReference) ([]byte, string, error) {
