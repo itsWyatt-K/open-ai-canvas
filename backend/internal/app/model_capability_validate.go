@@ -87,11 +87,13 @@ func validateImageCapabilityConfig(value *ImageCapabilityConfig) error {
 			return BadAuthRequest("图片预设像素尺寸无效")
 		}
 		// 容许像素取整误差，但不能将横屏尺寸标记成竖屏或其他比例。
+		// 阈值 3.2%：主人指定的标准兜底表 3:2→1216x832 / 2:3→832x1216 漂移 2.57%，
+		// 必须放行；而真正的横竖颠倒漂移 ≥33%，远在阈值之外。
 		difference := preset.Width*h - preset.Height*w
 		if difference < 0 {
 			difference = -difference
 		}
-		if difference*1000 > preset.Height*w*25 {
+		if difference*1000 > preset.Height*w*32 {
 			return BadAuthRequest("图片预设像素尺寸与宽高比不一致")
 		}
 		a, b := w, h
