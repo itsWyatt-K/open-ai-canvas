@@ -29,7 +29,9 @@ import (
 func newSQLiteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	directory := t.TempDir()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(directory, "test.db")+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{})
+	// `_pragma=` 是 glebarez 唯一认的写法；下划线简写被静默忽略（WAL/忙超时
+	// 均未生效），本注释文档描述的并发语义依赖这两项真实生效。
+	db, err := gorm.Open(sqlite.Open(filepath.Join(directory, "test.db")+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}

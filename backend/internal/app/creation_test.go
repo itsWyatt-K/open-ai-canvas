@@ -17,7 +17,9 @@ import (
 
 func creationTestService(t *testing.T) (*Service, *gorm.DB, string, CreationGuard) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "creation.db")+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	// glebarez 只认 `_pragma=name(value)`；下划线简写被静默忽略→WAL 没开、
+	// 忙超时为 0——回滚日志模式下外层事务的写锁会把嵌套查询无限阻塞（自死锁）。
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "creation.db")+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
 	}

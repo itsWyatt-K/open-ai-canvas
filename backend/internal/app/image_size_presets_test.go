@@ -151,7 +151,11 @@ func TestResolveImageTaskSizeUsesTierRatioPreset(t *testing.T) {
 		{"fallback to default tier", "1:1", "", "2048x2048"},
 		{"pixel passthrough", "2048x2048", "2k", "2048x2048"},
 		{"auto passthrough", "auto", "2k", "auto"},
-		{"undeclared ratio stays for validation", "3:2", "2k", "3:2"},
+		// 返工令合同（resolveImageTaskSize 文档）：未声明但属**标准兜底表**的比例
+		// 换算成像素保证出网（3:2→1216x832，1K 档），不得报错阻断；
+		{"undeclared standard ratio converts via fallback table", "3:2", "2k", "1216x832"},
+		// 两条路都没有的比例保持原样，交给能力校验给明确错误（5:3 不在任何表内）。
+		{"undeclared ratio stays for validation", "5:3", "2k", "5:3"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := resolveImageTaskSize(profile, "openai-image", tc.size, tc.quality); got != tc.want {

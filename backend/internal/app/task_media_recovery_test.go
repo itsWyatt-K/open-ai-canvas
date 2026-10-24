@@ -57,6 +57,13 @@ func seedMediaTask(t *testing.T, db *gorm.DB, config providerConfig) *model.Task
 
 func TestMediaRecoveryDownloadFailureResumesSameTaskAfterRestart(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	// 下载现已带 5 次指数退避内重试：把抖动与基准缩到毫秒级，
+	// 并让服务端耗尽一整轮重试（连续 mediaDownloadMaxAttempts 次 503）后再成功，
+	// 才能仍走到「失败→暂存检查点→重启续跑」的断言路径。
+	originalJitter, originalBase := downloadJitter, downloadBackoffBase
+	downloadJitter = func() time.Duration { return 0 }
+	downloadBackoffBase = time.Millisecond
+	t.Cleanup(func() { downloadJitter, downloadBackoffBase = originalJitter, originalBase })
 	s, db := newMediaRecoveryTestService(t)
 	picture := mediaTestPNG(t)
 	var downloads atomic.Int32
@@ -64,7 +71,7 @@ func TestMediaRecoveryDownloadFailureResumesSameTaskAfterRestart(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("recovery submitted generation: %s", r.Method)
 		}
-		if downloads.Add(1) == 1 {
+		if downloads.Add(1) <= mediaDownloadMaxAttempts {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -112,7 +119,8 @@ func TestMediaRecoveryDownloadFailureResumesSameTaskAfterRestart(t *testing.T) {
 	if completed.Status != model.TaskStatusSucceeded || completed.MediaStage != "completed" {
 		t.Fatalf("not delivered: %s %s", completed.Status, completed.MediaStage)
 	}
-	if downloads.Load() != 2 {
+	// 首轮恢复耗尽 5 次重试（全 503），重启后第 6 次请求取回产物。
+	if downloads.Load() != mediaDownloadMaxAttempts+1 {
 		t.Fatalf("downloads=%d", downloads.Load())
 	}
 	var assets []model.Asset

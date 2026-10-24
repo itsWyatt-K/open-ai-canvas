@@ -29,7 +29,7 @@ func TestChaogeRealDBSmoke(t *testing.T) {
 	}
 	root := filepath.Join("..", "..", "..")
 	dataDir := filepath.Join(root, ".local", "data")
-	dsn := filepath.Join(dataDir, "open_ai_canvas.db") + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on&_synchronous=NORMAL"
+	dsn := filepath.Join(dataDir, "open_ai_canvas.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open real db: %v", err)

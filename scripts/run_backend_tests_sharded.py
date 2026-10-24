@@ -69,7 +69,8 @@ def list_app_tests(go: str) -> list[str]:
 def run_shard(go: str, label: str, run_arg: str, skip_arg: str | None, timeout: int, matched: int) -> tuple[str, str, float]:
     cmd = [go, "test", "-run", run_arg, "-count=1", "./internal/app/"]
     if skip_arg:
-        cmd[3:3] = ["-skip", skip_arg]
+        # -skip 追加到尾部：插在 -run 前会被 -run 当值吞掉。
+        cmd += ["-skip", skip_arg]
     started = time.time()
     try:
         code, out = run(cmd, BACKEND, timeout)

@@ -25,6 +25,9 @@ var downloadJitter = func() time.Duration {
 	return time.Duration(rand.Int64N(int64(time.Second)))
 }
 
+// downloadBackoffBase 指数退避的基准间隔（可注入：测试缩到毫秒级避免真等）。
+var downloadBackoffBase = time.Second
+
 // mediaDownloadBackoffDelay 第 attempt 次失败后的等待时长：
 // base = 1s << min(attempt,3)，叠加 [0,1s) 抖动，封顶 9s。
 func mediaDownloadBackoffDelay(attempt int) time.Duration {
@@ -35,7 +38,7 @@ func mediaDownloadBackoffDelay(attempt int) time.Duration {
 	if shift > 3 {
 		shift = 3 // 1s→2s→4s→8s 后封顶
 	}
-	delay := time.Duration(1<<uint(shift)) * time.Second
+	delay := downloadBackoffBase << uint(shift)
 	return delay + downloadJitter()
 }
 
