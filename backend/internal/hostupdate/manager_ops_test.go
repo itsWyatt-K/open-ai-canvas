@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -25,6 +26,11 @@ func (r *recordingRunner) Run(_ context.Context, _ string, args, _ []string, std
 }
 
 func TestSetEnvValuePreservesOtherSettings(t *testing.T) {
+	// Windows 的 os.WriteFile/Chmod 只实现只读位，0640 会落成 0666；
+	// 权限保持断言仅在 POSIX 语义成立（本机 win32 长期既存失败）。
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX 文件权限断言在 Windows 上不可验证（os.Chmod 仅支持只读位）")
+	}
 	directory := t.TempDir()
 	path := filepath.Join(directory, ".env")
 	if err := os.WriteFile(path, []byte("# keep\nCANVAS_IMAGE_TAG=1.0.0\nPOSTGRES_DB=canvas\n"), 0o640); err != nil {

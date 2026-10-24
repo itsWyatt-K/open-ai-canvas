@@ -98,7 +98,10 @@ func TestPaymentReconciliationExportSnapshotAndRerun(t *testing.T) {
 }
 
 func TestPaymentExportKeepsSnapshotWhenRerunCompletesBetweenReads(t *testing.T) {
-	dsn := filepath.Join(t.TempDir(), "payment.db") + "?_journal_mode=WAL&_busy_timeout=5000"
+	// glebarez/sqlite 只认 `_pragma=name(value)` 风格的 DSN 参数；
+	// `_busy_timeout=5000` 这类下划线简写会被静默忽略，忙超时落 0，
+	// 读写并发时立刻 SQLITE_BUSY（基线 2026-10-21 既有失败）。
+	dsn := filepath.Join(t.TempDir(), "payment.db") + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

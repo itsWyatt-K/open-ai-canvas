@@ -12,10 +12,15 @@ import (
 )
 
 func TestGmailMailboxRegistrationConcurrent(t *testing.T) {
-	dsn := filepath.Join(t.TempDir(), "users.db") + "?_busy_timeout=5000&_journal_mode=WAL"
+	// glebarez/sqlite 只认 `_pragma=name(value)`；下划线简写被静默忽略。
+	dsn := filepath.Join(t.TempDir(), "users.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// 主连接也必须关闭，否则 TempDir 清理时 users.db 仍被池持有（unlinkat 失败）。
+	if sqlDB, err := db.DB(); err == nil {
+		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
 	if err := db.AutoMigrate(&model.User{}, &model.EmailVerificationCode{}); err != nil {
 		t.Fatal(err)
