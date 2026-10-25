@@ -1,4 +1,4 @@
-import { audioModelForConnection, audioReferenceCapacity, doubaoAudioInputError, isDoubaoAudioModel, maxModelInputCapacity, resolveCompatibleModel, type ModelInputSummary } from "@/lib/model-selection";
+﻿import { audioModelForConnection, audioReferenceCapacity, doubaoAudioInputError, isDoubaoAudioModel, maxModelInputCapacity, resolveCompatibleModel, type ModelInputSummary } from "@/lib/model-selection";
 import { getNodeAcceptedInputKinds, getNodeGenerationMode, getNodeInputKind, getNodeMaxInputCount } from "@/lib/canvas/node-registry";
 import { commerceBusy, isCommerceNode } from "@/lib/canvas/commerce-workflow";
 import { readNodeGenerationSpec, resolveGenerationSelection } from "@/lib/canvas/generation-contract";
@@ -14,6 +14,8 @@ type CanvasConnectionPolicyOptions = {
 export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[], connections: CanvasConnection[], candidate: ConnectionCandidate, options: CanvasConnectionPolicyOptions = {}) {
     const target = nodes.find((node) => node.id === candidate.toNodeId);
     if (!target) return "找不到连线目标节点";
+    if (target.type === CanvasNodeType.BatchTable && target.metadata?.locked) return "批量创作表已锁定";
+
     // commerce 配置节点不是图片资产：成品从独立结果卡拖出，且禁止结果反向连入配置节点。
     const source = nodes.find((node) => node.id === candidate.fromNodeId);
     if (source && isCommerceNode(source)) return "请从独立图片结果卡输出连线";
@@ -31,6 +33,7 @@ export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[],
             connections.filter((edge) => edge.fromNodeId === id).forEach((edge) => queue.push(edge.toNodeId));
         }
     }
+
     const acceptedInputKinds = getNodeAcceptedInputKinds(target.type);
     if (acceptedInputKinds.length) {
         const source = nodes.find((node) => node.id === candidate.fromNodeId);

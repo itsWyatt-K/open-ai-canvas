@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 63
+const CurrentSchemaVersion int64 = 59
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -222,23 +222,19 @@ var schemaMigrations = []migration{
 		}
 		return nil
 	}},
-	// v57/v58 来自上游 v1.6.8.x 的 provider_catalog_source 与 sql_perf_indexes。
-	// 本地 v55=ecommerce_workshop、v56=ecommerce_plan_review 已占用同样号段，
-	// 按 7608d59e3 合入 v1.6.8 时的惯例（新来者顺延拿新号）改号为 57/58；
-	// 真库 1..56 记录齐全且身份一致，57/58 首次 apply 后按新 checksum 记账。
 	{version: 58, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v58-20261016", apply: migrateSchemaV56},
+	// v1.6.8.12 的 canvas_multi_session_sync（上游 57）按顺延惯例落本地 59（v60-63 见下表）。
+	{version: 59, name: "canvas_multi_session_sync", checksum: "sha256:canvas-multi-session-sync-v57", apply: migrateCanvasCollaboration},
 	// ===================== 本地↔上游迁移号段分配表（2026-10-24 治理）=====================
 	// 上游 v1.6.9.2（upstream/main）号段：55=provider_catalog_source、56=sql_perf_indexes、
 	//   57=canvas_multi_session_sync、58=agent_memory_proposals、59=channel_model_protocol_length、
 	//   60=user_feedbacks（上游 CurrentSchemaVersion=60）。
 	// 本地真库已占：55=ecommerce_workshop、56=ecommerce_plan_review（本地专属）、
 	//   57=provider_catalog_source、58=sql_perf_indexes（上游 55/56 吸收时顺延 +2 落库）。
-	// **预留 59-62 空号 = 上游 57/58/59/60 吸收时的顺延落点（+2）**：合并 v1.6.9.x 时把上游
+	// **59-62 = 上游 57/58/59/60 吸收时的顺延落点（+2）**：合并 v1.6.9.x 时把上游
 	//   四条迁移原文按 59/60/61/62 重写号段即可，零改号冲突、无需再动电商迁移。
 	// 63=ecommerce_layer_manifest（电商实战升级；原发布号 60 与上游 user_feedbacks 撞号，
 	//   已按审计要求改号 63 并同步修正真库 schema_migrations 记录）。
-	// 悬空 59-62 的合法性：MigrateSchema 按 plan 逐条查找执行（无连续号要求），
-	//   ReadSchemaStatus 以 MAX(version)==Current 判定 ready，悬空不阻塞任何路径。
 	{version: 63, name: "ecommerce_layer_manifest", checksum: "sha256:ecommerce-layer-manifest-v60-20261024", apply: func(tx *gorm.DB) error {
 		// 兼容式幂等列检查：先查列是否存在，不存在才 ADD（重放/跨库安全）。
 		if !tx.Migrator().HasColumn(&model.EcommerceSlot{}, "user_brief_json") {
@@ -256,6 +252,7 @@ var schemaMigrations = []migration{
 		}
 		return nil
 	}},
+}
 }
 
 func migratePrefixedIDSequenceReconcile(tx *gorm.DB) error {

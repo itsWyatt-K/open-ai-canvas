@@ -3,7 +3,16 @@ import { ArrowLeft, Check, ExternalLink, Gift, RefreshCw, Search, SlidersHorizon
 import { useEffect, useMemo, useState } from "react";
 
 import { AppModal } from "@/components/ui/product/app-modal";
-import { getProviderCatalog, installProviderCatalog, refreshProviderCatalog, verifyProviderCatalogKey, type ProviderCatalogModel, type ProviderCatalogProvider, type ProviderCatalogVerifyResult, type ProviderCatalogView } from "@/services/api/provider-catalog";
+import {
+    getProviderCatalog,
+    installProviderCatalog,
+    refreshProviderCatalog,
+    verifyProviderCatalogKey,
+    type ProviderCatalogModel,
+    type ProviderCatalogProvider,
+    type ProviderCatalogVerifyResult,
+    type ProviderCatalogView,
+} from "@/services/api/provider-catalog";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { formatCredits, formatWindow, promotionExpiry, matchesProvider, tierPriceLines, tierSpecLabel, validMarkup } from "./provider-catalog-pricing";
 import "./provider-catalog-wizard.css";
@@ -145,9 +154,7 @@ export function ProviderCatalogWizard({ open, onClose, onCustom, onInstalled }: 
             <div className="pcw">
                 <header className="pcw-header">
                     <div className="pcw-title-row">
-                        {step !== "pick" ? (
-                            <Button type="text" size="small" aria-label="上一步" icon={<ArrowLeft className="size-4" />} disabled={installing || verifying} onClick={() => setStep(step === "pricing" ? "connect" : "pick")} />
-                        ) : null}
+                        {step !== "pick" ? <Button type="text" size="small" aria-label="上一步" icon={<ArrowLeft className="size-4" />} disabled={installing || verifying} onClick={() => setStep(step === "pricing" ? "connect" : "pick")} /> : null}
                         <h2 className="pcw-title">新增系统渠道</h2>
                     </div>
                     <ol className="pcw-steps" aria-label="接入步骤">
@@ -241,7 +248,7 @@ export function ProviderCatalogWizard({ open, onClose, onCustom, onInstalled }: 
                                     ) : null}
                                 </span>
                                 <span className="pcw-card-summary" title={item.models.map((model) => model.providerModelKey).join("、")}>
-                                    推荐：{item.models.map((model) => model.displayName === model.providerModelKey ? model.displayName : `${model.displayName} / ${model.providerModelKey}`).join("、")}
+                                    推荐：{item.models.map((model) => (model.displayName === model.providerModelKey ? model.displayName : `${model.displayName} / ${model.providerModelKey}`)).join("、")}
                                 </span>
                                 <span className="pcw-card-window">
                                     <span>{item.permanent ? formatWindow(item) : `推广期 · ${formatWindow(item)}`}</span>
@@ -290,8 +297,16 @@ export function ProviderCatalogWizard({ open, onClose, onCustom, onInstalled }: 
                             }}
                             onPressEnter={() => void verify(false)}
                         />
-                        {keyHint === true ? <em className="pcw-hint" data-tone="success">格式正确</em> : null}
-                        {keyHint === false ? <em className="pcw-hint" data-tone="warning">格式与该服务商常见密钥不同，请确认是否复制完整</em> : null}
+                        {keyHint === true ? (
+                            <em className="pcw-hint" data-tone="success">
+                                格式正确
+                            </em>
+                        ) : null}
+                        {keyHint === false ? (
+                            <em className="pcw-hint" data-tone="warning">
+                                格式与该服务商常见密钥不同，请确认是否复制完整
+                            </em>
+                        ) : null}
                     </label>
                     <div className="pcw-readonly">
                         <span>Base URL</span>

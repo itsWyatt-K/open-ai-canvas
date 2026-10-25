@@ -117,7 +117,9 @@
     color: var(--admin-text-secondary);
     font-size: 12px;
     cursor: pointer;
-    transition: border-color var(--admin-motion), background var(--admin-motion);
+    transition:
+        border-color var(--admin-motion),
+        background var(--admin-motion);
 }
 
 .pcw-tag-filter span {
@@ -161,7 +163,9 @@
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transition: border-color var(--admin-motion), box-shadow var(--admin-motion);
+    transition:
+        border-color var(--admin-motion),
+        box-shadow var(--admin-motion);
 }
 
 .pcw-card:hover {

@@ -100,8 +100,34 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 		for name, value := range request.ProviderOptions[input.Config.InterfaceType] {
 			options[name] = value
 		}
-		options["response_format"] = grokImageResponseFormat(input.ImageCapability)
-		request.ProviderOptions[input.Config.InterfaceType] = options
+		if responseFormat := grokImageResponseFormat(input.ImageCapability); responseFormat != "" {
+			options["response_format"] = responseFormat
+		} else {
+			delete(options, "response_format")
+		}
+		if len(options) > 0 {
+			request.ProviderOptions[input.Config.InterfaceType] = options
+		} else {
+			delete(request.ProviderOptions, input.Config.InterfaceType)
+		}
+	}
+	if input.Mode == "image" && input.Config.InterfaceType == string(model.ChannelInterfaceOpenAIImage) {
+		options := make(map[string]any)
+		for name, value := range request.ProviderOptions[input.Config.InterfaceType] {
+			options[name] = value
+		}
+		if responseFormat := configuredImageResponseFormat(input.ImageCapability); responseFormat != "" {
+			options["response_format"] = responseFormat
+		} else {
+			// A stale providerOptions value must not override the model-level
+			// "auto" choice after an administrator changes the setting.
+			delete(options, "response_format")
+		}
+		if len(options) > 0 {
+			request.ProviderOptions[input.Config.InterfaceType] = options
+		} else {
+			delete(request.ProviderOptions, input.Config.InterfaceType)
+		}
 	}
 	// 负向词走声明式插件的原生映射（providerOptions 扩展键 + Extra 双路），
 	// 必须在 Grok 的 response_format 覆写之后执行，避免覆盖已注入的键。
