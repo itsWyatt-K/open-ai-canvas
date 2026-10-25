@@ -138,12 +138,17 @@ SERVICES = [
         "desc": "FastAPI :8823。视觉DNA九维、电商视觉算子（BiRefNet 抠图 / 重打光 / LaMa 擦除 / 文字 Banner 光栅化 / 直播间合成 / 分层 PSD）。电商工坊与直播间装修台依赖。",
         "port": 8823,
         "required": False,
-        "cwd": os.path.join(ROOT, "nxf", "_engine", "yingce_bridge"),
+        # nxf 是工作区级独立仓（D:/AlcheMvision/nxf），不在本仓库内——cwd 必须绝对路径，
+        # 写成 ROOT 相对会静默起不来（uvicorn 零日志退出）。
+        "cwd": r"D:\AlcheMvision\nxf\_engine\yingce_bridge",
         "cmd": [r"D:\AlcheMvision\nxf\runtimes\venv\Scripts\python.exe", "-m", "uvicorn", "service:app",
                 "--host", "127.0.0.1", "--port", "8823"],
         "env": {"PYTHONUTF8": "1", "PYTHONPATH": ""},
         "log": "nxf_service.log",
-        "wait": 20,
+        # 冷缓存首启要 import onnxruntime/psd 等重依赖，20s 不够——与 frontend 同级。
+        "wait": 45,
+        # 见 start_service：Python 侧重依赖侧车禁用 DETACHED_PROCESS（0xC0000135 静默死）。
+        "noDetached": True,
     },
     {
         "key": "ereverse",
@@ -269,6 +274,10 @@ def start_service(svc):
         logf = subprocess.DEVNULL
 
     try:
+        # noDetached：Python 重依赖侧车（onnxruntime/psd 等原生 DLL）在
+        # DETACHED_PROCESS + 文件重定定向下会以 0xC0000135 静默死亡（实测复现），
+        # 改用 CREATE_NEW_PROCESS_GROUP 单体即可正常加载。Go exe 不受影响。
+        spawn_flags = CREATE_NEW_PROCESS_GROUP if svc.get("noDetached") else (DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
         subprocess.Popen(
             svc["cmd"],
             cwd=svc["cwd"],
@@ -276,7 +285,7 @@ def start_service(svc):
             stdin=subprocess.DEVNULL,
             stdout=logf,
             stderr=subprocess.STDOUT,
-            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            creationflags=spawn_flags,
             close_fds=True,
         )
     except Exception as e:
