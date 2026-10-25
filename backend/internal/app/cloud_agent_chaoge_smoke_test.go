@@ -83,8 +83,8 @@ func TestChaogeRealDBSmoke(t *testing.T) {
 	//    说明：卡命中时契约只下发唯一顶卡路径（命中即直读，不再下发索引），
 	//    因此分两个聚焦单词验证权威卡均可 4 分直达。
 	for keyword, wantPath := range map[string]string{
-		"三路线":  "references/workflow.md",
-		"生产路线": "references/production_routes.md",
+		"三路线":  "cards/workflow.md",
+		"生产路线": "cards/production-routes.md",
 	} {
 		args, _ := json.Marshal(map[string]string{"keyword": keyword})
 		search := run("skill_search", string(args))
@@ -123,12 +123,12 @@ func TestChaogeRealDBSmoke(t *testing.T) {
 	t.Logf("skill_search(三路线 生产路线) -> %v (score=%v)", comboTop["path"], comboTop["score"])
 
 	// 2) skill_read_file：按相对路径直读 references 正文。
-	read := run("skill_read_file", `{"skillId":"chaoge-film-director-flex","path":"references/prompt_templates.md"}`)
+	read := run("skill_read_file", `{"skillId":"chaoge-film-director-flex","path":"cards/prompt-templates.md"}`)
 	content, _ := read["content"].(string)
 	if !strings.Contains(content, "视频提示词与平台模板") {
 		t.Fatal("skill_read_file did not return the reference body")
 	}
-	t.Logf("skill_read_file -> %d chars of references/prompt_templates.md", len([]rune(content)))
+	t.Logf("skill_read_file -> %d chars of cards/prompt-templates.md", len([]rune(content)))
 
 	// 3) director_validate_prompt：合规即梦提示词必须 ok。
 	promptArgs, _ := json.Marshal(map[string]string{"text": directorValidPrompt, "platform": "jimeng", "mode": "new"})

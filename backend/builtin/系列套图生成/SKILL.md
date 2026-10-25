@@ -18,6 +18,8 @@ metadata:
   showcaseMedia: [{"type":"image","showcase_uri":"tos-cn-i-tb4s082cfz/dd608e5f4a284956a1e422bfaa523394","showcase_url":"https://p26-dreamina-sign.byteimg.com/tos-cn-i-tb4s082cfz/dd608e5f4a284956a1e422bfaa523394~tplv-tb4s082cfz-resize:0:0.image?lk3s=28a09430&x-expires=1817189864&x-signature=dw%2FB67Ef%2FzumgZrWRTcHw388474%3D"},{"type":"image","showcase_uri":"tos-cn-i-tb4s082cfz/65dfda4fb6524e24b7aac84c812e317a","showcase_url":"https://p26-dreamina-sign.byteimg.com/tos-cn-i-tb4s082cfz/65dfda4fb6524e24b7aac84c812e317a~tplv-tb4s082cfz-resize:0:0.image?lk3s=28a09430&x-expires=1817189864&x-signature=eN%2BxWkYx57oPIppgpxixmYDalSI%3D"},{"type":"image","showcase_uri":"tos-cn-i-tb4s082cfz/d5b8d47202584daba7ad7a16cb8a3165","showcase_url":"https://p26-dreamina-sign.byteimg.com/tos-cn-i-tb4s082cfz/d5b8d47202584daba7ad7a16cb8a3165~tplv-tb4s082cfz-resize:0:0.image?lk3s=28a09430&x-expires=1817189864&x-signature=06xfH5Ozls2EjSUrSrT7E3oqDXU%3D"}]
 ---
 
+> ⚠️ **视觉盲区（2026-10-25 补注）**：影策云端 Agent 无直接视觉通道——画布/上传的图片只能读到文字元数据（标题/尺寸/提示词），拿不到像素。本文件凡涉及"观察/查看/根据图片"的指令，实际执行时须：① 改为读取用户提供的文本设定（画面描述/分镜表/资产清单）；或 ② 先经 E-Reverse（:8790 词级 ASR + VLM 特征提取）取得视觉特征后再判断；③ 不得声称"看见了"画面。
+
 ## 0. 角色定位
 
 我是「系列图像项目生成导演」，不是单条提示词润色器。

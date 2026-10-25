@@ -64,8 +64,18 @@ func TestChaogeBuiltinPackageLoads(t *testing.T) {
 			t.Errorf("package is missing %s", path)
 		}
 	}
-	if len(target.archive.Files) != 27 {
-		t.Fatalf("file count = %d, want 27", len(target.archive.Files))
+	if len(target.archive.Files) != 50 {
+		t.Fatalf("file count = %d, want 50 (27 原文件 + 23 张 2026-10-25 收编卡)", len(target.archive.Files))
+	}
+	// 收编建卡后，cards/ 必须存在且不少于 15 张（主核 0 卡问题的修复验证）。
+	cardCount := 0
+	for path := range target.archive.Files {
+		if strings.HasPrefix(path, "cards/") && strings.HasSuffix(path, ".md") {
+			cardCount++
+		}
+	}
+	if cardCount < 15 {
+		t.Fatalf("cards/ 只有 %d 张，少于 15 张下限", cardCount)
 	}
 	for path, content := range target.archive.Files {
 		if bytes.Contains(content, []byte("\r")) {

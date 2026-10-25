@@ -33,13 +33,13 @@ func TestCloudAgentSkillSearchRecallsChaogeReferenceCards(t *testing.T) {
 	}
 	// 关键词 → 期望命中的卡路径（排序在前的同级命中卡胜出）。
 	expect := map[string]string{
-		"三路线":   "references/workflow.md",
-		"角色设定板": "references/character_assets.md",
-		"360度补角": "references/scene_360_coverage.md",
-		"空间推演":  "references/spatial_preflight.md",
-		"一镜到底":  "references/one_take.md",
-		"即梦":    "references/prompt_templates.md",
-		"Seedance": "references/seedance_versions.md",
+		"三路线":   "cards/workflow.md",
+		"角色设定板": "cards/character-assets.md",
+		"360度补角": "cards/scene-360-coverage.md",
+		"空间推演":  "cards/spatial-preflight.md",
+		"一镜到底":  "cards/one-take.md",
+		"即梦":    "cards/prompt-templates.md",
+		"Seedance": "cards/seedance-versions.md",
 	}
 	for keyword, wantPath := range expect {
 		result, err := cloudAgentSearchSkills(snapshots, keyword, 0)
@@ -61,7 +61,7 @@ func TestCloudAgentSkillSearchRecallsChaogeReferenceCards(t *testing.T) {
 		if score, _ := top["score"].(int); score < 4 {
 			t.Fatalf("keyword %q scored %d, want >= 4 (card-level weight)", keyword, score)
 		}
-		if !strings.HasPrefix(path, "references/") && !strings.HasPrefix(path, "assets/") {
+		if !strings.HasPrefix(path, "cards/") && !strings.HasPrefix(path, "references/") && !strings.HasPrefix(path, "assets/") {
 			t.Fatalf("keyword %q recalled non-card path %q", keyword, path)
 		}
 	}
@@ -86,10 +86,10 @@ func TestCloudAgentSkillReadFileReadsChaogeReference(t *testing.T) {
 	state := &cloudAgentRuntime{Skills: snapshots}
 	call := cloudAgentCall{ID: "read-chaoge"}
 	call.Function.Name = "skill_read_file"
-	call.Function.Arguments = `{"skillId":"chaoge-film-director-flex","path":"references/one_take.md"}`
+	call.Function.Arguments = `{"skillId":"chaoge-film-director-flex","path":"cards/one-take.md"}`
 	result, err := cloudAgentReadTool(nil, "user", state, call, s)
 	if err != nil {
-		t.Fatalf("skill_read_file on references/one_take.md: %v", err)
+		t.Fatalf("skill_read_file on cards/one-take.md: %v", err)
 	}
 	page, ok := result.(map[string]any)
 	if !ok {

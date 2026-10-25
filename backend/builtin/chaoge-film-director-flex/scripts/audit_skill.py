@@ -195,24 +195,14 @@ def main() -> int:
         errors.append("缺少scripts/validate_prompt.py")
 
     if args.installed:
-        installed = Path(args.installed).resolve()
-        if not installed.is_dir():
-            errors.append(f"正式安装目录不存在：{installed}")
-        else:
-            source = source_files(root)
-            target = source_files(installed)
-            if source != target:
-                missing = sorted(set(source) - set(target))
-                extra = sorted(set(target) - set(source))
-                changed = sorted(key for key in set(source) & set(target) if source[key] != target[key])
-                details = []
-                if missing:
-                    details.append("未同步=" + ",".join(missing))
-                if extra:
-                    details.append("仅安装目录存在=" + ",".join(extra))
-                if changed:
-                    details.append("内容不同=" + ",".join(changed))
-                errors.append("两个Skill目录不一致：" + "；".join(details))
+        # 双轨制镜像已于 2026-10-25 废弃（总架构师指令单阶段一）：WorkBuddy 侧调用源起技能
+        # 统一走已启用的 yingce_mcp.py 通道（_ops/yingce_mcp.py，MCP stdio → /api/agent/runs），
+        # 宿主 ~/.workbuddy/skills/ 不再镜像 builtin 包。原强制 SHA-256 同步检查随之取消，
+        # 仅保留弃用告警兜底（旧自动化传 --installed 不会误红）。
+        warnings.append(
+            "双轨镜像同步检查已废弃：宿主侧请改用 yingce_mcp.py 通道调用源起技能，"
+            "不要再维护 ~/.workbuddy/skills/ 镜像（本次未做一致性比对）"
+        )
 
     if len(read_text(root / "SKILL.md").splitlines()) > 240:
         warnings.append("SKILL.md超过240行，请确认新增细节是否应迁入专项参考文件")
