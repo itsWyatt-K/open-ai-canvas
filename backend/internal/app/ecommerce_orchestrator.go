@@ -1011,15 +1011,17 @@ func (s *Service) reconcileEcommerceSlotVersions(userID string, taskIDs []string
 			}
 			slot.Status = slotStatus
 			// 通道 B（锁主体合成）：完成屏自动合成并写 4 层清单。
-			// 失败静默降级（composeEcommerceChannelBLayers 内部兜底两层），不阻断对账。
+			// 底图读取失败也要落两层降级清单（composed=生图原片），保证精修台/导出有据可依。
 			if slotStatus == ecommerce.SlotStatusCompleted && resourceID != "" {
 				if product, productErr := s.repo.GetEcommerceProduct(userID, slot.ProductID); productErr == nil &&
 					slotWantsChannelB(*slot, product) {
-					if background, bgErr := s.ecommerceResourceDataURL(userID, resourceID); bgErr == nil {
-						manifest := s.composeEcommerceChannelBLayers(userID, product, *slot, background, "")
-						_ = s.persistEcommerceSlotManifest(slot.ID, manifest)
-						_ = s.repo.UpdateEcommerceSlotVersionManifest(version.ID, mustEncodeEcommerceManifest(manifest))
+					background, bgErr := s.ecommerceResourceDataURL(userID, resourceID)
+					if bgErr != nil {
+						background = ""
 					}
+					manifest := s.composeEcommerceChannelBLayers(userID, product, *slot, background, "")
+					_ = s.persistEcommerceSlotManifest(slot.ID, manifest)
+					_ = s.repo.UpdateEcommerceSlotVersionManifest(version.ID, mustEncodeEcommerceManifest(manifest))
 				}
 			}
 		}
