@@ -106,15 +106,23 @@ export function CommerceWorkflowNode({ node, nodes, connections, theme, readOnly
                         : <><label className="commerce-field">平台<Select aria-label="平台" disabled={disabled} value={data.platform} options={choices(COMMERCE_PLATFORMS)} onChange={(platform) => { const next = commercePlatformDefaults(platform); patch({ platform, ...(next.language ? { language: next.language } : {}) }); if (next.size && !disabled) patchMetadata(node.id, { size: next.size }); }} /></label>
                         <label className="commerce-field">屏数（1–30）<InputNumber aria-label="屏数" disabled={disabled || resultGroup} value={resultGroup ? data.screens.length : data.screenCount} min={1} max={30} precision={0} onChange={(value) => { if (value) patch({ screenCount: value }); }} /></label></>}
                     {replica && <label className="commerce-field">输出比例<Select disabled={disabled} value={data.followTemplate !== false ? "template" : "custom"} options={[{ label: "跟随各自模板", value: "template" }, { label: "使用下方统一尺寸", value: "custom" }]} onChange={(value) => patch({ followTemplate: value === "template" })} /></label>}
-                    {!replica && <><label className="commerce-field">图中文字<Select disabled={disabled} value={data.textMode} options={[{ label: "按需排版", value: "typeset" }, { label: "纯图无字", value: "none" }]} onChange={(textMode) => patch({ textMode })} /></label>
-                    <label className="commerce-field">语言<Select disabled={disabled} value={data.language} options={choices(COMMERCE_LANGUAGES)} onChange={(language) => patch({ language })} /></label>
-                    <label className="commerce-field">模特<Select disabled={disabled} value={data.modelMode} options={choices(["自动判断", "不使用模特", "使用模特"])} onChange={(modelMode) => patch({ modelMode })} /></label>
-                    <label className="commerce-field">字体风格<Select disabled={disabled} value={data.font} options={choices(COMMERCE_FONTS)} onChange={(font) => patch({ font })} /></label>
-                    <label className="commerce-field">色彩节奏<Select disabled={disabled} value={data.colorRhythm} options={choices(["统一", "错落"])} onChange={(colorRhythm) => patch({ colorRhythm })} /></label></>}
                 </div>
-                <label className="commerce-field">{replica ? "分析 / 文字识别模型" : "策划模型"}<ModelPicker config={effective} value={data.textModel || effective.textModel} capability="text" fullWidth requirements={{ capability: "text", input: { imageCount: inputs.products.length + inputs.references.length, textCount: inputs.texts.length, videoCount: 0, audioCount: 0, characterCount: 0 } }} onChange={(textModel) => patch({ textModel })} /></label>
-                <label className="commerce-field">图片生成模型<ModelPicker config={imageConfig} value={model} capability="image" fullWidth onChange={(value) => { if (!disabled) patchMetadata(node.id, { model: value, ...defaultImageParamsForModel(effective, value) }); }} /></label>
-                <ImageSettingsPanel config={imageConfig} theme={theme} showTitle={false} showCount={false} showTransparent={false} className="w-full space-y-2" onConfigChange={(key, value) => { if (!disabled) patchMetadata(node.id, { [key]: value }); }} />
+                {/* 返工令四-2：引擎级参数收进默认折叠的「高级参数」——小白只填图/卖点/平台/屏数。 */}
+                <details className="commerce-advanced rounded-lg border border-border/40 bg-black/10 p-2">
+                    <summary className="cursor-pointer select-none text-xs opacity-70">⚙️ 高级参数（默认自动最优：文字排版 / 语言 / 模特 / 字体 / 色彩 / 模型）</summary>
+                    <div className="mt-2 flex flex-col gap-3">
+                        {!replica && <div className="grid grid-cols-2 gap-3">
+                            <label className="commerce-field">图中文字<Select disabled={disabled} value={data.textMode} options={[{ label: "按需排版", value: "typeset" }, { label: "纯图无字", value: "none" }]} onChange={(textMode) => patch({ textMode })} /></label>
+                            <label className="commerce-field">语言<Select disabled={disabled} value={data.language} options={choices(COMMERCE_LANGUAGES)} onChange={(language) => patch({ language })} /></label>
+                            <label className="commerce-field">模特<Select disabled={disabled} value={data.modelMode} options={choices(["自动判断", "不使用模特", "使用模特"])} onChange={(modelMode) => patch({ modelMode })} /></label>
+                            <label className="commerce-field">字体风格<Select disabled={disabled} value={data.font} options={choices(COMMERCE_FONTS)} onChange={(font) => patch({ font })} /></label>
+                            <label className="commerce-field">色彩节奏<Select disabled={disabled} value={data.colorRhythm} options={choices(["统一", "错落"])} onChange={(colorRhythm) => patch({ colorRhythm })} /></label>
+                        </div>}
+                        <label className="commerce-field">{replica ? "分析 / 文字识别模型" : "策划模型"}<ModelPicker config={effective} value={data.textModel || effective.textModel} capability="text" fullWidth requirements={{ capability: "text", input: { imageCount: inputs.products.length + inputs.references.length, textCount: inputs.texts.length, videoCount: 0, audioCount: 0, characterCount: 0 } }} onChange={(textModel) => patch({ textModel })} /></label>
+                        <label className="commerce-field">图片生成模型<ModelPicker config={imageConfig} value={model} capability="image" fullWidth onChange={(value) => { if (!disabled) patchMetadata(node.id, { model: value, ...defaultImageParamsForModel(effective, value) }); }} /></label>
+                        <ImageSettingsPanel config={imageConfig} theme={theme} showTitle={false} showCount={false} showTransparent={false} className="w-full space-y-2" onConfigChange={(key, value) => { if (!disabled) patchMetadata(node.id, { [key]: value }); }} />
+                    </div>
+                </details>
             </fieldset>
         {replica && data.copyMode === "rewrite" && <CommerceTemplateCopyEditor data={data} templates={inputs.references} disabled={disabled}
             onRecognize={(templateId) => void workflow.run(node.id, "ocr", templateId)}

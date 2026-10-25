@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 图层精修弹窗（电商实战升级 · 阶段三 Step 4 MVP）。
  *
  * 四层结构（文字层 / 商品主体层 / 光影阴影层 / 背景层）+ 小白四工具：
@@ -22,8 +22,16 @@ import {
     type EcommerceTextLayer,
 } from "@/services/api/ecommerce";
 import { AppModal } from "@/components/ui/product/app-modal";
+import { NXF_BASE, nxfPost, urlToDataUrl } from "./vision-client";
 
-const NXF_BASE = (import.meta.env.VITE_NXF_BASE as string | undefined) ?? "http://127.0.0.1:8823";
+type Props = {
+    slot: EcommerceSlotSummary;
+    productSourceResourceId: string;
+    /** 商品透明主体（BiRefNet，ProductCutoutCard 提取；未出图模式的海报草图/四层树用）。 */
+    productCutoutUrl?: string;
+    onClose: () => void;
+    onChanged: () => void | Promise<void>;
+};
 
 const LIGHT_OPTIONS = [
     { label: "左上光", value: "left-top" },
@@ -34,40 +42,12 @@ const LIGHT_OPTIONS = [
     { label: "右下光", value: "right-bottom" },
 ];
 
-type Props = {
-    slot: EcommerceSlotSummary;
-    productSourceResourceId: string;
-    onClose: () => void;
-    onChanged: () => void | Promise<void>;
-};
-
-async function nxfPost<T>(path: string, body: unknown): Promise<T & { ok: boolean; error?: string }> {
-    const response = await fetch(NXF_BASE + path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-    });
-    if (!response.ok) throw new Error(`引擎 ${path} 返回 ${response.status}`);
-    return (await response.json()) as T & { ok: boolean; error?: string };
-}
-
-async function urlToDataUrl(url: string): Promise<string> {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error("读取图片失败"));
-        reader.readAsDataURL(blob);
-    });
-}
-
-export function EcommerceRetouchDialog({ slot, productSourceResourceId, onClose, onChanged }: Props) {
+export function EcommerceRetouchDialog({ slot, productSourceResourceId, productCutoutUrl, onClose, onChanged }: Props) {
     const { message } = App.useApp();
     const [manifest, setManifest] = useState<EcommerceLayerManifest>(() => ({
         background_layer_url: slot.layerManifest?.background_layer_url ?? "",
         shadow_layer_url: slot.layerManifest?.shadow_layer_url ?? "",
-        product_cutout_url: slot.layerManifest?.product_cutout_url ?? "",
+        product_cutout_url: slot.layerManifest?.product_cutout_url ?? productCutoutUrl ?? "",
         product_rect: slot.layerManifest?.product_rect ?? [0, 0, 0, 0],
         text_layers: slot.layerManifest?.text_layers?.slice() ?? [],
         composed_image_url: slot.layerManifest?.composed_image_url ?? "",
@@ -315,12 +295,24 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, onClose,
             }
         >
             <div className="flex gap-3">
-                {/* 画布区：框选消除 + 文字层预览 */}
+                {/* 画布区：框选消除 + 文字层预览；未出图时显示「渐变底+透明商品」实时海报草图 */}
                 <div className="relative min-w-0 flex-1 select-none overflow-hidden rounded-lg bg-surface-active" {...relativeHandlers}>
                     {composedImage ? (
                         <img src={composedImage} alt={slot.title || slot.slotKey} className="block w-full" draggable={false} />
                     ) : (
-                        <div className="flex h-72 items-center justify-center text-xs text-foreground/45">该屏尚未出图</div>
+                        <div className="relative flex aspect-[3/4] max-h-[70vh] w-full items-center justify-center bg-[linear-gradient(160deg,#f5f0e8_0%,#e8e0f0_55%,#dce8f5_100%)]">
+                            {manifest.product_cutout_url ? (
+                                <img
+                                    src={manifest.product_cutout_url}
+                                    alt="商品主体草图"
+                                    className="max-h-[62%] max-w-[74%] object-contain drop-shadow-[0_18px_28px_rgba(40,30,60,0.35)]"
+                                    draggable={false}
+                                />
+                            ) : (
+                                <span className="text-xs text-foreground/45">先「一键抠图」得到商品主体，即可在此预览海报草图</span>
+                            )}
+                            <span className="absolute bottom-2 right-2 rounded bg-black/35 px-1.5 py-0.5 text-[10px] text-white">海报草图（生成后替换为 AI 场景图）</span>
+                        </div>
                     )}
                     {manifest.text_layers.map((layer, index) => (
                         <span

@@ -258,6 +258,13 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 		},
 	})
 	if taskErr != nil {
+		// 容量满（返工令三-1）：不是失败，是排队——槽位置 pending，由对账
+		// continueEcommerceDispatch 在容量释放后自动补派，绝不给用户抛红字。
+		if isQueueFullError(taskErr) {
+			_ = s.repo.UpdateEcommerceSlotStatus(slotID, ecommerce.SlotStatusPending)
+			return nil, NewAppError(http.StatusTooManyRequests,
+				"当前在途任务已满：该屏已加入排队，前序任务完成后自动开始生成（无需重复点击）")
+		}
 		version.Status = ecommerce.SlotStatusFailed
 		version.ErrorMessage = truncateError(taskErr)
 		if writeErr := s.repo.CreateEcommerceSlotVersion(&version); writeErr != nil {

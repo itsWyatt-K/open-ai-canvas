@@ -505,6 +505,60 @@ func TestEcommerceLifecycle_单屏失败暴露原因(t *testing.T) {
 	}
 }
 
+// TestEcommerceRegenerate_满额排队不标失败 覆盖前端返工令三-1：
+// 单屏重生成遇在途上限 → 槽位置 pending 顺延（对账自动补派），
+// 绝不落 failed 版本、绝不给用户抛红色并发错误。
+func TestEcommerceRegenerate_满额排队不标失败(t *testing.T) {
+	s, db := newEcommerceLifecycleService(t)
+	limit := lifecycleActiveTaskLimit(t, s)
+	// 商品 A 吃满在途名额。
+	productA := importLifecycleProduct(t, s, "占位商品A.png")
+	confirmLifecycleProduct(t, s, productA)
+	if got := lifecycleChildTasks(t, s, productA); len(got) != limit {
+		t.Fatalf("商品 A 应占满 %d 名额，实际 %d", limit, len(got))
+	}
+	// 商品 B：确认后全部顺延（pending），任取一屏手动重生成 → 必遇满额。
+	productB := importLifecycleProduct(t, s, "排队商品B.png")
+	confirmLifecycleProduct(t, s, productB)
+	detail, err := s.EcommerceProductDetail("user", productB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot := detail.Slots[0]
+	_, regenErr := s.RegenerateEcommerceSlot(context.Background(), "user", slot.ID,
+		EcommerceSlotPromptPatch{}, EcommerceSlotRegenerateOptions{ChannelID: "channel", Model: "grok-image"}, true)
+	if regenErr == nil {
+		t.Fatal("满额时重生成应返回温和提示错误（429 语义）")
+	}
+	if !strings.Contains(regenErr.Error(), "排队") {
+		t.Fatalf("错误文案应是排队语义，实际: %v", regenErr)
+	}
+	reloaded, err := s.repo.EcommerceSlotByID(slot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Status != ecommerce.SlotStatusPending {
+		t.Fatalf("满额重生成后槽位应为 pending（顺延），实际 %s", reloaded.Status)
+	}
+	versions, err := s.repo.ListEcommerceSlotVersions(slot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range versions {
+		if version.Status == ecommerce.SlotStatusFailed {
+			t.Fatalf("不得落 failed 版本（返工令三-1），版本 %d 为 failed", version.Version)
+		}
+	}
+	// 释放一个名额 → 对账自动补派排队屏（含刚才手动重生成的屏所属商品）。
+	settleLifecycleChildTask(t, db, lifecycleChildTasks(t, s, productA)[0].ID, true, kernel.NewID(), "")
+	if _, err := s.SyncEcommerceProduct("user", productB); err != nil {
+		t.Fatal(err)
+	}
+	if got := countLifecycleImageTasks(t, db); got <= int64(limit) {
+		t.Fatalf("释放名额后应自动补派（任务数应大于 %d），实际 %d", limit, got)
+	}
+}
+
 // TestEcommerceLifecycle_失败态顺延补派 覆盖返工令 B 遗留 3：
 // failed 商品落库后的**下一次对账**仍须为顺延屏补派。
 // 此前的守卫只放行 running/queued——第一次对账时 DB 商品态还是 running 能侥幸

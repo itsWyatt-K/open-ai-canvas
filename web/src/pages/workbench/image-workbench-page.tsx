@@ -1,5 +1,5 @@
-import { App, Button, Input, InputNumber, Modal, Progress, Segmented, Select, Spin, Switch, Tooltip } from "antd";
-import { Check, Camera, ChevronDown, Clapperboard, Expand, FileImage, History, ImagePlus, Images, LoaderCircle, Mic, Palette, Plus, RotateCcw, Search, ShoppingBag, Sparkles, Upload, UserRound, Video, X } from "lucide-react";
+﻿import { App, Button, Input, InputNumber, Modal, Progress, Segmented, Select, Spin, Switch, Tooltip } from "antd";
+import { Check, Camera, ChevronDown, Clapperboard, Expand, FileImage, History, ImagePlus, Images, Layers3, LoaderCircle, Mic, Palette, Plus, RotateCcw, Search, ShoppingBag, Sparkles, Upload, UserRound, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -1039,6 +1039,15 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     </div>
                                     <div className="workbench-goal-grid">
                                         {quickTools.map((item) => <QuickGoalCard key={item.id} tool={item} kind={kind} onClick={() => chooseTool(item)} />)}
+                                        {/* 返工令四-1：透明分层与成套详情页高亮入口——打通工具箱与电商工坊/精修台。 */}
+                                        <button type="button" className="workbench-goal-card is-highlight" onClick={() => { window.location.hash = ""; window.location.assign("/ecommerce"); }}>
+                                            <span className="workbench-goal-icon"><Layers3 className="size-5" /></span>
+                                            <span className="workbench-goal-copy">
+                                                <strong>透明分层抠图 · 成套详情页</strong>
+                                                <small>BiRefNet 抠主体 / 四层精修 / PSD / 七屏详情页</small>
+                                            </span>
+                                            <span className="workbench-goal-arrow">→</span>
+                                        </button>
                                     </div>
                                 </section>
                             ) : null}
