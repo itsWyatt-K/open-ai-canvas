@@ -1,4 +1,4 @@
-package database
+﻿package database
 
 import (
 	"reflect"
@@ -84,7 +84,7 @@ func TestCanvasCollaborationUpgradeFrom56(t *testing.T) {
 		}
 	}
 	status, err := ReadSchemaStatus(db)
-	if err != nil || !status.Ready || status.Current != 57 {
+	if err != nil || !status.Ready || status.Current != 63 {
 		t.Fatalf("unexpected schema status: %+v %v", status, err)
 	}
 }
