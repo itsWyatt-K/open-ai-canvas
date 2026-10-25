@@ -453,8 +453,10 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 	}
 	allowed := cloudAgentToolAllowed(state.Request, call.Function.Name)
 	mediaTool := call.Function.Name == "generate_media" || call.Function.Name == "image_layer_split"
+	// 计费动作强制审批（拍板令阶段四）：电商确认派发与媒体生成同级，无论权限模式。
+	forcedApproval := cloudAgentAlwaysApprove(call.Function.Name)
 	// 媒体工具在所有模式下都进入审批；其他写入只在 request_approval 下审批。
-	if allowed && cloudAgentWrite(call.Function.Name) && (state.Request.PermissionMode == "request_approval" || mediaTool) && state.Approval == nil {
+	if allowed && cloudAgentWrite(call.Function.Name) && (state.Request.PermissionMode == "request_approval" || mediaTool || forcedApproval) && state.Approval == nil {
 		var plan *cloudAgentMediaPlan
 		var modelName string
 		var mediaRequest CreateTaskRequest

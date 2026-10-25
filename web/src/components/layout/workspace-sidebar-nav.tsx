@@ -1,5 +1,5 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, PanelLeftClose, PanelLeftOpen, Plus, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, LayoutGrid as LayoutGridIcon, PanelLeftClose, PanelLeftOpen, Plus, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -41,35 +41,25 @@ function toolItem(slug: NavigationToolSlug, to: string): WorkspaceNavItem {
 }
 
 function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
+    // 拍板令阶段二：双入口精简——主导航只留「自由画布」+「固定模块」；
+    // 短剧/电商/E-Reverse/工具箱收进 /modules 模块大厅；任务与资产保留为底部快捷入口；
+    // 设置/管理后台/钱包走左下角用户卡片菜单（footer 保持为空）。
+    void features;
     const groups: WorkspaceNavGroup[] = [
         {
             items: [
-                { ...toolItem("create", "/"), id: "home", title: "创作" },
-                { ...toolItem("projects", "/projects"), title: "短剧制作" },
-                { ...toolItem("canvas", "/canvas"), title: "自由画布" },
-                ...(features.ecommerceEnabled ? [{ ...toolItem("ecommerce", "/ecommerce"), title: "电商工坊" }] : []),
+                { id: "canvas", title: "自由画布", icon: InfinityIcon, to: "/canvas" },
+                { id: "modules", title: "固定模块", icon: LayoutGridIcon, to: "/modules" },
             ],
         },
         {
-            heading: "资源与工具",
+            heading: "快捷入口",
             items: [
-                ...(features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: "图片生成", icon: ImageIcon, to: "/toolbox/image" }] : []),
-                ...(features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: "视频生成", icon: Video, to: "/toolbox/video" }] : []),
-                { ...toolItem("skills", "/skills"), title: "技能" },
-                ...(features.pluginCenterEnabled ? [{ ...toolItem("plugins", "/plugins"), title: "插件" }] : []),
-            ],
-        },
-        {
-            heading: "资产与历史",
-            items: [
+                ...(features.taskCenterEnabled ? [{ id: "tasks", title: "任务", icon: HistoryIcon, to: "/tasks" }] : []),
                 { ...toolItem("assets", "/assets"), title: "资产" },
-                ...(features.taskCenterEnabled ? [{ id: "tasks", title: "创作历史", icon: ImageIcon, to: "/tasks" }] : []),
             ],
         },
     ];
-
-    // 管理、设置和退出登录不再占据参考站式侧栏底部，而是通过用户卡片菜单进入。
-    // 路由和写操作仍保留，避免把用户端导航变成无法访问的装饰。
     return { groups, footer: [] };
 }
 
@@ -198,7 +188,7 @@ function NavItem({
     const rowStyle = collapsed ? undefined : ({ paddingLeft: `${level * 12 + 10}px` } as CSSProperties);
 
     const collapsedTitle =
-        item.id === "home" ? "创作" : item.id === "projects" ? "短剧" : item.id === "canvas" ? "画布" : item.id === "ecommerce" ? "电商" : item.id === "assets" ? "资产" : item.id === "skills" ? "技能" : item.id === "plugins" ? "插件" : item.id === "tasks" ? "历史" : item.title.slice(0, 2);
+        item.id === "canvas" ? "画布" : item.id === "modules" ? "模块" : item.id === "assets" ? "资产" : item.id === "tasks" ? "任务" : item.title.slice(0, 2);
     const rowContent = (
         <>
             <span className="app-workspace-nav-main flex min-w-0 items-center gap-2.5">
@@ -332,13 +322,14 @@ function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collaps
     );
 }
 
-// 菜单项 id 与实际路由不一定同名：/toolbox/image 和 /toolbox/video 共用 toolbox 前缀，
-// 只取首段会让两者都匹配不到任何菜单项，侧栏因此没有高亮。
+// 菜单项 id 与实际路由不一定同名：多入口模块（电商/短剧/E-Reverse/工具箱）统一高亮
+// 「固定模块」；/create 与根路径属于画布创作态。
 export function workspaceNavActiveId(pathname: string, section?: string | null) {
     const segments = pathname.split("/").filter(Boolean);
-    if (segments[0] === "toolbox" && segments[1]) return `toolbox-${segments[1]}`;
-    const slug = segments[0] || "home";
-    if (slug === "create") return "home";
+    if (segments[0] === "toolbox" && segments[1]) return "modules";
+    const slug = segments[0] || "canvas";
+    if (slug === "create" || slug === "canvas") return "canvas";
+    if (slug === "modules" || slug === "ecommerce" || slug === "projects" || slug === "ereverse") return "modules";
     return slug === "settings" && section ? `settings:${section}` : slug;
 }
 

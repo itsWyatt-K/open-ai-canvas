@@ -10,6 +10,8 @@ import RouteErrorPage from "@/pages/route-error";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
 
 const AdminPage = lazy(() => import("@/pages/admin"));
+const ModulesPage = lazy(() => import("@/pages/modules").then((module) => ({ default: module.ModulesPage })));
+const LiveStudioPage = lazy(() => import("@/pages/modules/live-studio").then((module) => ({ default: module.LiveStudioPage })));
 const AnalyticsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnalyticsPage })));
 const AnnouncementsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnnouncementsPage })));
 const BannerAnnouncementsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.BannerAnnouncementsPage })));
@@ -148,6 +150,8 @@ export const router = createBrowserRouter([
                 ),
             },
             { path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> },
+            { path: "/modules", element: <RequireAuth>{deferred(<ModulesPage />)}</RequireAuth> },
+            { path: "/modules/live-studio", element: <RequireAuth>{deferred(<LiveStudioPage />)}</RequireAuth> },
             { path: "/ecommerce", element: <RequireAuth><RequireFeature feature="ecommerceEnabled">{deferred(<EcommercePage />)}</RequireFeature></RequireAuth> },
             { path: "/ecommerce/:view", element: <RequireAuth><RequireFeature feature="ecommerceEnabled">{deferred(<EcommercePage />)}</RequireFeature></RequireAuth> },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },

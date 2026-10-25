@@ -316,6 +316,23 @@ func compileCloudAgentTools(req CloudAgentRequest, includeProfileTool bool) []ma
 			"prompt":         str("画面描述/生图提示词（可空，空则保留原值）"),
 			"promptOverride": str("完整提示词覆盖（非空时最高优先；传空字符串表示清除覆盖）"),
 		}, "productId", "slotId")
+		// 拍板令阶段四：电商产线三工具。切平台不扣费；AI 策划按文本模型计费；
+		// **确认派发为计费动作，强制审批门 + 余额预检**（见 cloudAgentAlwaysApprove）。
+		add("ecommerce_apply_platform", "切换电商商品目标平台（6 平台规格）。按平台模板重建未派发槽位；不派发生图、不扣费，已派发槽位不受影响。", map[string]any{
+			"productId": str("商品任务 ID"),
+			"platform":  str("平台 key：taobao(淘宝/天猫)、douyin(抖音/视频号)、pinduoduo(拼多多)、jd(京东)、amazon(亚马逊)、xiaohongshu(小红书)"),
+		}, "productId", "platform")
+		add("ecommerce_plan_product", "派发 AI 视觉策划（看图提炼卖点、生成分屏企划；按文本模型计费）。完成后用 ecommerce_get_product_detail 查看；生图确认另走 ecommerce_confirm_plan 审批。渠道/模型可空，空则回退商品派发快照。", map[string]any{
+			"productId":         str("商品任务 ID"),
+			"channelId":         str("视觉文本渠道 ID（可空，空则回退商品快照）"),
+			"model":             str("视觉文本模型名（可空，空则回退商品快照）"),
+			"styleReferenceIds": map[string]any{"type": "array", "maxItems": 8, "items": str("风格参考资源 ID；仅参与策划不进生图")},
+		}, "productId")
+		add("ecommerce_confirm_plan", "确认电商企划并真实派发生图（**计费动作，必须用户审批**；执行前已做余额预检）。按平台规范派发全部待生成槽位，超并发上限自动排队顺延不视为失败。仅「待确认方案/未开始」状态可调用。", map[string]any{
+			"productId": str("商品任务 ID"),
+			"channelId": str("生图渠道 ID（可空，空则回退商品快照）"),
+			"model":     str("生图模型名（可空，空则回退商品快照）"),
+		}, "productId")
 	}
 	// Chaoge 导演校验工具：纯内存语法/结构门禁（internal/director 与 Python 校验器 1:1），
 	// 不写库、不扣费、不碰画布，因此只读模式下也始终下发——只读会话同样要在交付

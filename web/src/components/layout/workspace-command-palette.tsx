@@ -30,10 +30,12 @@ export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onCl
             return { id: slug, title: tool?.label ?? slug, icon: tool?.icon ?? Home, to };
         };
         return [
-            { id: "home", title: "首页", icon: Home, to: "/" },
-            toolEntry("projects", "/projects"),
-            toolEntry("canvas", "/canvas"),
-            toolEntry("ecommerce", "/ecommerce"),
+            { id: "canvas", title: "自由画布", icon: Home, to: "/canvas" },
+            { id: "modules", title: "固定模块", icon: Home, to: "/modules" },
+            { id: "modules-live", title: "直播间装修与透明分层台", icon: Home, to: "/modules/live-studio" },
+            { id: "modules-ecommerce", title: "电商详情页工坊", icon: Home, to: "/ecommerce" },
+            { id: "modules-projects", title: "AI 短剧制作", icon: Home, to: "/projects" },
+            { id: "modules-ereverse", title: "爆款视觉反推", icon: Home, to: "/ereverse" },
             ...(features.taskCenterEnabled ? [toolEntry("tasks", "/tasks")] : []),
             toolEntry("assets", "/assets"),
             toolEntry("skills", "/skills"),

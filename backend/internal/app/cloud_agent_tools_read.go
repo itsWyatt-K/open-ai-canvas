@@ -25,7 +25,13 @@ import (
 )
 
 func cloudAgentWrite(name string) bool {
-	return name == "canvas_apply_ops" || name == "canvas_arrange_nodes" || name == "generate_media" || name == "image_layer_split" || name == "canvas_create_storyboard" || name == "canvas_edit_storyboard" || name == "canvas_edit_batch_table" || name == "canvas_create_character" || name == "previs_scene_create" || name == "previs_apply_patch"
+	return name == "canvas_apply_ops" || name == "canvas_arrange_nodes" || name == "generate_media" || name == "image_layer_split" || name == "canvas_create_storyboard" || name == "canvas_edit_storyboard" || name == "canvas_edit_batch_table" || name == "canvas_create_character" || name == "previs_scene_create" || name == "previs_apply_patch" || name == "ecommerce_confirm_plan"
+}
+
+// cloudAgentAlwaysApprove 计费动作无论权限模式都强制走审批门（拍板令阶段四：
+// ecommerce_confirm_plan 一经执行即真实派发生图并扣费，与媒体生成同级）。
+func cloudAgentAlwaysApprove(name string) bool {
+	return name == "ecommerce_confirm_plan"
 }
 
 // 同参缓存只能拦住“原样重复”的读取。模型也可能不断修改 offset、nodeIds 或
@@ -279,6 +285,12 @@ func cloudAgentReadTool(repo *repository.Repository, userID string, state *cloud
 		return cloudAgentEcommerceGetProductDetail(services, userID, call)
 	case "ecommerce_update_slot_prompt":
 		return cloudAgentEcommerceUpdateSlotPrompt(services, userID, call)
+	case "ecommerce_apply_platform":
+		return cloudAgentEcommerceApplyPlatform(services, userID, call)
+	case "ecommerce_plan_product":
+		return cloudAgentEcommercePlanProduct(services, userID, call)
+	case "ecommerce_confirm_plan":
+		return cloudAgentEcommerceConfirmPlan(services, userID, call)
 	case "director_validate_prompt":
 		return cloudAgentDirectorValidatePrompt(services, userID, call)
 	case "director_validate_ledger":
