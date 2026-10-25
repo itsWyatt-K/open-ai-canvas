@@ -7,8 +7,17 @@ import { ArrowLeft, Sparkles } from "lucide-react";
 import { Link } from "react-router";
 
 import { LayerStudioWorkbench } from "./layer-studio-workbench";
-import { LIVE_BANNER_PRESETS, LIVE_DEFAULT_CANVAS, LIVE_PLATFORMS, type LivePlatformKey } from "./platforms-live";
+import { LIVE_BANNER_PRESETS, LIVE_DEFAULT_CANVAS, LIVE_PLATFORMS, LIVE_SCENE_PACKS, type LivePlatformKey } from "./platforms-live";
 import type { LiveBannerText } from "./live-studio-types";
+
+/** 单条 Banner 的完整默认值：预设只给差异字段，其余靠这里兜底。 */
+const BANNER_DEFAULTS: Omit<LiveBannerText, "text"> = {
+    font_size: 88, color: "#FFE066", bold: true, font: "",
+    stroke_color: "#7A1010", stroke_width: 5,
+    shadow_blur: 6, shadow_offset_x: 0, shadow_offset_y: 5,
+    shadow_opacity: 0.5, shadow_color: "#000000",
+    align: "center", line_spacing: 1.25, x: 0.5, y: 0.25,
+};
 
 export function LiveStudioPage() {
     const { message } = App.useApp();
@@ -16,12 +25,7 @@ export function LiveStudioPage() {
     const preset = LIVE_PLATFORMS[platform];
     const [banners, setBanners] = useState<LiveBannerText[]>(() => [
         // 预设是 Partial：用完整默认值兜底后再铺开。
-        {
-            text: "直播间限时秒杀", font_size: 120, color: "#FFE066", bold: true, font: "",
-            stroke_color: "#7A1010", stroke_width: 6, shadow_blur: 8, shadow_offset_x: 0, shadow_offset_y: 6,
-            shadow_opacity: 0.5, shadow_color: "#000000", align: "center", line_spacing: 1.25,
-            x: 0.5, y: 0.18,
-        },
+        { ...BANNER_DEFAULTS, text: "直播间限时秒杀", font_size: 120, y: 0.18 },
     ]);
     const [subjects, setSubjects] = useState<Array<{ image: string; name: string; x: number; y: number; scale: number; shadow: boolean }>>([]);
     const [backgroundUrl, setBackgroundUrl] = useState("");
@@ -31,12 +35,20 @@ export function LiveStudioPage() {
         if (!presetDef) return;
         const slot = preset.badgeSlots.find((slot2) => slot2.label === label) || preset.badgeSlots[0];
         setBanners((prev) => [...prev, {
-            shadow_opacity: 0.5, shadow_color: "#000000", shadow_offset_x: 0,
-            font: "", align: "center", line_spacing: 1.25,
-            ...presetDef.banner, x: slot.x, y: slot.y,
+            ...BANNER_DEFAULTS,
+            ...presetDef.banner,
+            x: slot.x, y: slot.y,
         } as LiveBannerText]);
         message.success(`已插入预设「${label}」（${slot.label}位）`);
     }, [preset, message]);
+
+    // 场景包：整组替换文字层（品牌条/痛点/小标签/核心卖点），不是叠加。
+    const applyScenePack = useCallback((key: string) => {
+        const pack = LIVE_SCENE_PACKS.find((item) => item.key === key);
+        if (!pack) return;
+        setBanners(pack.banners.map((banner) => ({ ...BANNER_DEFAULTS, ...banner } as LiveBannerText)));
+        message.success(`已套用「${pack.label}」：${pack.banners.length} 层文字`);
+    }, [message]);
 
     const handleSave = useCallback(async (result: { composed: string; psdBase64?: string }) => {
         const png = document.createElement("a");
@@ -72,6 +84,15 @@ export function LiveStudioPage() {
                 </div>
             </div>
 
+            <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-foreground/50">场景包（整组替换文字层）：</span>
+                {LIVE_SCENE_PACKS.map((pack) => (
+                    <Button key={pack.key} size="small" type="dashed" icon={<Sparkles className="size-3" />} title={pack.hint} onClick={() => applyScenePack(pack.key)}>
+                        {pack.label}
+                    </Button>
+                ))}
+            </div>
+
             <div className="flex flex-wrap gap-1.5">
                 <span className="text-xs text-foreground/50">促销 Banner 预设：</span>
                 {LIVE_BANNER_PRESETS.map((item) => (
@@ -88,7 +109,8 @@ export function LiveStudioPage() {
                     title={`直播间装修 · ${preset.label}`}
                     backgroundUrl={backgroundUrl}
                     initialSubjects={subjects}
-                    initialBanners={banners}
+                    banners={banners}
+                    onBannersChange={setBanners}
                     canvasWidth={preset.width}
                     canvasHeight={preset.height}
                     safeTop={preset.safeTop}

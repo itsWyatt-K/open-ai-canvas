@@ -63,5 +63,47 @@ export const LIVE_BANNER_PRESETS: Array<{ label: string; banner: Partial<LiveBan
     { label: "关注主播", banner: { text: "关注主播 不迷路", font_size: 72, color: "#FFFFFF", stroke_color: "#333333", stroke_width: 4, shadow_blur: 5 } },
 ];
 
+/**
+ * 场景包：一套完整的三层文字结构（品牌条 / 痛点 / 核心卖点），一次铺满。
+ *
+ * 为什么不是单条预设：卖点文案天然是分级的，单条预设只能堆叠，
+ * 字号层级和行距每次都要手调；场景包把层级关系预先写死，换品只需改字。
+ *
+ * 坐标按 1080x1920 画布设计，已避开抖音顶部 8% 安全区；
+ * 核心卖点底边约在画布 33%，不压中部主播位与产品位。
+ */
+export type LiveScenePack = {
+    key: string;
+    label: string;
+    /** 适用场景说明，展示在按钮 tip 里。 */
+    hint: string;
+    banners: Array<Partial<LiveBannerText> & Pick<LiveBannerText, "text">>;
+};
+
+export const LIVE_SCENE_PACKS: LiveScenePack[] = [
+    {
+        key: "icebox-ivory",
+        label: "冰盒三层 · 象牙咖",
+        hint: "暖奶油墙面首选：深咖字 + 轻投影，不用描边也不会糊",
+        banners: [
+            { text: "Haier 海尔 ｜ 双11狂欢购", font_size: 46, color: "#4A3527", bold: false, stroke_width: 0, shadow_blur: 8, shadow_offset_y: 4, shadow_opacity: 0.22, x: 0.5, y: 0.115 },
+            { text: "无菌储存 · 糖友必备", font_size: 76, color: "#4A3527", bold: true, stroke_width: 0, shadow_blur: 10, shadow_offset_y: 5, shadow_opacity: 0.22, x: 0.5, y: 0.178 },
+            { text: "海尔专业", font_size: 42, color: "#8A7A66", bold: false, stroke_width: 0, shadow_blur: 6, shadow_offset_y: 3, shadow_opacity: 0.16, x: 0.5, y: 0.235 },
+            { text: "胰岛素收纳盒", font_size: 150, color: "#3B2A1E", bold: true, stroke_width: 0, shadow_blur: 14, shadow_offset_y: 7, shadow_opacity: 0.26, x: 0.5, y: 0.312 },
+        ],
+    },
+    {
+        key: "icebox-vermilion",
+        label: "冰盒三层 · 朱红节庆",
+        hint: "双11 大促场次：核心卖点走朱红，抓眼但只落在字里",
+        banners: [
+            { text: "Haier 海尔 ｜ 双11狂欢购", font_size: 46, color: "#4A3527", bold: false, stroke_width: 0, shadow_blur: 8, shadow_offset_y: 4, shadow_opacity: 0.22, x: 0.5, y: 0.115 },
+            { text: "无菌储存 · 糖友必备", font_size: 76, color: "#4A3527", bold: true, stroke_width: 0, shadow_blur: 10, shadow_offset_y: 5, shadow_opacity: 0.22, x: 0.5, y: 0.178 },
+            { text: "海尔专业", font_size: 42, color: "#8A7A66", bold: false, stroke_width: 0, shadow_blur: 6, shadow_offset_y: 3, shadow_opacity: 0.16, x: 0.5, y: 0.235 },
+            { text: "胰岛素收纳盒", font_size: 150, color: "#C8102E", bold: true, stroke_width: 0, shadow_blur: 14, shadow_offset_y: 7, shadow_opacity: 0.28, x: 0.5, y: 0.312 },
+        ],
+    },
+];
+
 /** 9:16 竖版画布默认尺寸。 */
 export const LIVE_DEFAULT_CANVAS = { width: 1080, height: 1920 };
