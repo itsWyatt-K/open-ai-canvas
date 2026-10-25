@@ -10,7 +10,8 @@ import { batchRowInputSignature } from "./canvas-batch-references";
 import { batchPromptForRow } from "./canvas-batch-table";
 import { createCanvasNode } from "./canvas-project-domain";
 import { buildGenerationConfig, resetGenerationTaskMetadata } from "./canvas-project-generation";
-import { commerceScreenImageSize, isCommerceNode } from "./commerce-workflow";
+import { isCommerceNode } from "./commerce-workflow";
+import { commerceScreenImageSize } from "@/lib/canvas/commerce-image-size";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { synchronizeGenerationSpec } from "./generation-contract";
 

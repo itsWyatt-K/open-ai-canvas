@@ -820,7 +820,6 @@ export function scheduleRemoteUserDataSync() {
         }, SYNC_MAX_WAIT_MS);
     }
 }
-}
 
 function isRetryableRemoteSyncError(error: unknown) {
     if (error instanceof ApiError) return error.retryable || error.status === undefined || error.reason === "canvas_concurrent_write" || canReconcileCanvasRejection(error);
