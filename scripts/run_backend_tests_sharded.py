@@ -68,7 +68,8 @@ def list_app_tests(go: str) -> list[str]:
 
 def run_shard(go: str, label: str, run_arg: str, skip_arg: str | None, timeout: int, matched: int) -> tuple[str, str, float]:
     # go test 自带 10 分钟包级超时会 panic 杀掉大批次——透传 -timeout 与门禁一致。
-    cmd = [go, "test", "-run", run_arg, "-count=1", "-timeout", f"{timeout}s", "./internal/app/"]
+    # -v 供精确统计 pass/skip/fail（只统计顶层用例，无缩进的 --- 行）。
+    cmd = [go, "test", "-run", run_arg, "-count=1", "-timeout", f"{timeout}s", "-v", "./internal/app/"]
     if skip_arg:
         # -skip 追加到尾部：插在 -run 前会被 -run 当值吞掉。
         cmd += ["-skip", skip_arg]
@@ -80,20 +81,29 @@ def run_shard(go: str, label: str, run_arg: str, skip_arg: str | None, timeout: 
         return label, "FAIL", float(timeout)
     elapsed = time.time() - started
     status = "PASS" if code == 0 else "FAIL"
+    passed = failed = skipped = 0
+    for line in out.splitlines():
+        if line.startswith("--- PASS: "):
+            passed += 1
+        elif line.startswith("--- FAIL: "):
+            failed += 1
+        elif line.startswith("--- SKIP: "):
+            skipped += 1
+    stats = f"{passed} pass / {skipped} skip / {failed} fail"
     if code != 0:
         # 失败时全量输出落盘，避免尾部截断吞掉失败名单。
         dump = REPO / "reports" / ("shard-fail-" + label.replace("/", "_") + ".log")
         dump.parent.mkdir(exist_ok=True)
         dump.write_text(out, encoding="utf-8", errors="replace")
         fail_lines = [line for line in out.splitlines()
-                      if line.startswith("--- FAIL") or line.startswith("    --- FAIL") or "panic:" in line]
-        print(f"[{status}] {label} ({matched} 例, {elapsed:.0f}s) 完整输出: {dump}", flush=True)
+                      if line.startswith("--- FAIL") or line.lstrip().startswith("--- FAIL") or "panic:" in line]
+        print(f"[{status}] {label} ({matched} 例, {elapsed:.0f}s) [{stats}] 完整输出: {dump}", flush=True)
         for line in fail_lines[:60]:
             print("  " + line, flush=True)
         if not fail_lines:
             print(out[-2000:], flush=True)
     else:
-        print(f"[{status}] {label} ({matched} 例, {elapsed:.0f}s)", flush=True)
+        print(f"[{status}] {label} ({matched} 例, {elapsed:.0f}s) [{stats}]", flush=True)
     return label, status, elapsed
 
 

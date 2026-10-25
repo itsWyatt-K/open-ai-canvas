@@ -40,7 +40,7 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	dataDir := env("CANVAS_BACKEND_DATA_DIR", "data")
+	dataDir := resolveDataDir()
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
 	}
@@ -198,6 +198,24 @@ func env(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// resolveDataDir 解析数据目录（防呆）：
+//   - 权威变量是 CANVAS_BACKEND_DATA_DIR；
+//   - 只设了旧名 CANVAS_DATA_PATH（yuanqi_console 等启动脚本在用）时兼容读取并告警，
+//     防止「以为在验证副本库、实际开在真库」的误操作（2026-10-24 事故）；
+//   - 两个都设且指向不同目录时强告警并以权威变量为准。
+func resolveDataDir() string {
+	canonical := strings.TrimSpace(os.Getenv("CANVAS_BACKEND_DATA_DIR"))
+	legacy := strings.TrimSpace(os.Getenv("CANVAS_DATA_PATH"))
+	if canonical != "" && legacy != "" && canonical != legacy {
+		slog.Warn("CANVAS_BACKEND_DATA_DIR 与 CANVAS_DATA_PATH 同时设置且不一致，以 CANVAS_BACKEND_DATA_DIR 为准",
+			"canonical", canonical, "legacy", legacy)
+	} else if canonical == "" && legacy != "" {
+		slog.Warn("CANVAS_DATA_PATH 为兼容旧名，建议改用 CANVAS_BACKEND_DATA_DIR", "resolved", legacy)
+		return legacy
+	}
+	return env("CANVAS_BACKEND_DATA_DIR", "data")
 }
 
 func envBool(key string, fallback bool) (bool, error) {

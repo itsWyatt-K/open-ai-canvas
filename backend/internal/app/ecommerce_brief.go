@@ -141,7 +141,13 @@ func (s *Service) UpdateEcommerceSlotBrief(ctx context.Context, userID, slotID s
 		return nil, EcommerceUserBrief{}, NewAppError(http.StatusBadRequest, "AI 换思路提示超过 200 字上限")
 	}
 	if hint != "" {
-		brief = reworkEcommerceBriefWithHint(&brief, hint, slot.SlotNo)
+		// 优先真 LLM（挂 ecommerce-visual-director 技能规范）；未配置/失败回退确定性变体器。
+		var reworked EcommerceUserBrief
+		if ecommerceBriefLLMRework(ctx, brief, hint, firstNonEmpty(slot.Title, slot.SlotKey), &reworked) {
+			brief = reworked
+		} else {
+			brief = reworkEcommerceBriefWithHint(&brief, hint, slot.SlotNo)
+		}
 	}
 	if patch.ScreenTitle != nil {
 		brief.ScreenTitle = *patch.ScreenTitle

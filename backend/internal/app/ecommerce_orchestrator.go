@@ -428,6 +428,9 @@ type ecommerceSlotPromptInput struct {
 	SlotSellingPoints string
 	CopyText          string
 	TextMode          string
+	// PreserveProductExact 通道 B（锁主体合成）：true 时提示词自动追加
+	// 「纯场景承托底图」指令，商品本体不进画、由编排器像素级合成。
+	PreserveProductExact bool
 }
 
 // buildEcommerceSlotPrompt 组装真正发往生图模型的最终提示词。
@@ -469,6 +472,9 @@ func buildEcommerceSlotPrompt(in ecommerceSlotPromptInput) string {
 		"只制作本屏方案，不扩展为整页或多屏拼图。遵循本屏已确定的视觉设计，"+
 			"整组产品身份和设计风格保持一致。不得虚构产品功效、认证或数据。",
 	)
+	if in.PreserveProductExact {
+		blocks = append(blocks, channelBSceneDirective())
+	}
 	return strings.Join(blocks, "\n\n")
 }
 
@@ -531,17 +537,18 @@ func (s *Service) prepareEcommerceSlot(userID string, product *model.EcommercePr
 			slotNo = plan.SlotNo
 		}
 		draft.dispatch = buildEcommerceSlotPrompt(ecommerceSlotPromptInput{
-			PlatformName:      platformName,
-			SlotTitle:         firstNonEmpty(slot.Title, plan.Title, "商品展示"),
-			SlotNo:            slotNo,
-			Kind:              slotKind,
-			ProductName:       product.Name,
-			ProductSelling:    product.SellingPoints,
-			VisualPlan:        prompt,
-			SceneType:         firstNonEmpty(slot.SceneType, plan.Variant),
-			SlotSellingPoints: slot.SellingPoints,
-			CopyText:          slotCopy,
-			TextMode:          textMode,
+			PlatformName:         platformName,
+			SlotTitle:            firstNonEmpty(slot.Title, plan.Title, "商品展示"),
+			SlotNo:               slotNo,
+			Kind:                 slotKind,
+			ProductName:          product.Name,
+			ProductSelling:       product.SellingPoints,
+			VisualPlan:           prompt,
+			SceneType:            firstNonEmpty(slot.SceneType, plan.Variant),
+			SlotSellingPoints:    slot.SellingPoints,
+			CopyText:            slotCopy,
+			TextMode:            textMode,
+			PreserveProductExact: slotWantsChannelB(*slot, product),
 		})
 		return draft
 	}
@@ -1003,6 +1010,18 @@ func (s *Service) reconcileEcommerceSlotVersions(userID string, taskIDs []string
 				return err
 			}
 			slot.Status = slotStatus
+			// 通道 B（锁主体合成）：完成屏自动合成并写 4 层清单。
+			// 失败静默降级（composeEcommerceChannelBLayers 内部兜底两层），不阻断对账。
+			if slotStatus == ecommerce.SlotStatusCompleted && resourceID != "" {
+				if product, productErr := s.repo.GetEcommerceProduct(userID, slot.ProductID); productErr == nil &&
+					slotWantsChannelB(*slot, product) {
+					if background, bgErr := s.ecommerceResourceDataURL(userID, resourceID); bgErr == nil {
+						manifest := s.composeEcommerceChannelBLayers(userID, product, *slot, background, "")
+						_ = s.persistEcommerceSlotManifest(slot.ID, manifest)
+						_ = s.repo.UpdateEcommerceSlotVersionManifest(version.ID, mustEncodeEcommerceManifest(manifest))
+					}
+				}
+			}
 		}
 	}
 	return nil

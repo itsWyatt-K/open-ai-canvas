@@ -30,7 +30,7 @@ func main() {
 	db, err := database.Open(database.Config{
 		Driver:  env("CANVAS_DATABASE_DRIVER", "sqlite"),
 		DSN:     os.Getenv("DATABASE_URL"),
-		DataDir: env("CANVAS_BACKEND_DATA_DIR", "data"),
+		DataDir: resolveDataDir(),
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -104,4 +104,18 @@ func env(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// resolveDataDir 数据目录防呆：权威变量 CANVAS_BACKEND_DATA_DIR；仅设旧名
+// CANVAS_DATA_PATH 时兼容读取并告警（防误操作真库）；两者不一致以权威变量为准。
+func resolveDataDir() string {
+	canonical := strings.TrimSpace(os.Getenv("CANVAS_BACKEND_DATA_DIR"))
+	legacy := strings.TrimSpace(os.Getenv("CANVAS_DATA_PATH"))
+	if canonical != "" && legacy != "" && canonical != legacy {
+		log.Printf("警告：CANVAS_BACKEND_DATA_DIR(%s) 与 CANVAS_DATA_PATH(%s) 不一致，以权威变量为准", canonical, legacy)
+	} else if canonical == "" && legacy != "" {
+		log.Printf("警告：CANVAS_DATA_PATH 为兼容旧名，建议改用 CANVAS_BACKEND_DATA_DIR（本次解析为 %s）", legacy)
+		return legacy
+	}
+	return env("CANVAS_BACKEND_DATA_DIR", "data")
 }

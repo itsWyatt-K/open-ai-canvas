@@ -203,17 +203,18 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 	slotKind := saved.Kind
 	textMode := s.ecommerceSlotTextMode(userID, slotKind)
 	dispatchPrompt := buildEcommerceSlotPrompt(ecommerceSlotPromptInput{
-		PlatformName:      platformName,
-		SlotTitle:         firstNonEmpty(saved.Title, "商品展示"),
-		SlotNo:            saved.SlotNo,
-		Kind:              slotKind,
-		ProductName:       product.Name,
-		ProductSelling:    product.SellingPoints,
-		VisualPlan:        gate.Filtered,
-		SceneType:         saved.SceneType,
-		SlotSellingPoints: saved.SellingPoints,
-		CopyText:          saved.Copy,
-		TextMode:          textMode,
+		PlatformName:         platformName,
+		SlotTitle:            firstNonEmpty(saved.Title, "商品展示"),
+		SlotNo:               saved.SlotNo,
+		Kind:                 slotKind,
+		ProductName:          product.Name,
+		ProductSelling:       product.SellingPoints,
+		VisualPlan:           gate.Filtered,
+		SceneType:            saved.SceneType,
+		SlotSellingPoints:    saved.SellingPoints,
+		CopyText:            saved.Copy,
+		TextMode:            textMode,
+		PreserveProductExact: slotWantsChannelB(*saved, product),
 	})
 	if strings.TrimSpace(dispatchPrompt) == "" {
 		return nil, NewAppError(http.StatusBadRequest, "生图提示词为空：请先填写画面描述或完整提示词覆盖")
