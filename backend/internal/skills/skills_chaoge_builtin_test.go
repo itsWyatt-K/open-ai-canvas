@@ -44,8 +44,8 @@ func TestChaogeBuiltinPackageLoads(t *testing.T) {
 	if target.skill.SortWeight != 96 || target.skill.Source != 3 {
 		t.Fatalf("sortWeight/source = %d/%d, want 96/3", target.skill.SortWeight, target.skill.Source)
 	}
-	if target.archive.Metadata.Version != "2.0.0" {
-		t.Fatalf("archive version = %q, want 2.0.0", target.archive.Metadata.Version)
+	if target.archive.Metadata.Version != "3.24.0-yuanqi.1" {
+		t.Fatalf("archive version = %q, want 3.24.0-yuanqi.1", target.archive.Metadata.Version)
 	}
 	want := []string{
 		"SKILL.md", "VERSION", "agents/openai.yaml",
@@ -64,8 +64,8 @@ func TestChaogeBuiltinPackageLoads(t *testing.T) {
 			t.Errorf("package is missing %s", path)
 		}
 	}
-	if len(target.archive.Files) != 50 {
-		t.Fatalf("file count = %d, want 50 (27 原文件 + 23 张 2026-10-25 收编卡)", len(target.archive.Files))
+	if len(target.archive.Files) < 111 {
+		t.Fatalf("file count = %d, want >= 111 (v3.24.0 合流：50 refs + 20 scripts + 27 cards + 其余)", len(target.archive.Files))
 	}
 	// 收编建卡后，cards/ 必须存在且不少于 15 张（主核 0 卡问题的修复验证）。
 	cardCount := 0

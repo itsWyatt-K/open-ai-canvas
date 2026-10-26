@@ -34,7 +34,7 @@ func TestCloudAgentSkillSearchRecallsChaogeReferenceCards(t *testing.T) {
 	// 关键词 → 期望命中的卡路径（排序在前的同级命中卡胜出）。
 	expect := map[string]string{
 		"三路线":   "cards/workflow.md",
-		"角色设定板": "cards/character-assets.md",
+		"角色设定板": "assets/character-sheet-prompt.md",  // v3.24.0 合流：新资产模板含该关键词
 		"360度补角": "cards/scene-360-coverage.md",
 		"空间推演":  "cards/spatial-preflight.md",
 		"一镜到底":  "cards/one-take.md",

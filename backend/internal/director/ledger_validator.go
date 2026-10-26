@@ -26,27 +26,28 @@ var requiredLedgerFrontmatter = []string{
 	"current_stage", "platform", "model_version", "production_route", "batch_material_mode", "voice_mode",
 }
 
+// v3.24.0 合流（2026-10-26）：栏目表对齐上游新模板（record_schema 1.4）。
 var fullLedgerSections = []string{
-	"当前摘要", "生产路线与交付策略", "剧本解析与创作基准", "风格与声音圣经", "角色资产", "声音准备",
-	"关键道具与场景资产", "导演单元", "动态与连续性资产", "视频结果", "当前连续性快照",
-	"当前批次上传映射", "决策与Loop记录",
+	"当前摘要", "创作基准", "角色资产与人物信息版", "道具与场景资产", "独立预演进度", "场景彩图制作进度",
+	"声音准备", "当前场景故事节点", "当前AI导演分析", "决策与采用记录", "执行状态",
 }
 
 var lightStateSections = []string{
-	"当前摘要", "创作基准", "资产范围", "B路线提示词进度", "导演地图与视频批次",
-	"当前批次上传映射", "已交付提示词", "采用结果与连续性", "决策记录",
+	"当前摘要", "创作基准", "B路线提示词进度", "独立预演进度", "场景彩图制作进度",
+	"声音准备", "当前场景故事节点", "当前AI导演分析", "决策与采用记录", "执行状态",
 }
 
 var validLedgerStages = map[string]struct{}{
-	"P0": {}, "P0R": {}, "P0A": {}, "P1": {}, "P2": {}, "P3": {}, "P4": {}, "P5": {}, "P6": {}, "P7": {}, "COMPLETE": {},
+	"P0": {}, "P0R": {}, "P0S": {}, "P0A": {}, "P1": {}, "P2": {}, "P2S": {}, "P2V": {},
+	"P3A": {}, "P3B": {}, "P3": {}, "P4": {}, "P5": {}, "P6": {}, "P7": {}, "COMPLETE": {},
 }
 
 var validLedgerRecordTypes = map[string]struct{}{"full_ledger": {}, "light_state": {}}
 var validLedgerRoutes = map[string]struct{}{"待确认": {}, "A_full": {}, "B_prompt_only": {}, "C_direct_video": {}}
 var validLedgerMaterialModes = map[string]struct{}{"待确认": {}, "mapped": {}, "text": {}, "hybrid": {}}
-var validLedgerVoiceModes = map[string]struct{}{"待确认": {}, "mapped_dry_voice": {}, "model_voice": {}, "post_dub": {}}
+var validLedgerVoiceModes = map[string]struct{}{"待确认": {}, "reference_or_generated": {}, "mapped_dry_voice": {}, "model_voice": {}, "post_dub": {}}
 
-const expectedLedgerRecordSchema = "2.0"
+const expectedLedgerRecordSchema = "1.4" // v3.24.0 合流：上游新记录结构
 
 var (
 	ledgerFrontmatterRE = regexp.MustCompile(`\A---` + ws + `*\n(?s:(.*?))\n---` + ws + `*\n`)
@@ -62,7 +63,8 @@ var ledgerSectionREs = func() map[string]*regexp.Regexp {
 		if _, exists := compiled[section]; exists {
 			continue
 		}
-		compiled[section] = regexp.MustCompile(`(?m)^##` + ws + `+` + regexp.QuoteMeta(section) + ws + `*$`)
+		// v3.24.0 合流：标题允许括注后缀，前缀命中即算存在。
+		compiled[section] = regexp.MustCompile(`(?m)^##` + ws + `+` + regexp.QuoteMeta(section))
 	}
 	return compiled
 }()
@@ -225,7 +227,9 @@ func parseLedgerFrontmatter(text string) map[string]string {
 func matchLedgerSection(text, section string) bool {
 	re, ok := ledgerSectionREs[section]
 	if !ok {
-		re = regexp.MustCompile(`(?m)^##` + ws + `+` + regexp.QuoteMeta(section) + ws + `*$`)
+		// v3.24.0 合流：标题允许括注后缀（如「独立预演进度（A/B/C按请求启用，未调用留空）」），
+		// 前缀命中即算存在（上游 Python 新版已不检查栏目，Go 侧保留检查但放宽匹配）。
+		re = regexp.MustCompile(`(?m)^##` + ws + `+` + regexp.QuoteMeta(section))
 	}
 	return re.MatchString(text)
 }

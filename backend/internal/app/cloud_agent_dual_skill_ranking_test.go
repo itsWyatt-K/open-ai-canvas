@@ -81,8 +81,8 @@ func TestDualSkillRankingChaogeWinsProductionQueries(t *testing.T) {
 	}{
 		{"即梦", "cards/prompt-templates.md"},
 		{"Seedance", "cards/seedance-versions.md"},
-		{"P0A", "cards/workflow.md"},
-		{"角色设定板", "cards/character-assets.md"},
+		{"P0A", "cards/emotion-curve-and-previs.md"},  // v3.24.0 合流：新卡承接 P0A 第10项
+		{"角色设定板", "assets/character-sheet-prompt.md"},  // v3.24.0 合流
 		{"三路线", "cards/workflow.md"},
 		{"定稿剧本 AI导演2.0 即梦视频提示词 Seedance", "cards/prompt-templates.md"},
 	}

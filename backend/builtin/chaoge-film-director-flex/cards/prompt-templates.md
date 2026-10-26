@@ -3,6 +3,15 @@
 > 来源：chaoge-film-director-flex/references/prompt_templates.md（2026-10-25 建卡，供 4 分卡级检索直达）。
 
 
+## 0. v3.24.0 新版提示词要点（2026-10-26 合流补入）
+
+- CLI 新参数：`--platform {jimeng,libtv,other,generic}`、`--bgm-mode {none,suno}`、`--handoff-mode {on,off}`、`--delivery-kind {initial,revision}`、`--state <制作记录.md>`；本地兼容保留 `--mode` 与 `--model-version` 默认 2.5。
+- 代码块外统一放 `Seedance版本｜叙事时长｜站位交接秒数｜总时长｜独立生成`；代码块从【风格锁定】开始。
+- 视频声音设计完整写出环境、动作/碰撞、对白、声场变化与必要辅助音效，末尾只写一次"无BGM。"；不判断、推荐或询问 BGM。
+- 素材槽位（图片/音频/视频）分别从 1 连续编号，素材变更后同步重排全部引用。
+- 【风格锁定】两段式：已确认媒介及可见特征；当前故事时刻适用的摄影/渲染/绘制表现、光色及必要限制。
+- 完整字符预算与统计口径以 `references/prompt_templates.md` 与 `scripts/validate_prompt.py` 为唯一权威。
+
 ## 1. 当前视频批次的外部交付
 
 P3已经完成并确认导演地图后，每个视频批次只交付上传ID映射表与提示词代码块，不重复输出对应原文、AI导演判断、候选支线、本地检查或资产验收说明。

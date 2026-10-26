@@ -1,0 +1,16 @@
+{
+  "id": "director-emotion-r06-v1",
+  "size": [3840, 2160],
+  "background": "#202020",
+  "grid": "#343434",
+  "text": "#F3F3F3",
+  "muted": "#AFC1CB",
+  "accent": "#64CAE9",
+  "font": "NotoSansSC.ttf",
+  "curve_stops": [[0,"#48BAEE"],[4.5,"#48BAEE"],[5.5,"#EFCD60"],[7.6,"#F89A42"],[9.5,"#EF6556"],[10,"#EF6556"]],
+  "act_fills": ["#193844", "#3B3420", "#422727", "#303247", "#2A3A32"],
+  "act_edges": ["#48BAEE", "#EFCD60", "#EF6556", "#ABA5DB", "#78BE9D"],
+  "plot": [190, 455, 3730, 1360],
+  "point_inset": 80,
+  "reference_role": "approved-reference-r06.png is a visual acceptance reference; it is never used as data, a background layer, or an image-model input in normal rendering"
+}

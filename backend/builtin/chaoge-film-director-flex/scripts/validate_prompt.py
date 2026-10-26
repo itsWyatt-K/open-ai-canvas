@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate 3+2 AI video prompt structure and platform asset syntax."""
+"""Validate Flagship prompt structure, references and optional execution context."""
 
 from __future__ import annotations
 
@@ -10,49 +10,49 @@ import sys
 from pathlib import Path
 
 
-MAX_VIDEO_PROMPT_CHARS = 5000
-SOFT_VIDEO_PROMPT_CHARS = 4200
+MAX_VIDEO_PROMPT_CHARS = 6500
+SOFT_VIDEO_PROMPT_CHARS = 5200
+SUNO_SECTION = "Suno BGM备用提示词"
+SCENE_REFERENCE_BOUNDARY = "本批场景图仅参考环境与氛围，不继承原图的空间结构、拍摄方向、焦段、透视、景别与构图；最终镜头以本提示词为准。"
+SCENE_SHAPE_BOUNDARY = re.compile(
+    r"本批场景图参考环境与氛围；[^。\n]+仅另参考已确认的[^。\n]+，"
+    r"其余空间结构不继承，拍摄方向、焦段、透视、景别与构图不继承；最终镜头以本提示词为准。"
+)
+GENERATION_INFO_PATTERN = re.compile(
+    r"(?m)^\s*【本段生成信息】\s*Seedance\s*(2\.[05])\s*｜\s*"
+    r"叙事时长\s*(\d+(?:\.\d+)?)\s*秒\s*｜\s*"
+    r"站位交接\s*(\d+(?:\.\d+)?)\s*秒\s*｜\s*"
+    r"总时长\s*(\d+(?:\.\d+)?)\s*秒\s*｜\s*独立生成[。.]?\s*$"
+)
+PROMPT_META_LINE_PATTERN = re.compile(
+    r"(?mi)^\s*(?:【本段生成信息】|"
+    r"Seedance\s*2\.[05]\s*[｜|].*(?:叙事时长|总时长|独立生成)|"
+    r"(?:叙事时长|生成总时长|总生成时长|总时长)\s*[：:]\s*\d|"
+    r"独立生成[。.]?\s*$)"
+)
 
-SECTION_SOFT_LIMITS = {
-    "风格锁定": 500,
-    "场景与空间锚点": 700,
-    "声音与音乐总则": 350,
-    "全局补充": 450,
+ORDERED_SECTIONS = [
+    "风格锁定",
+    "素材映射",
+    "场景与空间锚点",
+    "镜头序列",
+    "站位交接镜头",
+    "声音设计",
+    "全局补充",
+]
+RETIRED_SECTIONS = {
+    "场景空间与动作轴", "第一帧与人物站位", "正向连续性锁定",
+    "连续时间轴",
 }
-
-
-SECTIONS = {
-    "new": [
-        "风格锁定",
-        "素材映射",
-        "场景与空间锚点",
-        "声音与音乐总则",
-        "镜头序列",
-        "全局补充",
-    ],
-    "extend": [
-        "延长任务",
-        "素材映射",
-        "衔接与连续性锁定",
-        "新增故事与情绪目标",
-        "声音与音乐延续",
-        "新增镜头序列",
-        "全局补充",
-    ],
-    "edit": [
-        "编辑任务",
-        "素材映射",
-        "生效时段",
-        "修改要求",
-        "保持不变",
-        "全局补充",
-    ],
+FORM_SECTIONS = {
+    "shots": ["镜头序列"],
+    "one_take": ["一镜到底执行声明", "起手式", "连续动作过程", "最终镜头落点"],
+    "combat": ["起手式", "打斗过程", "结束状态"],
 }
-
-TOP_LEVEL_SECTIONS = {
-    section for ordered_sections in SECTIONS.values() for section in ordered_sections
-}
-TOP_LEVEL_SECTIONS.add("一镜到底执行声明")
+ORDERED_SECTIONS = list(dict.fromkeys(ORDERED_SECTIONS + [
+    name for names in FORM_SECTIONS.values() for name in names
+] + ["特效与运镜"]))
+TOP_LEVEL = set(ORDERED_SECTIONS) | RETIRED_SECTIONS | {SUNO_SECTION}
 
 
 def section_span(text: str, name: str) -> tuple[int, int] | None:
@@ -60,12 +60,8 @@ def section_span(text: str, name: str) -> tuple[int, int] | None:
     if not match:
         return None
     tail = text[match.end() :]
-    next_positions = []
-    for section in TOP_LEVEL_SECTIONS:
-        next_header = re.search(rf"\n【{re.escape(section)}】", tail)
-        if next_header:
-            next_positions.append(next_header.start())
-    end = match.end() + min(next_positions) if next_positions else len(text)
+    following = re.search(r"\n【[^】\n]+】", tail)
+    end = match.end() + following.start() if following else len(text)
     return match.start(), end
 
 
@@ -74,539 +70,721 @@ def section_text(text: str, name: str) -> str:
     return text[span[0] : span[1]] if span else ""
 
 
-def extract_prompt_payload(text: str, mode: str) -> str:
-    """Return only the copyable video-prompt body for deterministic counting."""
-
-    first_section = SECTIONS[mode][0]
-    marker = f"【{first_section}】"
+def prompt_payload(text: str) -> str:
+    marker = "【风格锁定】"
     start = text.find(marker)
-    if start < 0:
-        return text.strip()
-
-    payload = text[start:]
-    next_markdown_heading = re.search(r"\n#{1,6}\s+", payload)
-    if next_markdown_heading:
-        payload = payload[: next_markdown_heading.start()]
+    payload = text[start:] if start >= 0 else text
+    suno_start = payload.find(f"【{SUNO_SECTION}】")
+    if suno_start >= 0:
+        payload = payload[:suno_start]
     return payload.strip()
+
+
+def video_prompt_fence(text: str) -> tuple[str, tuple[int, int]] | None:
+    """Return the fenced code block that contains the actual video prompt."""
+    for match in re.finditer(
+        r"```(?:text)?[ \t]*\r?\n(.*?)```", text, re.DOTALL | re.IGNORECASE
+    ):
+        if "【风格锁定】" in match.group(1):
+            return match.group(1).strip(), match.span()
+    return None
+
+
+def external_mapping_slots(text: str) -> set[tuple[str, int]]:
+    """Read 图/音频/视频 slots from the delivery table before the prompt body."""
+    head = text.split("【风格锁定】", 1)[0]
+    return {
+        (kind, int(number))
+        for kind, number in re.findall(r"\|\s*(图|音频|视频)\s*(\d+)\s*\|", head)
+    }
+
+
+def internal_mapping_slots(mapping: str, platform: str) -> set[tuple[str, int]]:
+    kinds = {"Image": "图", "Audio": "音频", "Video": "视频"}
+    if platform == "libtv":
+        return {
+            (kinds[kind], int(number))
+            for kind, number in re.findall(
+                r"\{\{(Image|Audio|Video)\s+(\d+)\}\}", mapping
+            )
+        }
+    return {
+        (kind, int(number))
+        for kind, number in re.findall(
+            r"(?:简称[“\"]?)?(图|音频|视频)\s*(\d+)", mapping
+        )
+    }
+
+
+def contiguous_slot_errors(
+    slots: set[tuple[str, int]], scope: str
+) -> list[str]:
+    """Require visual, audio, and video slot sequences to restart at 1 without gaps."""
+    errors: list[str] = []
+    labels = {"图": "图片", "音频": "音频", "视频": "视频"}
+    for kind in ("图", "音频", "视频"):
+        numbers = sorted(number for slot_kind, number in slots if slot_kind == kind)
+        if not numbers:
+            continue
+        expected = list(range(1, max(numbers) + 1))
+        if numbers == expected:
+            continue
+        missing = sorted(set(expected) - set(numbers))
+        missing_text = "、".join(f"{kind}{number}" for number in missing)
+        detail = f"缺少{missing_text}" if missing_text else f"当前编号为{numbers}"
+        errors.append(
+            f"{scope}{labels[kind]}槽位必须从1连续编号且不得留空号（{detail}）；"
+            "素材增删或替换后须按最终清单整体重排所属类别"
+        )
+    return errors
+
+
+def has_normal_scene_mapping(mapping: str) -> bool:
+    """A normal scene image is a mood/environment reference, not a start/continuity frame."""
+    for line in mapping.splitlines():
+        if SCENE_REFERENCE_BOUNDARY in line or "场景" not in line:
+            continue
+        if not re.search(r"@|\{\{Image\s+\d+\}\}|图\s*\d+", line):
+            continue
+        if re.search(r"起始帧|首帧|连续性帧|站位帧", line):
+            continue
+        return True
+    return False
+
+
+
+def boundary_lines(mapping: str) -> list[str]:
+    """Recognize a short boundary structurally; its precise meaning needs cold reading."""
+    return [line.strip() for line in mapping.splitlines()
+            if not re.search(r"@|\{\{(?:Image|Audio|Video)\s+\d+\}\}|(?:图|音频|视频)\s*\d+", line)
+            and re.search(r"场景图|原图|参考图", line)
+            and re.search(r"参考|继承|沿用", line)]
+
+
+def mapping_entries(mapping: str, platform: str) -> dict[tuple[str, int], str]:
+    entries = {}
+    for line in mapping.splitlines():
+        if platform == "libtv":
+            match = re.search(r"\{\{(Image|Audio|Video)\s+(\d+)\}\}", line)
+            if not match:
+                continue
+            kind = {"Image": "图", "Audio": "音频", "Video": "视频"}[match[1]]
+            tail = line[match.end():]
+        else:
+            match = re.search(r"(图|音频|视频)\s*(\d+)", line)
+            if not match:
+                continue
+            kind = match[1]
+            tail = line[match.end():] if platform != "jimeng" else line.lstrip("@ ")
+        tail = re.split(r"[，,]?\s*绑定后", tail)[0]
+        tail = re.sub(r"^(?:作为|是|为|用于指定|用于)\s*", "", tail).strip()
+        tail = re.sub(r"(?:视觉|音色|环境|色彩)锚定[。.]?$", "", tail).strip()
+        tail = re.sub(r"^(?:人物|角色|场景|道具|声音|连续性参考)\s*[：:]?\s*", "", tail).strip()
+        tail = re.sub(r"(?:的)?(?:角色声音|声音|场景)[。.]?$", "", tail).strip(" 。.")
+        entries[(kind, int(match[2]))] = tail
+    return entries
+
+
+def dialogue_lines(sequence: str) -> list[tuple[str, str, str]]:
+    """Canonical named dialogue, quoted or unquoted; unknown prose needs semantic review."""
+    pattern = r"(?m)^\s*([^\n：:（）()，。！？|]{1,40})\s*(?:[（(]([^）)\n]*)[）)])?\s*[：:]\s*([^\n]+)"
+    return [(m[1].strip(), m[2] or "", m[3].strip()) for m in re.finditer(pattern, sequence)
+            if not re.fullmatch(r"\d+(?:\.\d+)?\s*秒\s*[—–\-~至到]+\s*\d+(?:\.\d+)?\s*秒", m[1].strip())]
+
+
+def spoken_text_removed(text: str) -> str:
+    text = re.sub(r"(?m)^([^\n：:（）()，。！？|]{1,40})(?:[（(][^）)\n]*[）)])?[：:][^\n]+", "", text)
+    return re.sub(r'“[^”]*”|「[^」]*」|"[^"]*"', "", text)
+
+
+def has_micro_timing(body: str) -> bool:
+    """Detect timing instructions, excluding quoted dialogue and other units."""
+    prose = spoken_text_removed(body)
+    return bool(re.search(
+        r"\d{1,2}:\d{2}(?:\.\d+)?|"
+        r"(?:\d+(?:\.\d+)?|[零一二两三四五六七八九十半]+)\s*秒",
+        prose,
+    ))
+
+
+COMBAT_PHASE_HEADER = re.compile(
+    r"(?m)^[ \t]*(?:阶段\s*(\d+)\s*[（(]\s*(\d+(?:\.\d+)?)\s*"
+    r"[—–\-~至到]+\s*(\d+(?:\.\d+)?)\s*秒\s*｜[^）)\n]+[）)]|"
+    r"(\d+(?:\.\d+)?)\s*秒\s*[—–\-~至到]+\s*"
+    r"(\d+(?:\.\d+)?)\s*秒\s*[：:])[ \t]*"
+)
+
+
+def combat_phases(process: str) -> tuple[list[tuple[float, float]], list[str]]:
+    """Read phase budgets; camera cuts inside a phase are not extra beat IDs."""
+    headers = list(COMBAT_PHASE_HEADER.finditer(process))
+    errors: list[str] = []
+    numbered = [int(m[1]) for m in headers if m[1] is not None]
+    if numbered and (len(numbered) != len(headers) or numbered != list(range(1, len(headers) + 1))):
+        errors.append("打斗阶段须统一标题写法；使用阶段编号时从1连续排列")
+    times = [(float(m[2] or m[4]), float(m[3] or m[5])) for m in headers]
+    for i, (match, (start, end)) in enumerate(zip(headers, times)):
+        stop = headers[i + 1].start() if i + 1 < len(headers) else len(process)
+        if not process[match.end():stop].strip():
+            errors.append(f"打斗阶段{i + 1}缺少攻防与结果正文")
+        if end <= start:
+            errors.append(f"打斗阶段{i + 1}结束时间须大于开始时间")
+        if (i == 0 and abs(start) > 0.05) or (i and abs(start - times[i - 1][1]) > 0.05):
+            errors.append("打斗阶段时间须从0开始连续衔接，不得重叠或留空")
+    return times, errors
 
 
 def validate(
     text: str,
     platform: str,
-    mode: str,
     model_version: str = "2.5",
     asset_mode: str = "mapped",
-    voice_mode: str = "mapped_dry_voice",
+    bgm_mode: str = "none",
+    handoff_mode: str = "on",
+    delivery_kind: str = "initial",
+    state_text: str | None = None,
+    suno_action: str = "none",
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    if bgm_mode != "none" or suno_action != "none":
+        errors.append("视频生成统一无BGM；旧音乐模式须迁移，成片配乐走独立后期入口")
+    state = fields = None
+    if state_text is not None:
+        from validate_ledger import validate as validate_record, parse_frontmatter
+        from workflow_state import parse_execution
+        state_errors, state_warnings = validate_record(state_text)
+        errors.extend("项目状态：" + item for item in state_errors)
+        warnings.extend("项目状态：" + item for item in state_warnings)
+        try:
+            state, fields = parse_execution(state_text), parse_frontmatter(state_text)
+            unit = state["unit"]
+            expected_platform = {"即梦": "jimeng", "LibTV": "libtv", "其他": "other", "generic": "other"}.get(fields["platform"], fields["platform"])
+            actual_platform = "other" if platform == "generic" else platform
+            for ok, label in (
+                (expected_platform == actual_platform, "平台"),
+                (fields["model_version"] == "Seedance " + model_version, "模型版本"),
+                (fields["batch_material_mode"] == asset_mode, "素材方式"),
+                (unit["bgm_mode"] == bgm_mode, "BGM模式"),
+                (unit["handoff_mode"] == handoff_mode, "交接选择"),
+                (fields["current_stage"] in {"P4", "P5", "P6", "P7"}, "编译阶段"),
+            ):
+                if not ok:
+                    errors.append("本次交付与项目记录不一致：" + label)
+            suno_action = unit["music"]["action"]
+            if state_errors:
+                state = None
+        except (ValueError, KeyError, TypeError):
+            errors.append("项目执行状态缺少本次编译上下文")
+            state = None
+    else:
+        warnings.append("未传--state：仅检查孤立文本，不代表实际素材或流程门禁通过")
+    payload = prompt_payload(text)
+    fenced_prompt = video_prompt_fence(text)
+    prompt_block = fenced_prompt[0] if fenced_prompt else payload
+    delivery_without_prompt = text
+    if fenced_prompt:
+        start, end = fenced_prompt[1]
+        delivery_without_prompt = text[:start] + text[end:]
+        if re.search(r"```", delivery_without_prompt):
+            errors.append("视频交付仅保留一个完整视频提示词代码块，不附音乐代码块")
+    if re.search(r"BGM建议|BGM启用|是否[^。\n]*(?:BGM|背景音乐|配乐)|建议[^。\n]*(?:BGM|背景音乐|配乐)", delivery_without_prompt, re.I):
+        errors.append("视频流程不得附加BGM建议或需求问答")
+    generation_info = GENERATION_INFO_PATTERN.search(delivery_without_prompt)
+    complete_delivery = bool(
+        fenced_prompt
+        or "【本批上传ID映射】" in text
+        or "本批无需上传素材" in text
+    )
+    if complete_delivery and not generation_info:
+        errors.append("视频提示词交付缺少代码块外的【本段生成信息】")
+    if not prompt_block.lstrip().startswith("【风格锁定】"):
+        errors.append("视频提示词代码块的第一个非空行必须是【风格锁定】")
+    if PROMPT_META_LINE_PATTERN.search(prompt_block):
+        errors.append("Seedance版本、叙事时长、总时长和独立生成必须放在视频提示词代码块外")
 
-    prompt_payload = extract_prompt_payload(text, mode)
-    prompt_char_count = len(prompt_payload)
-    if prompt_char_count > MAX_VIDEO_PROMPT_CHARS:
-        errors.append(
-            f"文生视频提示词正文共{prompt_char_count}个字符，超过"
-            f"{MAX_VIDEO_PROMPT_CHARS}个字符上限"
-        )
-    elif prompt_char_count > SOFT_VIDEO_PROMPT_CHARS:
-        warnings.append(
-            f"文生视频提示词正文共{prompt_char_count}个字符，已超过"
-            f"{SOFT_VIDEO_PROMPT_CHARS}个字符常规目标；请先去重再交付"
-        )
+    count = len(prompt_block)
+    if count > MAX_VIDEO_PROMPT_CHARS:
+        errors.append(f"提示词正文{count}字符，超过{MAX_VIDEO_PROMPT_CHARS}字符硬上限")
+    elif count > SOFT_VIDEO_PROMPT_CHARS:
+        warnings.append(f"提示词正文{count}字符，超过{SOFT_VIDEO_PROMPT_CHARS}字符常规目标")
 
-    for section_name, soft_limit in SECTION_SOFT_LIMITS.items():
-        body = section_text(text, section_name)
-        if body and len(body) > soft_limit:
-            warnings.append(
-                f"【{section_name}】共{len(body)}个字符，超过{soft_limit}个字符建议预算"
+    form = ("one_take" if "【一镜到底执行声明】" in prompt_block else
+            "combat" if "【打斗过程】" in prompt_block else "shots")
+    required = ["风格锁定", "场景与空间锚点"]
+    if form == "combat" and "【特效与运镜】" in prompt_block:
+        required.append("特效与运镜")
+    required.extend(FORM_SECTIONS[form])
+    allowed = set(required) | {"素材映射", "站位交接镜头", "声音设计", "全局补充"}
+    if handoff_mode == "on":
+        required.append("站位交接镜头")
+    required.extend(["声音设计", "全局补充"])
+    for name in RETIRED_SECTIONS:
+        if f"【{name}】" in prompt_block:
+            errors.append(f"已退役栏目：【{name}】；请按当前叙事形式归位")
+    headings = re.findall(r"(?m)^【([^】]+)】", prompt_block)
+    if len(headings) != len(set(headings)):
+        errors.append("视频提示词栏目不得重复")
+    for name in headings:
+        if name not in allowed:
+            errors.append(f"当前{form}形式不允许栏目：【{name}】")
+    mapping = section_text(text, "素材映射")
+    if asset_mode in {"mapped", "hybrid"}:
+        required.insert(1, "素材映射")
+    for name in required:
+        if f"【{name}】" not in prompt_block:
+            errors.append(f"缺少栏目：【{name}】")
+        elif not section_text(prompt_block, name).replace(f"【{name}】", "").strip():
+            errors.append(f"栏目内容为空：【{name}】")
+
+    normal_scene_mapping = has_normal_scene_mapping(mapping)
+    boundaries = boundary_lines(mapping)
+    boundary_count = len(boundaries)
+    if normal_scene_mapping and boundary_count > 1:
+        errors.append("本批映射普通场景图时，【素材映射】兼容旧稿的场景图职责边界不得重复")
+    if not normal_scene_mapping and boundary_count:
+        errors.append("纯文字、无普通场景图或仅起始帧/连续性帧时不得添加场景图职责边界")
+
+    style = section_text(text, "风格锁定")
+    if style:
+        style_content = re.sub(r"^\s*【风格锁定】\s*", "", style).strip()
+        style_paragraphs = [
+            item.strip()
+            for item in re.split(r"\n\s*\n", style_content)
+            if item.strip()
+        ]
+        if len(style_paragraphs) != 2:
+            errors.append("【风格锁定】必须严格写成两个自然段：视觉风格；成像、光线、影调与禁止项")
+        reference_paragraph = style_paragraphs[0] if style_paragraphs else ""
+        look_paragraph = style_paragraphs[1] if len(style_paragraphs) > 1 else ""
+        film_titles = re.findall(r"《[^》]{1,80}》", style_content)
+        if len(film_titles) > 1:
+            errors.append("【风格锁定】最多保留1部已确认视觉参考影片；默认转译为可见特征")
+        # Film names and visual semantics are not a closed keyword vocabulary.
+        semantic_style = re.sub(r"《[^》]*》", "", style_content)
+        if re.search(r"补充参考|声音参考|听觉借鉴|借鉴[^。；]*?(?:风声|脚步声|对白层级|音效|配乐|声场|混音)", semantic_style, re.IGNORECASE):
+            errors.append("【风格锁定】不得加入补充声音影片或任何听觉借鉴；声音只进入【声音设计】")
+        if not reference_paragraph or not look_paragraph:
+            errors.append("风格锁定两段均需实际内容")
+        # Camera/light/tone completeness is reviewed semantically, not by required jargon.
+        overloaded_style_pattern = (
+            r"国家|地域|地区|地点|发生在|故事|剧情|构图|运镜|镜头调度|逐镜焦段|"
+            r"前景|后景|逐项资产清单"
+        )
+        if re.search(overloaded_style_pattern, semantic_style):
+            warnings.append("【风格锁定】不得复述地点剧情、构图运镜或材质纹理清单；这些内容由其他栏目承担")
+        if re.search(r"\b(?:16\s*:\s*9|9\s*:\s*16|21\s*:\s*9|\d+(?:\.\d+)?\s*:\s*1)\b|横屏|竖屏|横画幅|竖画幅", style):
+            errors.append("【风格锁定】不得写画幅或横竖屏；画幅由用户作为项目设置单独选择")
+        if re.search(r"\{\{\s*Mixed\s+\d+\s*\}\}|\[[^\]\n]*(?:待填写|占位|P1已确认|当前片段精确时间)[^\]\n]*\]", style, re.IGNORECASE):
+            errors.append("【风格锁定】不得包含{{Mixed N}}或未解析模板占位符")
+
+        from style_state import PRESETS, validate_preset_prompt
+        profile = state.get('style_profile', {}) if isinstance(state, dict) else {}
+        selected_id = profile.get('preset_id') if profile.get('source_kind') == 'preset' else None
+        # A recorded custom/legacy style is not silently converted to a preset.
+        # Standalone prompt checks can recognize the explicit public style name.
+        if selected_id is None and not state_text:
+            selected_id = next((p['id'] for p in PRESETS.values()
+                                if p.get('prompt_rules') and
+                                (style_content.startswith(p['name']) or
+                                 style_content.startswith(p['prompt_rules'].get('video_style_prefix', '\0')))), None)
+        errors.extend(validate_preset_prompt(prompt_block, selected_id, video_style=style_content))
+
+    external_slots = external_mapping_slots(text)
+    internal_slots = internal_mapping_slots(mapping, platform)
+    errors.extend(contiguous_slot_errors(external_slots, "外部上传表"))
+    errors.extend(contiguous_slot_errors(internal_slots, "【素材映射】"))
+    if (delivery_kind == "initial" or external_slots) and external_slots != internal_slots:
+        missing_inside = sorted(external_slots - internal_slots)
+        missing_outside = sorted(internal_slots - external_slots)
+        if missing_inside:
+            errors.append(
+                "上传表存在但【素材映射】缺失："
+                + "、".join(f"{kind}{number}" for kind, number in missing_inside)
+            )
+        if missing_outside:
+            errors.append(
+                "【素材映射】存在但上传表缺失："
+                + "、".join(f"{kind}{number}" for kind, number in missing_outside)
             )
 
-    global_supplement = section_text(text, "全局补充")
-    prohibition_count = len(
-        re.findall(
-            r"严禁|禁止|不得|不能|不允许|无字幕|无水印|无背景音乐",
-            global_supplement,
-        )
-    )
-    if prohibition_count > 6:
-        warnings.append(
-            f"【全局补充】检测到{prohibition_count}项禁止表达，通常应压缩到6项以内"
-        )
-
-    normalized_clauses: dict[str, int] = {}
-    for clause in re.split(r"[。；\n]", prompt_payload):
-        normalized = re.sub(r"[\s，、：:（）()【】]", "", clause)
-        if len(normalized) >= 18:
-            normalized_clauses[normalized] = normalized_clauses.get(normalized, 0) + 1
-    repeated_clauses = sum(1 for count in normalized_clauses.values() if count > 1)
-    if repeated_clauses:
-        warnings.append(f"提示词中检测到{repeated_clauses}条重复长句，请按栏目职责去重")
-
-    ordered_sections = [
-        section
-        for section in SECTIONS[mode]
-        if not (section == "素材映射" and asset_mode == "text")
-    ]
-    positions: list[int] = []
-    for section in ordered_sections:
-        marker = f"【{section}】"
-        if (
-            mode == "new"
-            and section == "镜头序列"
-            and "【一镜到底执行声明】" in text
-        ):
-            marker = "【一镜到底执行声明】"
-        pos = text.find(marker)
-        if pos < 0:
-            errors.append(f"缺少栏目：{marker}")
-        else:
-            positions.append(pos)
-    if len(positions) == len(ordered_sections) and positions != sorted(positions):
+    positions = [text.find(f"【{name}】") for name in required if f"【{name}】" in text]
+    if positions != sorted(positions):
         errors.append("栏目顺序不符合模板")
 
+    if asset_mode == "text" and re.search(r"\{\{Image\s+\d+\}\}|\b图\d+\b", mapping):
+        errors.append("纯文字素材方式不得映射视觉图片")
+
+    mapping_description_pattern = (
+        r"外貌|骨相|五官|脸型|发型|肤色|体型|服装|穿着|声线|音色|年龄感|口音|气质|"
+        r"装修|材质|固定地标|空间结构|光线关系|色温|摄影参数"
+    )
+    identity_mapping = "\n".join(line for line in mapping.splitlines() if line.strip() not in boundaries)
+    if re.search(mapping_description_pattern, identity_mapping.replace("音色锚定", "声音锚定")):
+        warnings.append("【素材映射】只能指定人物、场景、道具、声音或连续性参考的身份，不得复述外貌、服装、音色或场景资产描述")
+
+    payload_mapping_span = section_span(payload, "素材映射")
+    body_without_mapping = payload
+    if payload_mapping_span:
+        body_without_mapping = (
+            payload[: payload_mapping_span[0]] + payload[payload_mapping_span[1] :]
+        )
+    visual_slot_alias_pattern = r"(?:图片|图)\s*\d+|Image\s*\d+|\{\{\s*Image\s+\d+\s*\}\}"
+    if re.search(visual_slot_alias_pattern, body_without_mapping, re.IGNORECASE):
+        errors.append("离开【素材映射】后，人物、场景和道具必须使用具体名称，不得出现图N/图片N/Image N视觉槽位编号")
+
+    cardinal_pattern = r"东北|西北|东南|西南|东侧|西侧|南侧|北侧|东面|西面|南面|北面|东墙|西墙|南墙|北墙|向东|向西|向南|向北|正东|正西|正南|正北"
+    if re.search(cardinal_pattern, spoken_text_removed(body_without_mapping)):
+        errors.append("视频提示词不得使用东西南北；请转换为画面左右、前中后景、靠近/远离摄影机或上坡/下坡")
+
     mapping_span = section_span(text, "素材映射")
-    mapping = section_text(text, "素材映射")
     outside = text
     if mapping_span:
         outside = text[: mapping_span[0]] + text[mapping_span[1] :]
 
     placeholders = re.compile(r"\{\{(?:Image|Audio|Video)\s+\d+\}\}")
-    image_placeholders = re.compile(r"\{\{Image\s+\d+\}\}")
-    mapped_aliases: set[str] = set()
-    audio_speakers: dict[str, str] = {}
-
     if platform == "jimeng":
         if placeholders.search(text):
-            errors.append("即梦版不得出现LibTV占位符")
+            errors.append("即梦提示词不得出现LibTV占位符")
         if "@" in outside:
-            errors.append("即梦版的@只能出现在【素材映射】")
+            errors.append("即梦的裸@只能出现在【素材映射】")
         if re.search(r"@(图片|图|音频|视频)\s*\d+", mapping):
-            errors.append("即梦素材必须使用裸@，禁止写成@图片1/@音频1/@视频1")
-        at_lines = [line.strip() for line in mapping.splitlines() if line.strip().startswith("@")]
-        if not at_lines and mapping:
-            warnings.append("【素材映射】中没有检测到裸@素材")
-        for line in at_lines:
-            alias = re.search(r"绑定后简称[“\"]([^”\"]+)[”\"]", line)
-            if not alias:
-                errors.append(f"即梦素材缺少绑定后简称：{line}")
-            else:
-                mapped_alias = alias.group(1)
-                mapped_aliases.add(mapped_alias)
-                if mapped_alias.startswith("音频"):
-                    speaker = re.search(
-                        r"^@(?:为|用于锁定)?([^，。]{1,24}?)(?:全部)?(?:台词|旁白|干声|声音|音色)",
-                        line,
-                    )
-                    if speaker:
-                        audio_speakers[mapped_alias] = speaker.group(1).strip("的 ")
-    else:
+            errors.append("即梦素材应使用裸@，不能写@图片1/@音频1")
+    elif platform == "libtv":
         if "@" in text:
-            errors.append("LibTV版不得出现@素材语法")
+            errors.append("LibTV提示词不得出现即梦裸@")
         if placeholders.search(outside):
             errors.append("LibTV占位符只能出现在【素材映射】")
-        if re.search(r"(?:图|音频|视频)\s*\d+\s*=\s*\{\{", mapping):
-            errors.append("LibTV素材行必须直接以占位符开头，禁止写图1={{Image 1}}")
-        for kind, number in re.findall(r"\{\{(Image|Audio|Video)\s+(\d+)\}\}", mapping):
-            prefix = {"Image": "图", "Audio": "音频", "Video": "视频"}[kind]
-            mapped_alias = f"{prefix}{number}"
-            mapped_aliases.add(mapped_alias)
-            if kind == "Audio":
-                mapping_line = next(
-                    (
-                        line.strip()
-                        for line in mapping.splitlines()
-                        if f"{{{{Audio {number}}}}}" in line
-                    ),
-                    "",
-                )
-                speaker = re.search(
-                    rf"\{{\{{Audio\s+{number}\}}\}}(?:为|用于锁定)?([^，。]{{1,24}}?)(?:全部)?(?:台词|旁白|干声|声音|音色)",
-                    mapping_line,
-                )
-                if speaker:
-                    audio_speakers[mapped_alias] = speaker.group(1).strip("的 ")
-        if not mapped_aliases and mapping:
-            warnings.append("【素材映射】中没有检测到LibTV素材占位符")
+        if re.search(r"图\s*\d+\s*=", mapping):
+            errors.append("LibTV素材映射禁止使用“图1=”前缀")
+        seen = re.findall(r"\{\{(Image|Audio|Video)\s+(\d+)\}\}", mapping)
+        if len(seen) != len(set(seen)):
+            errors.append("每个LibTV素材占位符只能出现1次")
+    else:
+        if "@" in text or placeholders.search(text):
+            errors.append("其他平台使用通用中文图号，不得出现@或{{Image/Audio/Video N}}占位符")
+        if re.search(r"图\s*\d+\s*=", mapping):
+            errors.append("其他平台通用映射应写“图1作为……锚定。”，不能写“图1=”")
+        seen = re.findall(r"(?:^|\n)\s*(图|音频|视频)\s*(\d+)\s*(?:用于|作为)", mapping)
+        if len(seen) != len(set(seen)):
+            errors.append("其他平台每个中文图号只能映射1次")
 
-    if asset_mode == "text":
-        if image_placeholders.search(text):
-            errors.append("纯文生视频版不得出现{{Image N}}视觉占位符")
-        if re.search(r"(?<![A-Za-z{])图\s*\d+", text):
-            errors.append("纯文生视频版不得引用图N")
-        if platform == "jimeng" and any(
-            re.search(r"绑定后简称[“\"]图\s*\d+[”\"]", line)
-            for line in mapping.splitlines()
-        ):
-            errors.append("纯文生视频版不得映射视觉图片")
-
-    external_mapping_aliases = {
-        re.sub(r"\s+", "", alias)
-        for alias in re.findall(
-            r"(?m)^\|\s*((?:图|音频|视频)\s*\d+)\s*\|", text
-        )
+    banned_context = {
+        r"上一条(?:视频)?|上一段|上个批次|前一批": "提示词引用了模型不可见的上一批上下文",
+        r"\bU\d{2}\b|延续U\d+": "提示词引用了外部批次编号",
+        r"全新生成|生成方式|延长任务|编辑任务": "提示词包含工作流生成模式元话语",
     }
-    if mapped_aliases:
-        if not external_mapping_aliases:
-            errors.append("提示词使用了素材槽位，但缺少外部【本批上传ID映射】表")
-        else:
-            missing_external = sorted(mapped_aliases - external_mapping_aliases)
-            unused_external = sorted(external_mapping_aliases - mapped_aliases)
-            if missing_external:
-                errors.append("提示词素材未列入外部上传映射：" + "、".join(missing_external))
-            if unused_external:
-                errors.append("外部上传映射包含本批未使用槽位：" + "、".join(unused_external))
+    for pattern, message in banned_context.items():
+        if re.search(pattern, payload, re.IGNORECASE):
+            errors.append(message)
 
-    used_aliases = set(re.findall(r"(?<![A-Za-z{])(?:图|音频|视频)\s*\d+", outside))
-    normalized_used = {re.sub(r"\s+", "", value) for value in used_aliases}
-    missing = sorted(normalized_used - mapped_aliases)
-    if missing:
-        errors.append("后文引用但未映射：" + "、".join(missing))
-
-    # Any intelligible spoken language must bind the correct dry voice at the
-    # exact point of performance. A global audio mapping alone is insufficient.
-    spoken_scope_names = (
-        "镜头序列",
-        "一镜到底执行声明",
-        "新增镜头序列",
-        "修改要求",
-    )
-    spoken_scope = "\n".join(
-        section_text(text, name) for name in spoken_scope_names if section_text(text, name)
-    )
-    speech_trigger = re.compile(
-        r"(?:说|说道|喊|哭喊|大喊|低语|耳语|回答|问道|念出|旁白|画外音|广播|电话)[^\n。；]{0,60}[：:]?\s*[“\"]"
-    )
-    role_cue = re.compile(
-        r"[A-Za-z\u4e00-\u9fff]{1,20}\s*[（(][^）)\n]{0,100}[）)]\s*[：:]\s*[“\"]"
-    )
-    dialogue_lines: list[tuple[int, str]] = []
-    for line_number, line in enumerate(spoken_scope.splitlines(), start=1):
-        if speech_trigger.search(line) or role_cue.search(line):
-            dialogue_lines.append((line_number, line.strip()))
-
-    mapped_audio = sorted(alias for alias in mapped_aliases if alias.startswith("音频"))
-    if voice_mode == "mapped_dry_voice":
-        if dialogue_lines and not mapped_audio:
-            errors.append("检测到对白/旁白，但【素材映射】没有对应干声音频")
-        for line_number, line in dialogue_lines:
-            local_binding = re.search(
-                r"(?P<speaker>[A-Za-z\u4e00-\u9fff]{1,20})\s*[（(][^）)\n]{0,100}?音频\s*(?P<number>\d+)[^）)\n]*[）)]",
-                line,
-            )
-            if not local_binding:
-                preview = line[:80] + ("…" if len(line) > 80 else "")
-                errors.append(
-                    f"对白/旁白须写成‘角色/旁白（音频N，表演参数）：台词’（声音段第{line_number}行）：{preview}"
-                )
-                continue
-            alias = f"音频{local_binding.group('number')}"
-            local_speaker = local_binding.group("speaker")
-            mapped_speaker = audio_speakers.get(alias)
-            if mapped_speaker and mapped_speaker != local_speaker:
-                errors.append(
-                    f"角色音频错配：{local_speaker}使用{alias}，但素材映射标记为{mapped_speaker}"
-                )
-    elif voice_mode == "model_voice":
-        if mapped_audio or re.search(r"音频\s*\d+", spoken_scope):
-            errors.append("model_voice模式不得绑定或引用干声音频编号")
-        if dialogue_lines:
-            warnings.append("model_voice模式含可辨识语言：跨单元音色一致性需要实测")
-    elif voice_mode == "post_dub":
-        if mapped_audio or re.search(r"音频\s*\d+", spoken_scope):
-            errors.append("post_dub模式不得绑定或引用虚构干声音频编号")
-        if dialogue_lines and not re.search(r"后期配音|后期替换|后期声音", spoken_scope):
-            errors.append("post_dub模式的台词镜头必须声明声音由后期配音替换")
-
-    style_text = section_text(text, "风格锁定")
-    if re.search(r"总(?:长|时长)\s*[：:]?\s*\d+(?:\.\d+)?\s*秒", style_text):
-        errors.append("【风格锁定】不得声明总长/总时长，时长由平台控制")
-    style_body = style_text.replace("【风格锁定】", "").strip()
-    if mode == "new" and len(style_body) < 40:
-        warnings.append("【风格锁定】内容过短，可能不足以锁定摄影、光线、色彩与材质")
-    if mode == "new" and not re.search(
-        r"摄影机|胶片|film|ARRI|Alexa|RED|Sony|Kodak|Panavision|镜头|lens",
-        style_body,
-        re.IGNORECASE,
-    ):
-        warnings.append("【风格锁定】未检测到明确的摄影或镜头系统")
-
-    for forbidden in ("镜头设计", "角色表演与声音"):
-        if f"【{forbidden}】" in text:
-            errors.append(f"不得单设【{forbidden}】，具体要求应写入对应镜头")
-
-    chinese_number_patterns = (
-        r"[一二三四五六七八九十百千万两〇零]+\s*(?:毫米|厘米|米|度|秒|帧|档|步|记|句|倍|格|人)",
-        r"第[一二三四五六七八九十百千万两〇零]+(?:秒|帧|镜|次|句)",
-        r"[一二三四五六七八九十百千万两〇零]+分之[一二三四五六七八九十百千万两〇零]+",
-        r"(?:午夜|凌晨|早上|上午|中午|下午|晚上)\s*[一二三四五六七八九十百千万两〇零]+点",
-    )
-    if any(re.search(pattern, text) for pattern in chinese_number_patterns):
-        errors.append("所有可量化数字须使用阿拉伯数字，不得使用中文数字")
-
-    if mode == "new":
-        for obsolete in ("故事与情绪曲线", "地形、空间与连续性锁定"):
-            if f"【{obsolete}】" in text:
-                errors.append(
-                    f"全新生成不再使用【{obsolete}】；故事情绪放在提示词外，空间信息写入【场景与空间锚点】"
-                )
-
-    if mode == "new":
-        external_context_patterns = {
-            r"\bU\d{2}\b": "全新生成提示词不得引用U01/U02等批次编号",
-            r"上一条(?:视频)?|上一段|前一批|上个批次|前文": "全新生成提示词不得引用未上传的上一批次内容",
-            r"硬切进入(?:新的?)?(?:动态)?画面|重新开始|延续U\d+|不重复(?:前文|上一段|U\d+)": "全新生成提示词含有模型无法执行的剪辑或上下文说明",
-        }
-        for pattern, message in external_context_patterns.items():
-            if re.search(pattern, text, re.IGNORECASE):
-                errors.append(message)
-
-        one_take_header = "【一镜到底执行声明】" in text
-        sequence = section_text(
-            text, "一镜到底执行声明" if one_take_header else "镜头序列"
+    sequence = "\n".join(section_text(prompt_block, name) for name in FORM_SECTIONS[form])
+    if state is not None and state["unit"].get("prompt_form", "shots") != form:
+        errors.append("提示词形式与当前已确认单元prompt_form不一致")
+    if form == "shots":
+        header_pattern = re.compile(
+            r"镜头\s*(\d+)\s*[（(]\s*(\d+(?:\.\d+)?)\s*[—–\-~至到]+"
+            r"\s*(\d+(?:\.\d+)?)\s*秒\s*｜\s*([^｜）)]+)\s*[）)]"
         )
-        shot_matches = list(re.finditer(r"镜头\s*(\d+)\s*[（(]", sequence))
-        is_one_take = one_take_header
-        if is_one_take:
-            if shot_matches:
-                errors.append("一镜到底不设置【镜头序列】或镜头编号，直接使用【一镜到底执行声明】")
-            for section in ("一镜到底执行声明", "起手式", "连续时间轴", "最终镜头落点"):
-                if f"【{section}】" not in sequence:
-                    errors.append(f"一镜到底缺少【{section}】")
-            internal_timecodes = [
-                (float(start), float(end))
-                for start, end in re.findall(
-                    r"(?m)^\s*(\d+(?:\.\d+)?)\s*[—–\-~至到]+\s*(\d+(?:\.\d+)?)\s*秒\s*$",
-                    sequence,
-                )
-            ]
-            if len(internal_timecodes) < 2:
-                errors.append("一镜到底的【连续时间轴】至少需要两个连续时间段")
-            else:
-                for index, (start, end) in enumerate(internal_timecodes):
-                    if end <= start:
-                        errors.append(f"一镜到底第{index + 1}个时间段结束时间不大于开始时间")
-                    if index and abs(start - internal_timecodes[index - 1][1]) > 0.11:
-                        errors.append(
-                            f"一镜到底时间轴不连续：{internal_timecodes[index - 1][1]:g}秒 → {start:g}秒"
-                        )
-            for cut_match in re.finditer(r"硬切|切镜|切到|转场|遮挡转场|匹配切", sequence):
-                preceding = sequence[max(0, cut_match.start() - 18) : cut_match.start()]
-                if not re.search(r"禁止|严禁|不得|不能|不允许|没有|无任何", preceding):
-                    errors.append("一镜到底的镜头序列中出现了切镜或转场指令")
-                    break
-            if re.search(r"定焦[^\n。；]*(?:焦段从|焦段由|焦段逐渐|变为\s*\d+\s*mm|过渡到\s*\d+\s*mm)", sequence, re.IGNORECASE):
-                errors.append("一镜到底使用定焦镜头时不得连续改变焦段")
-        for index, match in enumerate(shot_matches):
-            end = shot_matches[index + 1].start() if index + 1 < len(shot_matches) else len(sequence)
-            body = sequence[match.start() : end]
-            missing_fields = [] if is_one_take else [
-                field for field in ("机位与构图：", "运镜：", "画面内容：") if field not in body
-            ]
-            if missing_fields:
-                errors.append(
-                    f"镜头{match.group(1)}缺少固定字段：" + "、".join(missing_fields)
-                )
-            camera = None if is_one_take else re.search(r"机位与构图：(.*?)(?=\n运镜：)", body, re.DOTALL)
-            if camera:
-                camera_text = camera.group(1)
-                if not re.search(
-                    r"极远景|大全景|中远景|中全景|全景|中景|近景|极特写|特写|胸像|半身|腰部|膝上|全身|过肩",
-                    camera_text,
-                ):
-                    errors.append(f"镜头{match.group(1)}的【机位与构图】未明确景别")
-                if "景别为" in camera_text:
-                    errors.append(
-                        f"镜头{match.group(1)}请直接写景别名称，不要使用‘景别为’"
-                    )
-                if not re.search(r"焦点|景深|清晰|虚焦", camera_text):
-                    errors.append(
-                        f"镜头{match.group(1)}的【机位与构图】未说明焦点与清晰/虚焦关系"
-                    )
-                if "过肩" in camera_text and not (
-                    "前景" in camera_text
-                    and "虚焦" in camera_text
-                    and re.search(r"焦点|清晰", camera_text)
-                ):
-                    errors.append(
-                        f"镜头{match.group(1)}为过肩构图，须说明前景肩膀/后脑、虚焦程度和对面焦点"
-                    )
+        shots = list(header_pattern.finditer(sequence))
+        if not shots:
+            errors.append("【镜头序列】未检测到“镜头N（时间码｜简短拍摄策略）”格式")
+        header_count = len(re.findall(r"镜头\s*\d+\s*[（(]", sequence))
+        if header_count != len(shots):
+            errors.append("镜头标题应只含完整时间范围与简短拍摄策略")
+        if [int(m.group(1)) for m in shots] != list(range(1, len(shots) + 1)):
+            errors.append("镜头编号必须从1连续排列")
+        for index, match in enumerate(shots):
+            end = shots[index + 1].start() if index + 1 < len(shots) else len(sequence)
+            body = sequence[match.end():end].strip()
+            if not body:
+                errors.append(f"镜头{match.group(1)}缺少画面正文")
+            if re.search(r"机位与构图：|运镜：|画面内容：", body):
+                errors.append(f"镜头{match.group(1)}仍使用旧三字段，应改为连续导演段落")
+            if has_micro_timing(body):
+                errors.append(f"镜头{match.group(1)}镜内不得细分秒数；用动作因果衔接")
+        # Semantic camera/acting/causality review belongs to the cold-read gate, not field quotas.
+        timecodes = [(float(match.group(2)), float(match.group(3))) for match in shots]
+        if state is not None:
+            board = state["unit"]["storyboard"]
+            if board.get("exception") is None:
+                expected = board["shots"]
+                expected_ids = [item["id"].lstrip("0") or "0" for item in expected]
+                if [str(int(match.group(1))) for match in shots] != expected_ids:
+                    errors.append("提示词镜号/镜序与已确认宫格不一致；同镜A/B不能新增切镜")
+                expected_times = [(item["start"], item["end"]) for item in expected]
+                if (len(timecodes) != len(expected_times) or any(
+                        abs(a - c) > 0.05 or abs(b - d) > 0.05
+                        for (a, b), (c, d) in zip(timecodes, expected_times))):
+                    errors.append("提示词镜头时间与已确认宫格不一致")
+        if shots and abs(timecodes[0][0]) > 0.05:
+            errors.append("叙事镜头时间码必须从0秒开始")
+        if "一镜到底" in sequence and len(shots) != 1:
+            errors.append("一镜到底在【镜头序列】中只能有一个叙事镜头")
 
-    if mode in {"new", "extend"}:
-        timecodes = [
-            (float(start), float(end))
-            for start, end in re.findall(
-                r"镜头\s*\d+\s*[（(][^\n）)]*?(\d+(?:\.\d+)?)\s*[—–\-~至到]+\s*(\d+(?:\.\d+)?)\s*秒",
-                text,
-            )
-        ]
-        if not timecodes and "【一镜到底执行声明】" not in text:
-            warnings.append("未检测到镜头时间码")
+        if not timecodes:
+            errors.append("未检测到叙事时段连续时间码")
+            narrative_end = None
         else:
             for index, (start, end) in enumerate(timecodes):
                 if end <= start:
-                    errors.append(f"第{index + 1}个时间码结束时间不大于开始时间")
+                    errors.append(f"第{index + 1}个时间段结束时间不大于开始时间")
                 if index and abs(start - timecodes[index - 1][1]) > 0.11:
                     errors.append(
-                        f"时间码不连续：{timecodes[index - 1][1]:g}秒 → {start:g}秒"
+                        f"时间码不连续：{timecodes[index - 1][1]:g}秒→{start:g}秒"
                     )
+            narrative_end = max(end for _, end in timecodes)
 
-    duration_timecodes = [
-        (float(start), float(end))
-        for start, end in re.findall(
-            r"镜头\s*\d+\s*[（(][^\n）)]*?(\d+(?:\.\d+)?)\s*[—–\-~至到]+\s*(\d+(?:\.\d+)?)\s*秒",
-            text,
-        )
-    ]
-    if "【一镜到底执行声明】" in text:
-        duration_timecodes.extend(
-            (float(start), float(end))
-            for start, end in re.findall(
-                r"(?m)^\s*(\d+(?:\.\d+)?)\s*[—–\-~至到]+\s*(\d+(?:\.\d+)?)\s*秒\s*$",
-                text,
+    else:
+        # One take has a single duration; combat may add continuous phase budgets.
+        narrative_end = float(generation_info.group(2)) if generation_info else None
+        if narrative_end is None or narrative_end <= 0:
+            errors.append("一镜到底/打斗须在代码块外提供正数叙事时长")
+        phase_times = []
+        untimed_sequence = sequence
+        if form == "combat":
+            process = section_text(prompt_block, "打斗过程")
+            phase_times, phase_errors = combat_phases(process)
+            errors.extend(phase_errors)
+            untimed_sequence = sequence.replace(process, COMBAT_PHASE_HEADER.sub("", process))
+            if re.search(r"(?m)^\s*(?:阶段\s*\d+\s*[（(]|\d+(?:\.\d+)?\s*秒\s*[—–\-~至到]+)", untimed_sequence):
+                errors.append("打斗阶段标题格式不完整，或时间标题出现在【打斗过程】之外")
+            if phase_times and narrative_end is not None and abs(phase_times[-1][1] - narrative_end) > 0.05:
+                errors.append("打斗阶段总长与代码块外叙事时长不一致")
+        if has_micro_timing(untimed_sequence) or re.search(r"镜头\s*\d+|t\s*=\s*\d", untimed_sequence, re.I):
+            errors.append("一镜到底/打斗正文不得嵌套编号镜头或逐秒调度；打斗阶段时间仅写在阶段标题")
+        effects = section_text(prompt_block, "特效与运镜")
+        if has_micro_timing(effects) or re.search(r"镜头\s*\d+|t\s*=\s*\d", effects, re.I):
+            errors.append("打斗整体特效与运镜不得藏入逐秒镜头序列")
+        if form == "one_take":
+            declaration = section_text(prompt_block, "一镜到底执行声明")
+            if not re.search(r"不切镜|无切镜|连续拍摄|连续长镜头", declaration):
+                errors.append("一镜到底执行声明须明确连续不切镜")
+            cut_prose = re.sub(
+                r"(?:不使用|不用|不采用|禁止|不得使用)(?:黑场|遮挡|闪光|闪白|白闪|、|或|和|与)+(?:藏切|隐藏切点)",
+                "", sequence,
             )
+            if re.search(r"伪一镜到底|遮挡[^。；\n]*(?:藏切|转场|切点)|切到|硬切|\bHARD CUT\b", cut_prose, re.I):
+                errors.append("真一镜到底叙事不能含切镜或遮挡藏切")
+            if handoff_mode == "on" and re.search(r"全片|整条视频|整段视频|含交接", declaration):
+                errors.append("追加硬切交接时只能声明叙事一镜到底，不能声称整个生成视频无切镜")
+        if state is not None:
+            board = state["unit"]["storyboard"]
+            if board.get("exception") is None and narrative_end is not None:
+                if abs(board["shots"][-1]["end"] - narrative_end) > 0.05:
+                    errors.append("连续叙事时长与已确认宫格总时长不一致")
+                if phase_times:
+                    expected_times = [(s["start"], s["end"]) for s in board["shots"]]
+                    if len(phase_times) != len(expected_times) or any(
+                        abs(a - c) > 0.05 or abs(b - d) > 0.05
+                        for (a, b), (c, d) in zip(phase_times, expected_times)
+                    ):
+                        errors.append("打斗阶段时间与已确认宫格攻防阶段不一致")
+
+    total_end = narrative_end or 0.0
+    handoff = section_text(text, "站位交接镜头")
+    if handoff_mode == "off":
+        if handoff:
+            errors.append("handoff_mode=off时不得出现【站位交接镜头】或额外交接秒")
+    else:
+        handoff_match = re.search(
+            r"(?m)^\s*(\d+(?:\.\d+)?)\s*[—–\-~至到]+\s*(\d+(?:\.\d+)?)\s*秒\s*$",
+            handoff,
         )
-    if mode in {"new", "extend"} and duration_timecodes:
-        max_end = max(end for _, end in duration_timecodes)
-        max_duration = 15.0 if model_version == "2.0" else 30.0
-        if max_end > max_duration + 0.05:
+        if not handoff_match:
+            errors.append("handoff_mode=on时【站位交接镜头】必须包含独立时间码")
+        else:
+            handoff_start = float(handoff_match.group(1))
+            handoff_end = float(handoff_match.group(2))
+            total_end = handoff_end
+            if abs((handoff_end - handoff_start) - 1.0) > 0.05:
+                errors.append("【站位交接镜头】必须完整占用最后1.0秒")
+            if narrative_end is not None and abs(narrative_end - handoff_start) > 0.11:
+                errors.append(
+                    f"叙事时段结束于{narrative_end:g}秒，但站位交接从{handoff_start:g}秒开始"
+                )
+            if "硬切" not in handoff:
+                errors.append("【站位交接镜头】必须从叙事硬切")
+            # Natural visibility/motion is semantic; do not require all faces/feet or frozen coordinates.
+
+    limit = 15.0 if model_version == "2.0" else 30.0
+    if state and isinstance(state["capabilities"].get("max_duration"), (int, float)):
+        limit = min(limit, state["capabilities"]["max_duration"])
+    if total_end > limit + 0.05:
+        errors.append(f"时间码达到{total_end:g}秒，超过Seedance {model_version}的{limit:g}秒上限")
+    if generation_info:
+        info_version = generation_info.group(1)
+        info_narrative = float(generation_info.group(2))
+        info_handoff = float(generation_info.group(3))
+        info_total = float(generation_info.group(4))
+        expected_handoff = 1.0 if handoff_mode == "on" else 0.0
+        if info_version != model_version:
             errors.append(
-                f"Seedance {model_version}单批时间码达到{max_end:g}秒，超过{max_duration:g}秒上限"
+                f"【本段生成信息】写Seedance {info_version}，与当前Seedance {model_version}不一致"
             )
-    if model_version == "2.0" and mode == "extend":
-        warnings.append("Seedance 2.0不建议把视频延长作为常规衔接；优先使用自然切点或抽帧接力")
+        if narrative_end is not None and abs(info_narrative - narrative_end) > 0.05:
+            errors.append(
+                f"【本段生成信息】叙事时长{info_narrative:g}秒，与镜头时间码{narrative_end:g}秒不一致"
+            )
+        if abs(info_handoff - expected_handoff) > 0.05:
+            errors.append(
+                f"【本段生成信息】站位交接应为{expected_handoff:g}秒"
+            )
+        if abs(info_total - total_end) > 0.05:
+            errors.append(
+                f"【本段生成信息】总时长{info_total:g}秒，与最终时间码{total_end:g}秒不一致"
+            )
+        if abs(info_total - info_narrative - info_handoff) > 0.05:
+            errors.append("【本段生成信息】总时长必须等于叙事时长加站位交接秒数")
+
+    sound = section_text(text, "声音设计")
+    if has_micro_timing(sound):
+        errors.append("【声音设计】以事件串联声场变化，不另列逐秒音轨表")
+    if re.search(r"【[^】]*(?:BGM|配乐|Suno)[^】]*】", text, re.I):
+        errors.append("视频交付不得附带BGM/Suno配乐栏目或备用提示词")
+    no_music = re.findall(r"(?:无\s*BGM|无背景音乐|(?:不使用|不生成|不加入|禁止|不得|不要)\s*(?:BGM|背景音乐|配乐))", sound, re.I)
+    if len(no_music) != 1 or not sound.rstrip().endswith("无BGM。"):
+        errors.append("【声音设计】最后一句须为“无BGM。”且只声明一次")
+    outside_sound = prompt_block.replace(sound, "")
+    if re.search(r"无\s*BGM|(?:不使用|不生成|不加入|禁止)\s*(?:BGM|背景音乐)", outside_sound, re.I):
+        errors.append("无BGM只在【声音设计】末尾声明一次，不在其他栏目重复")
+    # Review directive clauses, not quoted script speech; a no-BGM sentence
+    # cannot excuse a separate instruction to add a score elsewhere.
+    music_terms = (r"BGM|背景音乐|配乐|音乐(?:渐|响|进入|压低|铺底|推动)|"
+                   r"(?:鼓点|低弦|弦乐|大提琴|钢琴)[^。；]{0,20}(?:伴奏|铺底|动机|和声)|"
+                   r"合成器铺底|soundtrack|background music|\bscore\b")
+    music_prose = prompt_block
+    for line in sequence.splitlines():
+        # Exclude explicitly bound spoken script, not arbitrary instructions with a colon.
+        if re.search(r"[（(][^）)\n]*音频\s*\d+[^）)\n]*[）)]\s*[：:]", line):
+            music_prose = music_prose.replace(line, "")
+    for clause in re.split(r"[。；;，,\n]|但|不过|然而", music_prose):
+        if re.search(music_terms, clause, re.I):
+            if not re.search(r"不使用|不生成|不加入|无BGM|无背景音乐|禁止|不得|不要|杜绝|no music|no bgm|no score", clause, re.I):
+                errors.append("视频正文仍含正向音乐指令：" + clause.strip()[:90])
+    # This is lexical protection only; sound-source semantics need cold reading.
+
+    entries = mapping_entries(mapping, platform)
+    # All body references must resolve, not merely have some audio somewhere.
+    refs = {(kind, int(number)) for kind, number in re.findall(r"(音频|视频)\s*(\d+)", body_without_mapping)}
+    for kind, number in refs - internal_slots:
+        errors.append(f"正文引用未映射的{kind}{number}")
+    for name, direction, words in dialogue_lines(sequence):
+        numbers = re.findall(r"音频\s*(\d+)", direction)
+        has_reference = any(kind == "音频" and owner == name for (kind, _), owner in entries.items())
+        if len(numbers) > 1 or (has_reference and not numbers):
+            errors.append(f"台词{name}须就近引用唯一角色音频")
+        elif numbers and entries.get(("音频", int(numbers[0]))) != name:
+            errors.append(f"台词{name}引用的音频不属于该角色")
+    if state:
+        assets = {item["id"]: item for item in state["snapshot"]["assets"] if isinstance(item, dict) and "id" in item}
+        expected = {(b["kind"], b["slot"]): assets.get(b.get("asset_id")) for b in state["unit"]["bindings"]
+                    if isinstance(b, dict) and "kind" in b and "slot" in b and isinstance(b["slot"], int)}
+        if set(expected) != internal_slots:
+            errors.append("本次映射槽位与当前单元实际资产绑定不一致")
+        for slot, asset in expected.items():
+            if asset and entries.get(slot) != asset.get("name"):
+                errors.append(f"本次{slot[0]}{slot[1]}规范身份与实际资产不一致")
+        table_rows = {}
+        for line in text.split("【风格锁定】", 1)[0].splitlines():
+            if not line.strip().startswith("|"):
+                continue
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            match = re.fullmatch(r"(图|音频|视频)\s*(\d+)", cells[1]) if len(cells) >= 3 else None
+            if not match:
+                continue
+            key = (match[1], int(match[2]))
+            if key in table_rows:
+                errors.append("外部上传表存在重复素材槽位")
+            link = re.search(r"\]\(<?(.*?)>?\)", cells[2])
+            table_rows[key] = link[1] if link else cells[2]
+        for slot, source in table_rows.items():
+            asset = expected.get(slot)
+            if asset and source.replace("\\", "/").casefold() != str(asset.get("source", "")).replace("\\", "/").casefold():
+                errors.append(f"上传表{slot[0]}{slot[1]}文件来源与实际绑定不一致")
+        voice_set = set(state["unit"]["required_voices"])
+        for name, _, _ in dialogue_lines(sequence):
+            if name not in voice_set:
+                errors.append(f"台词{name}未登记为当前人声需求")
+        for kind, number in refs:
+            if kind == "音频" and entries.get((kind, number)) not in voice_set:
+                errors.append(f"角色人声{kind}{number}未登记为当前需求")
+    if re.search(r'说[：:]?["“]|问[：:]?["“]', sequence) and not dialogue_lines(sequence):
+        errors.append("检测到未明确说话者的台词，请使用角色（表演，可选音频N）：台词格式")
+
+    if re.search(r"后期配音|声音由后期替换|后期替换声音", payload):
+        errors.append("视频提示词不应以待后期补配替代本段应生成的人声")
+
+    supplement = section_text(text, "全局补充")
+    if re.search(
+        r"站位交接|交接镜头|交接图|交接帧|直接结束|额外时长|"
+        r"Seedance\s*2\.[05]|叙事时长|生成总时长|总生成时长|总时长|独立生成",
+        supplement,
+        re.IGNORECASE,
+    ):
+        errors.append("【全局补充】不得描述站位交接状态、直接结束秒数、额外时长或生成元信息")
+    prohibitions = len(re.findall(r"严禁|禁止|不得|不能|不允许|无字幕|无水印", supplement))
+    if prohibitions > 6:
+        warnings.append(f"【全局补充】检测到{prohibitions}项禁止表达，通常应压缩到6项以内")
+
+    director_names = re.findall(
+        r"诺兰|芬奇|斯皮尔伯格|希区柯克|斯科塞斯|库布里克|维伦纽瓦|卡梅隆|Christopher Nolan|David Fincher|Steven Spielberg",
+        payload,
+        re.IGNORECASE,
+    )
+    if director_names:
+        warnings.append("视频提示词出现导演姓名；优先转译为具体摄影、调度和叙事参数")
 
     return errors, warnings
 
 
 def self_test() -> int:
-    jimeng = """【本批上传ID映射】
-| 提示词槽位 | 用户应上传的资产 | 当前准备状态 | 唯一职责 |
-|---|---|---|---|
-| 图1 | 客厅场景图 | 用户已有 | 锁定空间 |
-| 音频1 | 艾玛干声 | 待用户准备 | 锁定音色 |
-
-【风格锁定】
-自然主义雪夜惊悚片，使用ARRI Alexa 35与Cooke电影镜头，21:9，24fps；冷暗低饱和，雪反冷光，真实木材与皮肤质感。
-【素材映射】
-@用于锁定客厅，绑定后简称“图1”。
-@为艾玛声音，绑定后简称“音频1”。
-【场景与空间锚点】
-午夜客厅内，艾玛站在图1门边；门在画面右侧，走廊在画面左侧。
-【声音与音乐总则】
-使用音频1，无BGM。
-【镜头序列】
-镜头1（0.0—2.0秒｜近景）
-机位与构图：头肩近景，摄影机位于艾玛正前方；焦点落在艾玛双眼，背景轻微虚化。
-运镜：固定机位。
-    画面内容：艾玛转头。艾玛（音频1，呼吸急促、低声而坚决）：“快走。”
-镜头2（2.0—4.0秒｜中景）
-机位与构图：腰部中景，摄影机位于艾玛侧面；焦点落在艾玛面部，背景走廊轻微虚化。
-运镜：侧向跟拍。
-画面内容：艾玛跑开。
-【全局补充】
-无字幕。"""
-    libtv = jimeng.replace(
-        "@用于锁定客厅，绑定后简称“图1”。\n@为艾玛声音，绑定后简称“音频1”。",
-        "{{Image 1}}用于锁定客厅。\n{{Audio 1}}为艾玛声音。",
-    )
-    bad = jimeng.replace("@用于锁定客厅，绑定后简称“图1”。", "@图片1用于锁定客厅。")
-    over_15 = jimeng.replace("2.0—4.0秒", "2.0—16.0秒")
-    missing_voice = jimeng.replace(
-        "@为艾玛声音，绑定后简称“音频1”。\n", ""
-    ).replace("艾玛（音频1，呼吸急促、低声而坚决）", "艾玛低声说")
-    text_model_voice = jimeng.replace(
-        "【本批上传ID映射】\n| 提示词槽位 | 用户应上传的资产 | 当前准备状态 | 唯一职责 |\n|---|---|---|---|\n| 图1 | 客厅场景图 | 用户已有 | 锁定空间 |\n| 音频1 | 艾玛干声 | 待用户准备 | 锁定音色 |\n\n",
-        "",
-    ).replace(
-        "【素材映射】\n@用于锁定客厅，绑定后简称“图1”。\n@为艾玛声音，绑定后简称“音频1”。\n",
-        "",
-    ).replace("图1门边", "旧木屋客厅门边").replace(
-        "使用音频1，无BGM。", "保留安静房间底噪，无BGM。"
-    ).replace(
-        "艾玛（音频1，呼吸急促、低声而坚决）",
-        "艾玛（呼吸急促、语速稍快、低声而坚决）",
-    )
-    bad_text_image = text_model_voice.replace(
-        "旧木屋客厅门边", "{{Image 1}}中的客厅门边"
-    )
-    jimeng_payload_length = len(extract_prompt_payload(jimeng, "new"))
-    at_limit = jimeng + ("x" * (MAX_VIDEO_PROMPT_CHARS - jimeng_payload_length))
-    over_limit = at_limit + "x"
-    tests = [
-        (jimeng, "jimeng", "new", "2.5", "mapped", "mapped_dry_voice", True),
-        (libtv, "libtv", "new", "2.5", "mapped", "mapped_dry_voice", True),
-        (bad, "jimeng", "new", "2.5", "mapped", "mapped_dry_voice", False),
-        (over_15, "jimeng", "new", "2.0", "mapped", "mapped_dry_voice", False),
-        (missing_voice, "jimeng", "new", "2.5", "mapped", "mapped_dry_voice", False),
-        (text_model_voice, "jimeng", "new", "2.5", "text", "model_voice", True),
-        (bad_text_image, "libtv", "new", "2.5", "text", "model_voice", False),
-        (at_limit, "jimeng", "new", "2.5", "mapped", "mapped_dry_voice", True),
-        (over_limit, "jimeng", "new", "2.5", "mapped", "mapped_dry_voice", False),
-    ]
-    for text, platform, mode, model_version, asset_mode, voice_mode, expected in tests:
-        errors, _ = validate(
-            text, platform, mode, model_version, asset_mode, voice_mode
-        )
-        if (not errors) != expected:
-            print(f"Self-test failed: {platform}/{mode}: {errors}", file=sys.stderr)
-            return 1
-
-    _, limit_warnings = validate(at_limit, "jimeng", "new", "2.5")
-    if not any("常规目标" in item for item in limit_warnings):
-        print("Self-test failed: missing soft-limit warning", file=sys.stderr)
-        return 1
-
-    bloated = jimeng.replace(
-        "无字幕。",
-        "严禁换脸。严禁换装。严禁跳轴。严禁新增人物。"
-        "严禁改变光线。严禁改变道具。严禁改变空间。",
-    )
-    _, bloat_warnings = validate(bloated, "jimeng", "new", "2.5")
-    if not any("禁止表达" in item for item in bloat_warnings):
-        print("Self-test failed: missing prohibition-bloat warning", file=sys.stderr)
-        return 1
-    print("Self-test passed")
-    return 0
+    from test_regressions import run
+    return run()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("file", nargs="?", help="UTF-8 prompt file; omit to read stdin")
-    parser.add_argument("--platform", choices=["jimeng", "libtv"], default="jimeng")
-    parser.add_argument("--mode", choices=["new", "extend", "edit"], default="new")
-    parser.add_argument("--model-version", choices=["2.0", "2.5"], default="2.5")
+    parser.add_argument("--platform", choices=["jimeng", "libtv", "other", "generic"], default="jimeng")
+    parser.add_argument("--model-version", choices=["2.0", "2.5"], default="2.5")  # 本地兼容：恢复默认值（旧 CLI 可省略）
     parser.add_argument("--asset-mode", choices=["mapped", "text", "hybrid"], default="mapped")
-    parser.add_argument(
-        "--voice-mode",
-        choices=["mapped_dry_voice", "model_voice", "post_dub"],
-        default="mapped_dry_voice",
-    )
+    parser.add_argument("--bgm-mode", choices=["none", "suno"], default="none")
+    parser.add_argument("--handoff-mode", choices=["on", "off"], default="on")  # 本地兼容：旧 CLI 无此参数，默认放行不阻断
+    parser.add_argument("--delivery-kind", choices=["initial", "revision"], default="initial")
+    parser.add_argument("--state", help="Current project record for actual asset/authorization gates")
+    parser.add_argument("--suno-action", choices=["none", "new", "reuse"], default="none", help="兼容旧参数；new/reuse已退役，视频阶段只允许none")
+    parser.add_argument("--mode", choices=["new", "extend", "edit"], help="本地兼容参数：旧 CLI --mode 已由 --delivery-kind 取代，传入仅记录不改判定")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
-
     if args.self_test:
         return self_test()
-
+    if not args.model_version:
+        parser.error("生成提示词前必须通过--model-version明确指定2.0或2.5")
+    if not args.handoff_mode:
+        parser.error("生成提示词前必须通过--handoff-mode明确指定on或off")
     text = Path(args.file).read_text(encoding="utf-8") if args.file else sys.stdin.read()
     errors, warnings = validate(
         text,
         args.platform,
-        args.mode,
         args.model_version,
         args.asset_mode,
-        args.voice_mode,
+        args.bgm_mode,
+        args.handoff_mode,
+        args.delivery_kind,
+        Path(args.state).read_text(encoding="utf-8-sig") if args.state else None,
+        args.suno_action,
     )
     result = {"ok": not errors, "errors": errors, "warnings": warnings}
-
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print("PASS" if result["ok"] else "FAIL")
         for item in errors:
-            print(f"ERROR: {item}")
+            print("ERROR:", item)
         for item in warnings:
-            print(f"WARN: {item}")
+            print("WARN:", item)
     return 0 if result["ok"] else 1
 
 
