@@ -11,7 +11,9 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 63
+// 总架构师施工令（2026-10-27）：本地 55-63 号段已 applied 严禁改动；上游新增迁移
+// 按 64/65/66 顺延落库。本刀（合入 v1.6.9）落 64，CurrentSchemaVersion=64。
+const CurrentSchemaVersion int64 = 64
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -225,16 +227,16 @@ var schemaMigrations = []migration{
 	{version: 58, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v58-20261016", apply: migrateSchemaV56},
 	// v1.6.8.12 的 canvas_multi_session_sync（上游 57）按顺延惯例落本地 59（v60-63 见下表）。
 	{version: 59, name: "canvas_multi_session_sync", checksum: "sha256:canvas-multi-session-sync-v57", apply: migrateCanvasCollaboration},
-	// ===================== 本地↔上游迁移号段分配表（2026-10-24 治理）=====================
-	// 上游 v1.6.9.2（upstream/main）号段：55=provider_catalog_source、56=sql_perf_indexes、
+	// ===================== 本地↔上游迁移号段分配表（2026-10-27 施工令修订）=====================
+	// 上游 v1.6.9.x 号段：55=provider_catalog_source、56=sql_perf_indexes、
 	//   57=canvas_multi_session_sync、58=agent_memory_proposals、59=channel_model_protocol_length、
 	//   60=user_feedbacks（上游 CurrentSchemaVersion=60）。
 	// 本地真库已占：55=ecommerce_workshop、56=ecommerce_plan_review（本地专属）、
-	//   57=provider_catalog_source、58=sql_perf_indexes（上游 55/56 吸收时顺延 +2 落库）。
-	// **59-62 = 上游 57/58/59/60 吸收时的顺延落点（+2）**：合并 v1.6.9.x 时把上游
-	//   四条迁移原文按 59/60/61/62 重写号段即可，零改号冲突、无需再动电商迁移。
-	// 63=ecommerce_layer_manifest（电商实战升级；原发布号 60 与上游 user_feedbacks 撞号，
-	//   已按审计要求改号 63 并同步修正真库 schema_migrations 记录）。
+	//   57=provider_catalog_source、58=sql_perf_indexes、59=canvas_multi_session_sync、
+	//   63=ecommerce_layer_manifest（已 applied，严禁改号）。
+	// 总架构师裁决（2026-10-27）：上游三条**新增**迁移按 64/65/66 顺延落库——
+	//   64=agent_memory_proposals（本刀）、65=channel_model_protocol_length（刀2）、
+	//   66=user_feedbacks（刀3）；CurrentSchemaVersion 逐刀升至 66。
 	{version: 63, name: "ecommerce_layer_manifest", checksum: "sha256:ecommerce-layer-manifest-v60-20261024", apply: func(tx *gorm.DB) error {
 		// 兼容式幂等列检查：先查列是否存在，不存在才 ADD（重放/跨库安全）。
 		if !tx.Migrator().HasColumn(&model.EcommerceSlot{}, "user_brief_json") {
@@ -251,6 +253,10 @@ var schemaMigrations = []migration{
 			return tx.Migrator().AddColumn(&model.EcommerceSlotVersion{}, "LayerManifestJSON")
 		}
 		return nil
+	}},
+	// —— 上游 v1.6.9 新增迁移（重写号段 64）——
+	{version: 64, name: "agent_memory_proposals", checksum: "sha256:agent-memory-proposals-v64-20261027", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.AgentLesson{}, &model.AgentMemorySetting{}, &model.AgentMemoryProposal{}, &model.AgentMemoryRevision{})
 	}},
 }
 

@@ -188,6 +188,7 @@ func (s *Service) StartWorker() {
 	s.startResourceDeletionWorker(ctx)
 	s.startSkillSyncWorker(ctx)
 	s.startPaymentWorker(ctx)
+	s.startBillingAutoRefundWorker()
 	// 启动自检：清洗历史脏提示词（旧 M2 模板写进 generation_prompt 的
 	// 「保持主体结构…画面不生成文字…」会导致整组出图无字且构图雷同）。幂等。
 	go func() {
@@ -200,6 +201,7 @@ func (s *Service) StartWorker() {
 			slog.Info("ecommerce legacy prompt repair done", "cleaned", repaired)
 		}
 	}()
+
 	go s.syncAgentSessionLimit()
 	s.runWorkerLoop(func(ctx context.Context) {
 		ticker := time.NewTicker(3 * time.Second)

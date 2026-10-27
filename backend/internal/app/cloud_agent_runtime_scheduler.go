@@ -341,6 +341,9 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 						return cloudAgentSave(current, &state)
 					}
 				}
+				if err := cloudAgentCommitLessonDrafts(repo, run.UserID, run.ID, &state); err != nil {
+					return err
+				}
 				current.Status = "completed"
 			}
 			return cloudAgentSave(current, &state)
@@ -394,7 +397,6 @@ func (s *Service) advanceCloudAgent(run *model.CloudAgentExecution) (err error) 
 		}
 		return contextErr
 	}
-	s.attachCloudAgentLessons(&canonical, run.UserID, cloudAgentLessonTaskText(&state))
 	references, refErr := s.cloudAgentImageReferences(run.UserID, state.Request, &canonical)
 	if refErr != nil {
 		return s.failCloudAgent(run, &state, cloudAgentSafeToolError(refErr))
@@ -582,6 +584,7 @@ func (s *Service) failCloudAgent(run *model.CloudAgentExecution, state *cloudAge
 	return s.repo.MutateCloudAgent(run.UserID, run.ID, run.Revision, func(current *model.CloudAgentExecution, _ *repository.Repository) error {
 		current.Status = "failed"
 		current.FailureMessage = truncateRunes(message, 1000)
+		state.PendingLessonDrafts = nil
 		cloudAgentDropInterjections(run.ID, "本轮已结束："+truncateRunes(message, 120), state)
 		state.event(run.ID, "run_failed", map[string]any{"text": message})
 		return cloudAgentSave(current, state)
@@ -596,6 +599,7 @@ func failCloudAgentAdmission(current *model.CloudAgentExecution, state *cloudAge
 	current.Status = "failed"
 	current.FailureMessage = message
 	state.Approval = nil
+	state.PendingLessonDrafts = nil
 	state.event(runID, "run_failed", map[string]any{
 		"text":   message,
 		"reason": "tool_admission_failed",

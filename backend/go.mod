@@ -3,9 +3,9 @@ module yingce/backend
 go 1.25.0
 
 require (
-	github.com/coder/websocket v1.8.15
 	github.com/aws/aws-sdk-go v1.45.5
 	github.com/casdoor/go-sms-sender v0.25.0
+	github.com/coder/websocket v1.8.15
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -21,6 +21,7 @@ require (
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0
 	gorm.io/driver/postgres v1.6.2
+	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
 )
 

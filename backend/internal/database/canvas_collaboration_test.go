@@ -84,7 +84,7 @@ func TestCanvasCollaborationUpgradeFrom56(t *testing.T) {
 		}
 	}
 	status, err := ReadSchemaStatus(db)
-	if err != nil || !status.Ready || status.Current != 63 {
+	if err != nil || !status.Ready || status.Current != CurrentSchemaVersion {
 		t.Fatalf("unexpected schema status: %+v %v", status, err)
 	}
 }
