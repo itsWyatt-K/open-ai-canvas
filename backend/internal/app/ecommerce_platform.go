@@ -12,6 +12,7 @@
 package app
 
 import (
+	"encoding/json"
 	"context"
 	"errors"
 
@@ -62,6 +63,14 @@ func (s *Service) ApplyEcommercePlatform(ctx context.Context, userID, productID,
 	saved, err := s.SaveEcommerceConfig(userID, *cfg)
 	if err != nil {
 		return nil, nil, err
+	}
+	// 产品侧落配置快照（2026-10-27 修复 TestAgentEcommerceApplyPlatform）：
+	// 平台切换生效的配置必须落到商品的 config_snapshot_json——此前只写了用户配置，
+	// 商品快照全代码库无写入者，导致「 applied 成功但快照查无此平台」。
+	if encoded, encErr := json.Marshal(saved); encErr == nil {
+		if updErr := s.repo.UpdateEcommerceProductFields(userID, productID, map[string]any{"config_snapshot_json": string(encoded)}); updErr != nil {
+			return nil, nil, updErr
+		}
 	}
 	// 2) 槽位：仅 draft/review 商品可重建（running/queued 等在途任务不打断）。
 	if product.Status == ecommerce.ProductStatusDraft || product.Status == ecommerce.ProductStatusReview {

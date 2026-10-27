@@ -1,6 +1,7 @@
 package app
 
 import (
+	"regexp"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -193,9 +194,31 @@ func singleImageSizeTier(image *ImageCapabilityConfig) (string, bool) {
 	return tier, true
 }
 
+// imageParameterHasPixelValues 判断参数的声明值里是否存在像素形态（如 1024x1024）。
+var imagePixelValueRE = regexp.MustCompile(`^\d+x\d+$`)
+
+func imageParameterHasPixelValues(p protocol.ImageParameter) bool {
+	for _, value := range p.Values {
+		if imagePixelValueRE.MatchString(strings.TrimSpace(fmt.Sprint(value))) {
+			return true
+		}
+	}
+	return false
+}
+
 func activeImageSizePresets(image *ImageCapabilityConfig) []ImageSizePreset {
 	if image.Parameters == nil || image.Resolution.Supported {
 		return image.Size.Presets
+	}
+	// pixels 编码且取值本身就是像素尺寸（NxN，如 1024x1024/2048x2048）的 size 参数，
+	// 自身就是选择器——选择经由参数完成而非 tier，不得按 Size.Default 收窄成单档，
+	// 否则参数里声明的其他像素值会被静默丢弃。取值是比例（1:1）时仍走 tier 收窄，
+	// 比例→像素的换算由 resolveImageTaskSize 负责（2026-10-27 修
+	// TestImageParametersPixelSelectionKeepsExactSizeWithoutResolution）。
+	for _, p := range image.Parameters {
+		if p.Name == "size" && p.IsEnabled() && p.Encoding == "pixels" && imageParameterHasPixelValues(p) {
+			return image.Size.Presets
+		}
 	}
 	tier, ok := singleImageSizeTier(image)
 	if !ok {

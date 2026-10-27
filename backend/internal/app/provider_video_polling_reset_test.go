@@ -30,6 +30,7 @@ func resetConnection(t *testing.T, w http.ResponseWriter) {
 
 func TestVideoPollContinuesAfterConnectionResetAndEOF(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	skipIfLoopbackResetUnsupported(t)
 	var mu sync.Mutex
 	var paths []string
 	polls := 0

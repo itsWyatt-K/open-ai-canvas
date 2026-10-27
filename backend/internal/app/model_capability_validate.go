@@ -695,6 +695,26 @@ func imagePresetDefaultTier(profile *ImageCapabilityConfig) string {
 //  1. 线路自己的换算表（presets）命中 → 用预设像素；
 //  2. 未配置专属表时 → 用内置标准兜底换算表把比例换成像素，保证仍能出网；
 //  3. 两条路都取不到（既非声明比例、也非标准比例）时保持原样，交给能力校验给明确错误。
+// imageSizeRatioAmbiguous 判断比例选择是否不唯一：多个启用预设共享该比例，
+// 且 quality 与 DefaultTier 都无法确定唯一次位。
+func imageSizeRatioAmbiguous(profile *ImageCapabilityConfig, value string, quality string) bool {
+	if profile == nil {
+		return false
+	}
+	if strings.TrimSpace(quality) != "" || strings.TrimSpace(imagePresetDefaultTier(profile)) != "" {
+		return false
+	}
+	ratio := normalizeDeclaredImageRatio(value)
+	matches := 0
+	// 计数用全量预设（不是 tier 收窄后的 active 列表）——歧义性正是由多档位共存造成的。
+	for _, preset := range profile.Size.Presets {
+		if normalizeDeclaredImageRatio(preset.Ratio) == ratio {
+			matches++
+		}
+	}
+	return matches > 1
+}
+
 func resolveImageTaskSize(profile *ImageCapabilityConfig, interfaceType string, size string, quality string) string {
 	if profile == nil {
 		return size
@@ -702,6 +722,23 @@ func resolveImageTaskSize(profile *ImageCapabilityConfig, interfaceType string, 
 	value := strings.TrimSpace(size)
 	if value == "" || strings.EqualFold(value, "auto") {
 		return size
+	}
+	// 精确像素短路（2026-10-27 修复 TestImageParametersPixelSelectionKeepsExactSizeWithoutResolution）：
+	// **仅像素路线**生效——输入值已等于某个声明预设的像素尺寸时原样返回，避免被
+	// 「比例+tier」重解析降级到默认档。比例路线（aspect_ratio）不适用：像素输入
+	// 必须翻回规范比例（TestResolveImageTaskSizeUsesRouteEncodingForDeclaredAlias）。
+	if imageSizePixelOutbound(profile, interfaceType) {
+		for _, preset := range activeImageSizePresets(profile) {
+			if strings.EqualFold(strings.TrimSpace(preset.Size), value) {
+				return preset.Size
+			}
+		}
+	}
+	// 歧义检测（2026-10-27 修 TestImageParametersDisabledResolutionRejectsAmbiguousPixels）：
+	// 输入是比例（1:1）且多个启用预设共享该比例、又无 tier 选择器时，选择不唯一——
+	// 原样返回比例让调用方的「缺少明确的像素尺寸映射」报错，不静默取首个预设。
+	if strings.Contains(value, ":") && imageSizeRatioAmbiguous(profile, value, quality) {
+		return value
 	}
 	pixelOutbound := imageSizePixelOutbound(profile, interfaceType)
 	preset, ok := declaredImageSizePreset(activeImageSizePresets(profile), value, imagePresetSelectionTier(profile, quality), imagePresetDefaultTier(profile))
