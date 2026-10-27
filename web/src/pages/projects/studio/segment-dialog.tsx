@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { App, Button, Input, InputNumber, Select } from "antd";
+import { App, Button, Input, InputNumber, Select, Tag } from "antd";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
-import { ChevronLeft, ChevronRight, Copy, Loader2, Play, RotateCcw, Sparkles, X } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Loader2, Play, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
 
 import { AppModal } from "@/components/ui/product/app-modal";
 import { TRANSITION_LABEL } from "@/lib/drama/storyboard";
 import type { DramaCast, DramaEpisodeDetail, DramaModelChoice, DramaSegment, DramaShot, DramaShotPatch, DramaTransition } from "@/services/api/drama";
 import { dramaChoiceKey } from "@/lib/drama/model-choice";
+import { refineDramaSegmentPrompt } from "@/services/api/drama";
 
 import { DramaModelPicker } from "../drama-model-picker";
 
@@ -26,6 +27,7 @@ const PROMPT_NOTICE: Record<DramaSegment["promptStatus"], string> = {
 };
 
 type Props = {
+    projectId: string;
     detail?: DramaEpisodeDetail;
     segmentIndex?: number;
     shotId?: string;
@@ -49,7 +51,7 @@ type Props = {
  * 剧情段弹窗：左侧是段视频、生成依据（首帧与参考图）和段内镜头脚本，右侧是本段完整视频提示词。
  * 提示词区展示的就是提交时发送的全文：开头的参考图对应说明由系统追加，正文可直接修改。
  */
-export function SegmentDialog({ detail, segmentIndex, shotId, castById, aspectRatio, busy, writing, reprocessing, defaultVideoModel, onClose, onNavigate, onPatchShot, onSavePrompt, onWritePrompt, onGenerate, onReprocess, onOpenCast }: Props) {
+export function SegmentDialog({ projectId, detail, segmentIndex, shotId, castById, aspectRatio, busy, writing, reprocessing, defaultVideoModel, onClose, onNavigate, onPatchShot, onSavePrompt, onWritePrompt, onGenerate, onReprocess, onOpenCast }: Props) {
     const segments = detail?.segments || [];
     const position = segments.findIndex((item) => item.index === segmentIndex);
     const segment = position >= 0 ? segments[position] : undefined;
@@ -145,7 +147,7 @@ export function SegmentDialog({ detail, segmentIndex, shotId, castById, aspectRa
                             </section>
                         </aside>
                         <section className="drama-sd-main" aria-label="完整视频提示词">
-                            <SegmentPrompt segment={segment} writing={writing} onSave={(override) => onSavePrompt(segment, override)} onWrite={() => onWritePrompt(segment)} />
+                            <SegmentPrompt projectId={projectId} episodeId={detail.episode.id} segment={segment} writing={writing} onSave={(override) => onSavePrompt(segment, override)} onWrite={() => onWritePrompt(segment)} />
                         </section>
                     </div>
                 </div>
@@ -178,12 +180,33 @@ function SegmentGenerate({ segment, busy, defaultVideoModel, onGenerate }: { seg
     );
 }
 
-function SegmentPrompt({ segment, writing, onSave, onWrite }: { segment: DramaSegment; writing: boolean; onSave: (override: string) => void; onWrite: () => void }) {
+function SegmentPrompt({ projectId, episodeId, segment, writing, onSave, onWrite }: { projectId: string; episodeId: string; segment: DramaSegment; writing: boolean; onSave: (override: string) => void; onWrite: () => void }) {
     const { message } = App.useApp();
     const [draft, setDraft] = useState(segment.videoPrompt);
     useEffect(() => setDraft(segment.videoPrompt), [segment.videoPrompt]);
+    const [refineGate, setRefineGate] = useState<{ ok: boolean; charCount: number; errors: string[] } | null>(null);
+    const [refining, setRefining] = useState(false);
+    const runRefine = async () => {
+        setRefining(true);
+        try {
+            const result = await refineDramaSegmentPrompt(projectId, episodeId, segment.index);
+            setDraft(result.prompt);
+            setRefineGate({ ok: result.gate.ok, charCount: result.gate.charCount, errors: result.gate.errors });
+            if (result.gate.ok) {
+                message.success(`超哥导演精修完成，门禁通过（${result.gate.charCount} 字）`);
+                onSave(result.prompt);
+            } else {
+                message.error(`门禁未通过：${result.gate.errors[0] ?? "请检查提示词"}（已填入精修稿，可手动修改）`);
+            }
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "精修失败");
+        } finally {
+            setRefining(false);
+        }
+    };
     const busy = segment.promptStatus === "queued" || segment.promptStatus === "running";
     const notice = segment.custom && segment.promptStatus === "stale" ? "" : PROMPT_NOTICE[segment.promptStatus];
+    const gateOk = refineGate != null && refineGate.ok;
     const dirty = draft.trim() !== segment.videoPrompt.trim();
     const commit = () => {
         const next = draft.trim();
@@ -204,6 +227,14 @@ function SegmentPrompt({ segment, writing, onSave, onWrite }: { segment: DramaSe
                         <Button size="small" type="text" icon={<Sparkles className="size-3.5" />} loading={writing} onClick={onWrite}>
                             重新撰写
                         </Button>
+                    ) : null}
+                    {segment.videoPrompt ? (
+                        <Button size="small" type="primary" ghost icon={<Wand2 className="size-3.5" />} loading={refining} onClick={() => void runRefine()}>
+                            ✨ 超哥导演精修 & 门禁自检
+                        </Button>
+                    ) : null}
+                    {gateOk ? (
+                        <Tag color="success" icon={<CheckCircle2 className="size-3.5" />}>门禁通过</Tag>
                     ) : null}
                     {segment.custom ? (
                         <Button size="small" type="text" icon={<RotateCcw className="size-3.5" />} onClick={() => onSave("")}>

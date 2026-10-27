@@ -472,6 +472,13 @@ export function reprocessDramaSegmentVideo(projectId: string, episodeId: string,
     return http.post<{ reprocessing: boolean }>(`${base(projectId)}/episodes/${encodeURIComponent(episodeId)}/segments/${segmentIndex}/reprocess`);
 }
 
+/** 超哥导演精修 & 门禁自检：按 chaoge v3.24.0 提示词契约重组段视频提示词并过即梦门禁（不落库）。 */
+export function refineDramaSegmentPrompt(projectId: string, episodeId: string, segmentIndex: number) {
+    return http.post<{ prompt: string; gate: { ok: boolean; charCount: number; errors: string[]; warnings: string[] }; notes: string[] }>(
+        `${base(projectId)}/episodes/${encodeURIComponent(episodeId)}/segments/${segmentIndex}/refine`,
+    );
+}
+
 /** 按剧情段生成视频；段会按顺序提交，第 2 段起等上一段最后一帧。可同时换视频模型。 */
 export function generateDramaSegments(projectId: string, episodeId: string, segments: number[], videoModel?: DramaModelChoice) {
     return http.post<{ queued: number }>(`${base(projectId)}/episodes/${encodeURIComponent(episodeId)}/segments/generate`, { segments, ...(videoModel ? { videoModel } : {}) });

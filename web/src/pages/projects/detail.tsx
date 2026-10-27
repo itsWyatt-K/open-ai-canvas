@@ -328,6 +328,7 @@ export default function DramaStudioPage() {
                             </div>
                         </main>
                         <SegmentDialog
+                            projectId={projectId}
                             detail={tab === "board" ? detail : undefined}
                             segmentIndex={openSegmentIndex}
                             shotId={currentShot?.id}

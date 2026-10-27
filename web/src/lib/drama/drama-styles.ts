@@ -14,9 +14,11 @@ export type DramaStyle = {
     cover?: string;
     palette: [string, string, string];
     prompt: string;
+    /** 超哥 v3.24.0 旗舰预置关联（2026-10-26 接线）：preview/参考图在外置资产库。 */
+    chaoge?: { presetId: string; medium: string };
 };
 
-type Spec = Omit<DramaStyle, "prompt"> & { medium?: string; world: string; look: string; wardrobe: string; forbid?: string };
+type Spec = Omit<DramaStyle, "prompt"> & { medium?: string; world: string; look: string; wardrobe: string; forbid?: string; chaoge?: { presetId: string; medium: string } };
 
 export const DRAMA_STYLE_CATEGORIES: Array<{ key: "all" | "hot" | DramaStyleCategory; label: string }> = [
     { key: "hot", label: "爆款" },
@@ -770,12 +772,97 @@ const SPECS: Spec[] = [
         wardrobe: "极简未来感服装",
         forbid: "杂乱场景、复古元素",
     },
+    // ===== 超哥 v3.24.0 六大旗舰风格预置（2026-10-26 接线，资产外置 nxf）=====
+    {
+        id: "chaoge-live-action-film",
+        name: "真人影视风",
+        category: "live",
+        hot: true,
+        tags: ["电影感", "写实", "剧情"],
+        description: "真实质感、电影影调与讲究的镜头调度。",
+        cover: cover("chaoge-live_action_film"),
+        palette: ["#1a1f2b", "#8b9bb4", "#e8d5b5"],
+        chaoge: { presetId: "live_action_film", medium: "live_action" },
+        world: "真实摄影成像，自然人体比例与可辨骨相，真实皮肤、发丝和材质",
+        look: "有动机的方向性主光、环境填充与反射光，受控反差、平顺高光过渡和有信息的暗部，以明暗、色温及景深组织空间纵深",
+        wardrobe: "符合剧情的现实服装，表演与运镜服务叙事",
+    },
+    {
+        id: "chaoge-live-action-drama",
+        name: "真人短剧风",
+        category: "live",
+        hot: true,
+        tags: ["短剧", "竖屏", "对白"],
+        description: "自然真实的人物与材质、干净清晰的画面、细腻有层次的光线。",
+        cover: cover("chaoge-live_action_drama"),
+        palette: ["#2b2f36", "#c9a227", "#f2ede4"],
+        chaoge: { presetId: "live_action_drama", medium: "live_action" },
+        world: "自然肤质、真实材质、清晰可读的人物与场景",
+        look: "分层光线、干净画面、细腻层次，竖屏构图主体突出，表演与表情可读",
+        wardrobe: "现代日常服装，不固定古装、暧昧剧情或竖屏比例",
+    },
+    {
+        id: "chaoge-linglong-3d",
+        name: "CG写实虚幻风",
+        category: "3d",
+        hot: true,
+        tags: ["CG", "幻想", "电影级"],
+        description: "精致的角色造型、写实的材质光影与富有幻想感的环境。",
+        cover: cover("chaoge-linglong_3d"),
+        palette: ["#141a26", "#4a6fa5", "#d4af6a"],
+        chaoge: { presetId: "linglong_3d", medium: "stylized_3d" },
+        world: "精致的角色造型、写实材质光影与富有幻想感的环境",
+        look: "电影级 CG 质感，受控布光与大气纵深",
+        wardrobe: "幻想风格服装，材质与光照物理可信",
+    },
+    {
+        id: "chaoge-pixar-3d",
+        name: "3D皮克斯画风",
+        category: "3d",
+        hot: true,
+        tags: ["皮克斯", "动画长片", "合家欢"],
+        description: "圆润鲜明的角色、细腻柔和的材质光影与富有表现力的动作。",
+        cover: cover("chaoge-pixar_3d"),
+        palette: ["#20365c", "#f5b942", "#f2f5fa"],
+        chaoge: { presetId: "pixar_3d", medium: "stylized_3d" },
+        world: "圆润鲜明的角色、细腻柔和的材质光影",
+        look: "生动的 3D 动画长片质感，视频固定首句为「3D皮克斯动画质感。」",
+        wardrobe: "色彩鲜明的卡通服装，造型富有表现力",
+    },
+    {
+        id: "chaoge-painterly-3d2d",
+        name: "3渲2厚涂风",
+        category: "3d",
+        hot: true,
+        tags: ["厚涂", "绘画感", "3渲2"],
+        description: "立体的角色与空间结合手绘厚涂笔触、鲜明块面光影。",
+        cover: cover("chaoge-painterly_3d2d"),
+        palette: ["#2d2438", "#e07040", "#f5e6c8"],
+        chaoge: { presetId: "painterly_3d2d", medium: "stylized_3d" },
+        world: "立体角色与空间结合手绘厚涂笔触",
+        look: "鲜明块面光影，富有绘画感的 3D 动画",
+        wardrobe: "厚涂笔触下的装饰性服装，色块清晰",
+    },
+    {
+        id: "chaoge-inkwash-2d",
+        name: "2D国漫水墨风",
+        category: "2d",
+        hot: true,
+        tags: ["国漫", "水墨", "2D"],
+        description: "有力度的手绘线条、粗犷水墨笔触与分层光色。",
+        cover: cover("chaoge-inkwash_2d"),
+        palette: ["#1c1c1e", "#8a8a92", "#f5f2ea"],
+        chaoge: { presetId: "inkwash_2d", medium: "handdrawn_2d" },
+        world: "有力度的手绘线条、粗犷水墨笔触",
+        look: "分层光色，鲜明的 2D 国漫美术质感，线稿清晰流畅",
+        wardrobe: "国风服装，线条表现力强",
+    },
 ];
 
 function compile(spec: Spec): DramaStyle {
-    const { medium, world, look, wardrobe, forbid, ...style } = spec;
+    const { medium, world, look, wardrobe, forbid, chaoge, ...style } = spec;
     const prompt = [medium || MEDIUM[spec.category], `题材场景：${world}`, `色彩光影：${look}`, `服化道：${wardrobe}`, `禁止：${FORBID[spec.category]}${forbid ? `、${forbid}` : ""}`].join("。");
-    return { ...style, prompt };
+    return { ...style, prompt, ...(chaoge ? { chaoge } : {}) };
 }
 
 export const DRAMA_STYLES: DramaStyle[] = SPECS.map(compile);
