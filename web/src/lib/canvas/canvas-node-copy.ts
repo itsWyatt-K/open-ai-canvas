@@ -94,6 +94,9 @@ export function isolateCopiedNodeMetadata(node: CanvasNodeData, idMap: ReadonlyM
     delete metadata.versionLabel;
     delete metadata.versionPrimary;
 
+    // 副本从当前媒体重新开始自己的版本历史。
+    delete metadata.mediaVersions;
+    delete metadata.currentMediaVersionId;
     metadata.copiedFromNodeId = node.id;
     if (node.metadata?.commerceWorkflow) {
         // 复制不继承正在收费的任务：清掉 pending/autoGenerate/旧批次，并重映射所有引用 ID。

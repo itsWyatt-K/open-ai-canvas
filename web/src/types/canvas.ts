@@ -255,6 +255,24 @@ export type CanvasSkillSnapshot = {
     tags: string[];
 };
 
+/** 媒体字段沿用 metadata 原字段名，资源引用扫描和本地缓存清理可直接识别 storageKey/content。 */
+export type CanvasMediaVersionMedia = Pick<
+    CanvasNodeMetadata,
+    "content" | "storageKey" | "previewContent" | "mimeType" | "bytes" | "durationMs" | "hasAudio" | "waveform" | "waveformVersion" | "naturalWidth" | "naturalHeight" | "videoPreview" | "imageRotation" | "assetId"
+>;
+
+export type CanvasMediaVersionGeneration = Pick<CanvasNodeMetadata, "prompt" | "model" | "producedModel" | "size" | "quality" | "seconds" | "references" | "taskId" | "taskDurationMs">;
+
+export type CanvasMediaVersion = {
+    id: string;
+    /** 展示为 V1、V2…，按创建顺序递增。 */
+    number: number;
+    createdAt: string;
+    source: "generate" | "upload";
+    media: CanvasMediaVersionMedia;
+    generation?: CanvasMediaVersionGeneration;
+};
+
 export type CanvasNodeMetadata = {
     /** 一键详情 / 一键复刻 配置节点的完整工作流状态（screens / pending / 模板文案映射等）。 */
     commerceWorkflow?: import("./commerce-workflow").CommerceWorkflow;
@@ -526,6 +544,9 @@ export type CanvasNodeMetadata = {
     versionOfNodeId?: string;
     versionLabel?: string;
     versionPrimary?: boolean;
+    /** 节点内媒体版本历史；切换版本只替换媒体字段，节点 ID 与连线保持不变。 */
+    mediaVersions?: CanvasMediaVersion[];
+    currentMediaVersionId?: string;
     copiedFromNodeId?: string;
     /** Explicit editing copy; subsequent orientation tools modify this node in place. */
     imageEditSourceNodeId?: string;

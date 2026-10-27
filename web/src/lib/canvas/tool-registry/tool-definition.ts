@@ -7,7 +7,8 @@ import type { CanvasNodeData, CanvasNodeMetadata, CanvasNodeTypeId, CanvasToolMo
 
 /** 工具栏标识——每个工具栏有独立的注册表与偏好 */
 export type ToolbarId = "main" | "selection" | "node-hover" | "add-node-menu";
-export type NodeToolbarGroup = "primary" | "portrait" | "viewpoint" | "lighting" | "panorama" | "process" | "nine_grid" | "workspace" | "utility" | "more";
+/** adjust 改当前画面、camera 换镜头或时间点、sheet 输出宫格/设定联系表、process 非生成类处理；portrait/viewpoint/lighting/panorama/nine_grid 为本地专用分组。 */
+export type NodeToolbarGroup = "primary" | "portrait" | "viewpoint" | "lighting" | "panorama" | "process" | "nine_grid" | "workspace" | "utility" | "more" | "adjust" | "camera" | "sheet";
 
 /** 工具分类——用于分组渲染、危险隔离与 separator 自动插入 */
 export type ToolCategory =
@@ -84,6 +85,7 @@ export type ToolbarHandlers = {
     onNodeDownload: (node: CanvasNodeData) => void;
     onNodeSaveAsset: (node: CanvasNodeData) => void;
     onNodeMaskEdit: (node: CanvasNodeData) => void;
+    onNodeRegionEdit?: (node: CanvasNodeData) => void;
     onNodeImageEdit: (node: CanvasNodeData) => void;
     onNodeRemoveBackground: (node: CanvasNodeData) => void;
     onNodeEmotion: (node: CanvasNodeData) => void;
@@ -104,6 +106,8 @@ export type ToolbarHandlers = {
     onNodeSubtitles: (node: CanvasNodeData) => void;
     onNodeTimeline: (node: CanvasNodeData) => void;
     onNodeEreverse: (node: CanvasNodeData) => void;
+    /** 打开媒体版本面板；只读分享页不提供。 */
+    onNodeVersions?: (node: CanvasNodeData) => void;
     onNodeReversePrompt: (node: CanvasNodeData) => void;
     onNodeToggleFreeResize: (node: CanvasNodeData) => void;
     onNodeToggleLocked: (node: CanvasNodeData) => void;
