@@ -1014,6 +1014,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                 Record<`--${string}`, string>
                         }
                         aria-label="Agent 工作台"
+                        data-popover-anchor-container
                         data-canvas-no-zoom
                         data-canvas-wheel-scroll
                         {...panelLayout.pointerHandlers}
@@ -1185,7 +1186,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         submitAccessory={
                                             <div className="flex items-center gap-1.5">
                                                 <AgentCreditRing view={presentAgentCreditUsage(run?.spentCredits, maxCredits)} />
-                                                <AgentContextRing view={presentAgentContextUsage(contextUsage)} />
+                                                <AgentContextRing view={presentAgentContextUsage(contextUsage)} theme={theme} />
                                             </div>
                                         }
                                         footer={connectorsVisible ? <AgentConnectorsBar onClose={() => setConnectorsVisible(false)} /> : null}

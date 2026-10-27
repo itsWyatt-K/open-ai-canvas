@@ -17,6 +17,8 @@ import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import type { NodeResizeCorner } from "@/lib/canvas/node-resize-geometry";
 import { useCanvasNodeResize } from "./use-canvas-node-resize";
+import { useCanvasConnectionTilt } from "./use-canvas-connection-tilt";
+import { useCanvasNodeResizeStyle } from "./canvas-node-resize-motion";
 import { CanvasNodeContent, CanvasNodeImageInfo, CanvasNodeProducedModel } from "./canvas-node-content";
 
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
@@ -31,8 +33,9 @@ type CanvasNodeProps = {
     isRelated: boolean;
     isFocusRelated: boolean;
     isConnectionTarget: boolean;
+    isConnecting?: boolean;
     connectionApproach?: Position;
-    forceInputVisible?: boolean;
+    forceInputMounted?: boolean;
     showImageInfo: boolean;
     /** 引用拼合 Frame 内的图片：隐藏边框/标题/阴影，实现无缝长图。 */
     seamlessImage?: boolean;
@@ -81,8 +84,9 @@ export const CanvasNode = React.memo(function CanvasNode({
     isRelated,
     isFocusRelated,
     isConnectionTarget,
+    isConnecting = false,
     connectionApproach,
-    forceInputVisible = false,
+    forceInputMounted = false,
     showImageInfo,
     seamlessImage = false,
     disableMediaEffects = false,
@@ -136,6 +140,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
     const showStatusTrack = Boolean(resourceLabel || data.metadata?.locked || isBatchRoot || (isBatchChild && !readOnly) || (hasMediaContent && !readOnly));
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
+    const showConnectionRails = !isConnecting && (hovered || isSelected || isFocusRelated);
     const effectiveRenderLOD: CanvasNodeRenderLOD = renderLOD === "full" || hovered || isEditingContent || isEditingTitle || mediaActive ? "full" : renderLOD;
     const showChrome = effectiveRenderLOD === "full" && (!seamlessImage || hovered || isSelected || isEditingTitle);
     const nodeState = isFocusRelated ? "focus" : isConnectionTarget ? "target" : isSelected ? "selected" : isRelated && !isBatchChild ? "related" : "idle";
@@ -143,6 +148,9 @@ export const CanvasNode = React.memo(function CanvasNode({
     const assetTags = data.metadata?.assetTags?.filter((tag) => tag.trim()) || [];
     const scriptMinHeight = data.type === CanvasNodeType.Script ? storyboardMinNodeHeight(data.metadata?.storyboardComposerHeight) : null;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const nodeRef = useRef<HTMLDivElement>(null);
+    const shellRef = useRef<HTMLDivElement>(null);
+    const resizeMotion = useCanvasNodeResizeStyle(nodeRef, data, dragOffset);
     const handleResizePointerDown = useCanvasNodeResize(data, scale, scriptMinHeight, onResize, readOnly);
 
     useEffect(() => {
@@ -192,10 +200,13 @@ export const CanvasNode = React.memo(function CanvasNode({
 
     const connectionTilt = isConnectionTarget && !disableMediaEffects && !dragOffset
         ? canvasConnectionTilt(data, connectionApproach) : undefined;
+    useCanvasConnectionTilt(nodeRef, shellRef, connectionTilt);
 
     return (
         <div
+            ref={nodeRef}
             data-node-id={data.id}
+            data-popover-anchor-container
             data-node-lod={effectiveRenderLOD}
             className={`node-element absolute flex select-none flex-col ${dragOffset ? "cursor-grabbing" : data.type === CanvasNodeType.Drawing ? "cursor-pointer" : "cursor-default"} ${isSelected && data.type === CanvasNodeType.Video ? "z-[var(--z-node-toolbar)]" : isSelected || isFocusRelated || isConnectionTarget ? "z-[var(--z-node-active)]" : "z-[var(--z-node)]"}`}
             style={{
@@ -214,6 +225,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 onHoverEnd(data.id);
             }}
             onContextMenu={(event) => onContextMenu(event, data.id)}
+            onPointerDownCapture={() => resizeMotion?.finishAll()}
         >
             {showChrome ? <NodeExternalHeader
                 node={data}
@@ -230,6 +242,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 onCancel={() => { setTitleDraft(data.title); setIsEditingTitle(false); }}
             /> : null}
             <div
+                ref={shellRef}
                 className="canvas-node-shell relative h-full w-full overflow-visible rounded-[var(--node-radius)]"
                 data-node-state={nodeState}
                 data-connection-tilt={connectionTilt ? "true" : undefined}
@@ -240,9 +253,6 @@ export const CanvasNode = React.memo(function CanvasNode({
                     border: isComposerNode || seamlessImage ? "0" : "1px solid transparent",
                     boxShadow: seamlessImage || isComposerNode || !showChrome ? "none" : isSelected || isFocusRelated ? theme.node.hoverShadow : theme.node.shadow,
                     outline: !showChrome && isActive ? `1px solid ${theme.node.activeStroke}` : undefined,
-                    "--connection-tilt-x": `${connectionTilt?.rotateX || 0}deg`,
-                    "--connection-tilt-y": `${connectionTilt?.rotateY || 0}deg`,
-                    transformOrigin: connectionTilt?.origin,
                 } as React.CSSProperties}
                 onMouseDown={(event) => onMouseDown(event, data.id)}
                 onDoubleClick={(event) => {
@@ -398,8 +408,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                 </> : null}
             </div>
 
-            {(showChrome || forceInputVisible) && !readOnly && data.type !== CanvasNodeType.Script && data.type !== CanvasNodeType.BatchTable ? <ConnectionSideRail side="left" scale={scale} theme={theme} visible={hovered || forceInputVisible} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "target", undefined, anchorRatio)} /> : null}
-            {showChrome && !readOnly && data.type !== CanvasNodeType.Script && data.type !== CanvasNodeType.Config && showOutputConnection ? <ConnectionSideRail side="right" scale={scale} theme={theme} visible={hovered} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "source", undefined, anchorRatio)} /> : null}
+            {(showChrome || forceInputMounted) && !readOnly && data.type !== CanvasNodeType.Script && data.type !== CanvasNodeType.BatchTable ? <ConnectionSideRail side="left" scale={scale} theme={theme} visible={showConnectionRails} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "target", undefined, anchorRatio)} /> : null}
+            {showChrome && !readOnly && data.type !== CanvasNodeType.Script && data.type !== CanvasNodeType.Config && showOutputConnection ? <ConnectionSideRail side="right" scale={scale} theme={theme} visible={showConnectionRails} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "source", undefined, anchorRatio)} /> : null}
 
         </div>
     );
@@ -417,9 +427,10 @@ function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProp
         previous.isRelated === next.isRelated &&
         previous.isFocusRelated === next.isFocusRelated &&
         previous.isConnectionTarget === next.isConnectionTarget &&
+        previous.isConnecting === next.isConnecting &&
         previous.connectionApproach?.x === next.connectionApproach?.x &&
         previous.connectionApproach?.y === next.connectionApproach?.y &&
-        previous.forceInputVisible === next.forceInputVisible &&
+        previous.forceInputMounted === next.forceInputMounted &&
         previous.showImageInfo === next.showImageInfo &&
         previous.seamlessImage === next.seamlessImage &&
         previous.disableMediaEffects === next.disableMediaEffects &&
@@ -675,7 +686,7 @@ function NodeStatusBadge({ status }: { status: "loading" | "success" | "error" }
     );
 }
 
-function ConnectionSideRail({ side, scale, theme, visible = false, onPointerDown }: { side: "left" | "right"; scale: number; theme: CanvasTheme; visible?: boolean; onPointerDown: (event: React.PointerEvent, anchorRatio: number) => void }) {
+function ConnectionSideRail({ side, scale, theme, visible, onPointerDown }: { side: "left" | "right"; scale: number; theme: CanvasTheme; visible: boolean; onPointerDown: (event: React.PointerEvent, anchorRatio: number) => void }) {
     const handleRef = useRef<HTMLSpanElement>(null);
     const [railHovered, setRailHovered] = useState(false);
     const inverseScale = 1 / Math.max(scale, 0.05);
@@ -715,7 +726,7 @@ function ConnectionSideRail({ side, scale, theme, visible = false, onPointerDown
         <button
             type="button"
             data-canvas-connection-rail={side}
-            className={`group pointer-events-auto absolute top-1/2 z-[var(--node-z-overlay)] flex -translate-y-1/2 items-center justify-center touch-none cursor-crosshair rounded-full outline-none transition-opacity duration-150 ${visible || railHovered ? "opacity-100" : "opacity-0"}`}
+            className={`group pointer-events-auto absolute top-1/2 z-[var(--node-z-overlay)] flex -translate-y-1/2 items-center justify-center touch-none cursor-crosshair rounded-full outline-none transition-opacity duration-150 focus-visible:opacity-100 ${visible || railHovered ? "opacity-100" : "opacity-0"}`}
             style={{ width: railSize, height: `min(100%, ${railSize}px)`, cursor: "crosshair", ...(side === "left" ? { right: "100%" } : { left: "100%" }) }}
             onPointerEnter={(event) => {
                 setRailHovered(true);

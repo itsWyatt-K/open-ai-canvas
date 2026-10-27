@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	agenttool "yingce/backend/internal/agent/tool"
 	"yingce/backend/internal/ecommerce"
 	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
@@ -29,15 +30,18 @@ func TestAgentEcommercePhase4ToolsDeclared(t *testing.T) {
 			t.Fatalf("只读模式不得下发声计费/写工具 %s", hidden)
 		}
 	}
-	// 强制审批门：无论权限模式，confirm_plan 都要过审批。
+	// 强制审批门（v1.6.9 注册表语义）：KindMedia 工具无论权限模式都过审批。
 	if !cloudAgentWrite("ecommerce_confirm_plan") {
 		t.Fatal("ecommerce_confirm_plan 必须登记为写操作（审批链判定）")
 	}
-	if !cloudAgentAlwaysApprove("ecommerce_confirm_plan") {
-		t.Fatal("ecommerce_confirm_plan 必须进入强制审批集合（计费动作）")
+	if !agenttool.Of("ecommerce_confirm_plan").ApprovalRequired("auto") {
+		t.Fatal("ecommerce_confirm_plan 必须强制审批（计费动作，KindMedia 全模式审批）")
 	}
-	if cloudAgentAlwaysApprove("ecommerce_apply_platform") {
-		t.Fatal("ecommerce_apply_platform 不扣费，不应强制审批")
+	if !agenttool.Of("ecommerce_confirm_plan").ApprovalRequired("read_only") {
+		t.Fatal("ecommerce_confirm_plan 只读模式同样强制审批")
+	}
+	if agenttool.Of("ecommerce_apply_platform").ApprovalRequired("auto") {
+		t.Fatal("ecommerce_apply_platform 不扣费，auto 模式不应强制审批")
 	}
 	// 只读白名单不得漏进计费工具。
 	for _, name := range []string{"ecommerce_apply_platform", "ecommerce_plan_product", "ecommerce_confirm_plan"} {

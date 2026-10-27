@@ -36,6 +36,23 @@ func cloudAgentToolHandlers() map[string]cloudAgentToolHandler {
 		agenttool.CanvasApplyOps:         {Write: applyCloudAgentCanvas, Preview: cloudAgentPreviewCanvas},
 		agenttool.CanvasArrangeNodes:     {Write: applyCloudAgentArrangeNodes, Preview: cloudAgentPreviewArrange},
 		agenttool.GenerateMedia:          {Pipeline: cloudAgentToolMedia},
+		// ===== 本地增量工具执行绑定（2026-10-27 合流）=====
+		// 本地 handler 签名 (services, userID, call) 经适配器接入注册表 Read 链。
+		agenttool.EcommerceGetProductDetail: {Read: cloudAgentAdaptLocalRead(cloudAgentEcommerceGetProductDetail)},
+		agenttool.EcommerceUpdateSlotPrompt: {Read: cloudAgentAdaptLocalRead(cloudAgentEcommerceUpdateSlotPrompt)},
+		agenttool.EcommerceApplyPlatform:    {Read: cloudAgentAdaptLocalRead(cloudAgentEcommerceApplyPlatform)},
+		agenttool.EcommercePlanProduct:      {Read: cloudAgentAdaptLocalRead(cloudAgentEcommercePlanProduct)},
+		agenttool.EcommerceConfirmPlan:      {Read: cloudAgentAdaptLocalRead(cloudAgentEcommerceConfirmPlan)},
+		agenttool.DirectorValidatePrompt:    {Read: cloudAgentAdaptLocalRead(cloudAgentDirectorValidatePrompt)},
+		agenttool.DirectorValidateLedger:    {Read: cloudAgentAdaptLocalRead(cloudAgentDirectorValidateLedger)},
+	}
+}
+
+// cloudAgentAdaptLocalRead 把本地 (services, userID, call) 签名的 handler 适配为
+// 注册表 Read handler（repo/runtime 参数忽略——本地工具不经过画布事务链）。
+func cloudAgentAdaptLocalRead(fn func([]*Service, string, cloudAgentCall) (any, error)) cloudAgentReadHandler {
+	return func(_ *repository.Repository, userID string, _ *cloudAgentRuntime, call cloudAgentCall, services ...*Service) (any, error) {
+		return fn(services, userID, call)
 	}
 }
 

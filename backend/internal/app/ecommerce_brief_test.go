@@ -30,7 +30,7 @@ func TestUpdateEcommerceSlotBriefRecompilesPrompt(t *testing.T) {
 		ScreenTitle:          &title,
 		SubTitle:             &sub,
 		SceneDesc:            &scene,
-		LayoutType:           strPtr("center-closeup"),
+		LayoutType:           ecomBriefStrPtr("center-closeup"),
 		PreserveProductExact: &preserve,
 	})
 	if err != nil {
@@ -186,4 +186,4 @@ func TestUpdateEcommerceSlotBriefBlockedWhileRunning(t *testing.T) {
 	}
 }
 
-func strPtr(value string) *string { return &value }
+func ecomBriefStrPtr(value string) *string { return &value }

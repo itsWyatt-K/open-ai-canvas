@@ -12,8 +12,8 @@ import (
 )
 
 // 总架构师施工令（2026-10-27）：本地 55-63 号段已 applied 严禁改动；上游新增迁移
-// 按 64/65/66 顺延落库。本刀（合入 v1.6.9）落 64，CurrentSchemaVersion=64。
-const CurrentSchemaVersion int64 = 64
+// 按 64/65/66 顺延落库。本刀（合入 v1.6.9.1）落 65，CurrentSchemaVersion=65。
+const CurrentSchemaVersion int64 = 65
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -258,6 +258,15 @@ var schemaMigrations = []migration{
 	{version: 64, name: "agent_memory_proposals", checksum: "sha256:agent-memory-proposals-v64-20261027", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.AgentLesson{}, &model.AgentMemorySetting{}, &model.AgentMemoryProposal{}, &model.AgentMemoryRevision{})
 	}},
+	// —— 上游 v1.6.9.1 新增迁移（重写号段 65）——
+	{version: 65, name: "channel_model_protocol_length", checksum: "sha256:channel-model-protocol-length-v65-20261027", apply: migrateChannelModelProtocolLength},
+}
+
+func migrateChannelModelProtocolLength(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		return tx.Exec("ALTER TABLE channel_models ALTER COLUMN protocol TYPE varchar(64)").Error
+	}
+	return tx.Migrator().AlterColumn(&model.ChannelModel{}, "Protocol")
 }
 
 func migratePrefixedIDSequenceReconcile(tx *gorm.DB) error {
