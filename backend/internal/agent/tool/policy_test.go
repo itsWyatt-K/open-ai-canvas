@@ -8,12 +8,12 @@ import (
 
 // 迁移前散落在 app 包里的分类表，逐字抄录用于证明注册表推导结果等价。
 var (
-	legacyWrite      = []string{"canvas_apply_ops", "canvas_arrange_nodes", "generate_media", "image_layer_split", "canvas_create_storyboard", "canvas_edit_storyboard", "canvas_edit_batch_table", "canvas_create_character", "previs_scene_create", "previs_apply_patch"}
+	legacyWrite      = []string{"canvas_apply_ops", "canvas_arrange_nodes", "generate_media", "image_layer_split", "canvas_create_storyboard", "canvas_edit_storyboard", "canvas_edit_batch_table", "canvas_create_character", "previs_scene_create", "previs_apply_patch", "ecommerce_update_slot_prompt", "ecommerce_apply_platform", "ecommerce_plan_product", "ecommerce_confirm_plan"}
 	legacyCacheable  = []string{"agent_profile_read", "canvas_get_state", "canvas_read_storyboard", "previs_scene_read", "skill_read_file", "model_list"}
-	legacyReadOnly   = []string{"agent_profile_read", "canvas_get_state", "canvas_read_text", "canvas_read_storyboard", "previs_scene_read", "canvas_read_batch_table", "canvas_list_node_types", "skill_read_file", "skill_search", "model_list", "recall_lessons", "task_get"}
+	legacyReadOnly   = []string{"agent_profile_read", "canvas_get_state", "canvas_read_text", "canvas_read_storyboard", "previs_scene_read", "canvas_read_batch_table", "canvas_list_node_types", "skill_read_file", "skill_search", "model_list", "recall_lessons", "task_get", "ecommerce_get_product_detail", "director_validate_prompt", "director_validate_ledger"}
 	legacyCanvasRev  = []string{"canvas_get_state", "canvas_read_text", "canvas_read_storyboard", "previs_scene_read"}
 	legacyOffsetNorm = []string{"skill_read_file", "canvas_get_state", "canvas_read_text", "canvas_read_storyboard", "canvas_read_batch_table"}
-	legacyMedia      = []string{"generate_media", "image_layer_split"}
+	legacyMedia      = []string{"generate_media", "image_layer_split", "ecommerce_plan_product", "ecommerce_confirm_plan"}
 )
 
 func pick(pred func(Policy) bool) []string {

@@ -36,6 +36,7 @@ export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onCl
             { id: "modules-ecommerce", title: "电商详情页工坊", icon: Home, to: "/ecommerce" },
             { id: "modules-projects", title: "AI 短剧制作", icon: Home, to: "/projects" },
             { id: "modules-ereverse", title: "爆款视觉反推", icon: Home, to: "/ereverse" },
+
             ...(features.taskCenterEnabled ? [toolEntry("tasks", "/tasks")] : []),
             toolEntry("assets", "/assets"),
             toolEntry("skills", "/skills"),

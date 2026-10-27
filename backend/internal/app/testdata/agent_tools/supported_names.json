@@ -27,5 +27,12 @@
   "canvas_edit_batch_table",
   "canvas_apply_ops",
   "canvas_arrange_nodes",
-  "generate_media"
+  "generate_media",
+  "ecommerce_get_product_detail",
+  "ecommerce_update_slot_prompt",
+  "ecommerce_apply_platform",
+  "ecommerce_plan_product",
+  "ecommerce_confirm_plan",
+  "director_validate_prompt",
+  "director_validate_ledger"
 ]

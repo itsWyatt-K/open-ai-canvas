@@ -292,12 +292,9 @@ export function CanvasNodeToolbar({
         onNodeSaveAsset: onSaveAsset, onNodeMaskEdit: onMaskEdit, onNodeRemoveBackground: onRemoveBackground, onNodeEmotion: onEmotion, onNodePortraitTexture: onPortraitTexture, onNodeCrop: onCrop,
         onNodeCreateEditCopy: onCreateEditCopy, onNodeRotateImage: onRotateImage,
         onNodeSplit: (target) => onSplit(target, { rows: 2, columns: 2 }), onNodeUpscale: onUpscale, onNodeSuperResolve: onSuperResolve, onNodeAngle: onAngle, onNodeViewImage: onViewImage,
-======
         onNodeExtractVideoFrames: onExtractVideoFrames, onNodeExtractAudioFromVideo: onExtractAudioFromVideo, onNodeTrimVideoSegments: onTrimVideoSegments, onNodeEnhanceVideo: onEnhanceVideo, onNodeReversePrompt: onReversePrompt, onNodeToggleFreeResize: onToggleFreeResize,
-        onNodeSubtitles: onSubtitles, onNodeTimeline: onTimeline, onNodeToggleLocked: onToggleLocked, onNodeCopyPrompt: copyImagePrompt,
-        onNodeExtractVideoFrames: onExtractVideoFrames, onNodeExtractAudioFromVideo: onExtractAudioFromVideo, onNodeTrimVideoSegments: onTrimVideoSegments, onNodeReversePrompt: onReversePrompt, onNodeToggleFreeResize: onToggleFreeResize,
         onNodeSubtitles: onSubtitles, onNodeTimeline: onTimeline, onNodeEreverse: onEreverse, onNodeToggleLocked: onToggleLocked, onNodeCopyPrompt: copyImagePrompt,
- v1.6.9
+
     } as Partial<ToolbarHandlers> as ToolbarHandlers;
 
     const nodeHoverCtx: ToolContext = {
@@ -405,9 +402,8 @@ export function CanvasNodeToolbar({
 
 function NodeDockToolButton({ tool, iconOnly = false }: { tool: ToolbarTool; iconOnly?: boolean }) {
     return (
-======
         // 默认 250px 宽度会把“名称：说明”折成两行，放宽到 360px 让常见说明单行显示。
-        <Tooltip title={tool.description ? `${tool.label}：${tool.description}` : tool.label} styles={{ root: { maxWidth: 360 } }}> v1.6.9
+        <Tooltip title={tool.description ? `${tool.label}：${tool.description}` : tool.label} styles={{ root: { maxWidth: 360 } }}>
         <button
             type="button"
             className={`aceternity-dock-command is-labeled pointer-events-auto inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[var(--dock-item-radius)] px-2.5 outline-none ${tool.active ? "is-active" : ""} ${tool.danger ? "is-danger" : ""}`}

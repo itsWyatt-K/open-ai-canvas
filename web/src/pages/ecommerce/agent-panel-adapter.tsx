@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CanvasCloudAgentPanel } from "@/components/canvas/canvas-cloud-agent-panel";
 import { createCanvasProjectWithRemoteSync } from "@/services/user-data-sync";
 import { useEcommerceStore } from "@/stores/canvas/use-ecommerce-store";
+import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import { resourceFileUrl } from "@/services/api/resources";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import type { EcommerceProductDetail } from "@/services/api/ecommerce";
@@ -131,20 +132,22 @@ export function AgentWorkbenchPanel({
     if (!canvasId) {
         return <div className="ecommerce-agent-placeholder">{canvasState || "工作台画布准备中…"}</div>;
     }
+    // v1.6.9 合流：平台级 Agent 面板改为零 props（从 useGlobalAgentStore 读上下文），
+    // 电商页改为发布 AgentCanvasContext 供面板消费，卸载时清空避免跨页串扰。
+    useEffect(() => {
+        useGlobalAgentStore.getState().setCanvas({
+            canvasId,
+            nodeCount: slots.length > 0 ? slots.length : product ? 1 : 0,
+            selectedNodeIds: [],
+            references,
+            prefillRequest,
+            runningNodeId: null,
+        });
+        return () => useGlobalAgentStore.getState().setCanvas(null);
+    }, [canvasId, slots.length, product, references, prefillRequest]);
     return (
         <div className="ecommerce-agent-panel-host" data-canvas-state={canvasState || "ready"} data-product-count={productCount}>
-            <CanvasCloudAgentPanel
-                canvasId={canvasId}
-                nodeCount={slots.length > 0 ? slots.length : product ? 1 : 0}
-                selectedNodeIds={[]}
-                references={references}
-                prefillRequest={prefillRequest}
-                open={open}
-                onOpen={() => onOpenChange?.(true)}
-                onCollapse={() => onOpenChange?.(false)}
-                canvasNodes={[]}
-                runningNodeId={null}
-            />
+            <CanvasCloudAgentPanel />
         </div>
     );
 }

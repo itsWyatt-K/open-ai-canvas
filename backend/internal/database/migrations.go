@@ -12,8 +12,8 @@ import (
 )
 
 // 总架构师施工令（2026-10-27）：本地 55-63 号段已 applied 严禁改动；上游新增迁移
-// 按 64/65/66 顺延落库。本刀（合入 v1.6.9.1）落 65，CurrentSchemaVersion=65。
-const CurrentSchemaVersion int64 = 65
+// 按 64/65/66 顺延落库。第三刀（合入 v1.6.9.2+main）落 66，CurrentSchemaVersion=66。
+const CurrentSchemaVersion int64 = 66
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -260,6 +260,11 @@ var schemaMigrations = []migration{
 	}},
 	// —— 上游 v1.6.9.1 新增迁移（重写号段 65）——
 	{version: 65, name: "channel_model_protocol_length", checksum: "sha256:channel-model-protocol-length-v65-20261027", apply: migrateChannelModelProtocolLength},
+
+	// —— 上游 v1.6.9.2 新增迁移（重写号段 66）——
+	{version: 66, name: "user_feedbacks", checksum: "sha256:user-feedbacks-v66-20261027", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.UserFeedback{})
+	}},
 }
 
 func migrateChannelModelProtocolLength(tx *gorm.DB) error {
@@ -680,6 +685,16 @@ func MigrateSchema(db *gorm.DB) error {
 			}
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("读取数据库迁移 %d：%w", item.version, err)
+			}
+			// 按 name 去重的幂等守卫（2026-10-27 合流）：同名迁移若已在其他号位应用过
+			//（本地 64/65/66 ↔ 上游 58/59/60 重写号段场景），视为已完成，跳过重放。
+			var byName schemaMigration
+			nameErr := tx.First(&byName, "name = ?", item.name).Error
+			if nameErr == nil {
+				continue
+			}
+			if !errors.Is(nameErr, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("读取数据库迁移 %s：%w", item.name, nameErr)
 			}
 			if err := item.apply(tx); err != nil {
 				return fmt.Errorf("执行数据库迁移 %d（%s）：%w", item.version, item.name, err)

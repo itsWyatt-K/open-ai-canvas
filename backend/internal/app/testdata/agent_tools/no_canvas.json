@@ -357,5 +357,215 @@
       }
     },
     "type": "function"
+  },
+  {
+    "function": {
+      "description": "读取电商商品任务与全部槽位（主图/详情页）的最新状态、文案与提示词。用于在改稿前确认当前值；productId 见当前会话上下文（商品 ID）。",
+      "name": "ecommerce_get_product_detail",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "productId": {
+            "description": "商品任务 ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "修改电商某个槽位的文案与提示词（仅改文字参数，不触发生图、不扣费）。running 或 uncertain 状态的槽位会被拒绝；promptOverride 非空时优先级最高且不会被后续 AI 重策划覆盖。修改后需刷新商品详情才能看到。",
+      "name": "ecommerce_update_slot_prompt",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "copy": {
+            "description": "画面文案（可空字符串表示纯图无字）",
+            "type": "string"
+          },
+          "productId": {
+            "description": "商品任务 ID",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "画面描述/生图提示词（可空，空则保留原值）",
+            "type": "string"
+          },
+          "promptOverride": {
+            "description": "完整提示词覆盖（非空时最高优先；传空字符串表示清除覆盖）",
+            "type": "string"
+          },
+          "slotId": {
+            "description": "槽位 ID，可从 ecommerce_get_product_detail 的 slots[].id 取得",
+            "type": "string"
+          },
+          "title": {
+            "description": "屏主题（可空，空则保留原值）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productId",
+          "slotId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "切换电商商品目标平台（6 平台规格）。按平台模板重建未派发槽位；不派发生图、不扣费，已派发槽位不受影响。",
+      "name": "ecommerce_apply_platform",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "description": "平台 key：taobao(淘宝/天猫)、douyin(抖音/视频号)、pinduoduo(拼多多)、jd(京东)、amazon(亚马逊)、xiaohongshu(小红书)",
+            "type": "string"
+          },
+          "productId": {
+            "description": "商品任务 ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productId",
+          "platform"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "派发 AI 视觉策划（看图提炼卖点、生成分屏企划；按文本模型计费）。完成后用 ecommerce_get_product_detail 查看；生图确认另走 ecommerce_confirm_plan 审批。渠道/模型可空，空则回退商品派发快照。 模型：logicalModelId 或 channelId+channelModelKey，互斥且完整，不传 null/空白。generate_media 可继承草稿或本轮同条件唯一候选，多候选不代选。",
+      "name": "ecommerce_plan_product",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "channelId": {
+            "description": "视觉文本渠道 ID（可空，空则回退商品快照）",
+            "type": "string"
+          },
+          "model": {
+            "description": "视觉文本模型名（可空，空则回退商品快照）",
+            "type": "string"
+          },
+          "productId": {
+            "description": "商品任务 ID",
+            "type": "string"
+          },
+          "styleReferenceIds": {
+            "items": {
+              "description": "风格参考资源 ID；仅参与策划不进生图",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          }
+        },
+        "required": [
+          "productId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "确认电商企划并真实派发生图（**计费动作，必须用户审批**；执行前已做余额预检）。按平台规范派发全部待生成槽位，超并发上限自动排队顺延不视为失败。仅「待确认方案/未开始」状态可调用。 模型：logicalModelId 或 channelId+channelModelKey，互斥且完整，不传 null/空白。generate_media 可继承草稿或本轮同条件唯一候选，多候选不代选。",
+      "name": "ecommerce_confirm_plan",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "channelId": {
+            "description": "生图渠道 ID（可空，空则回退商品快照）",
+            "type": "string"
+          },
+          "model": {
+            "description": "生图模型名（可空，空则回退商品快照）",
+            "type": "string"
+          },
+          "productId": {
+            "description": "商品任务 ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "交付即梦/LibTV 视频提示词前的确定性门禁自检。校验栏目存在与顺序、字符预算（正文5000硬上限/4200常规目标、分栏软上限）、平台素材语法（即梦裸@与绑定后简称、LibTV占位符、外部【本批上传ID映射】双向对齐）、声音模式（干声绑定/模型配音/后期配音）、镜头固定字段与景别、一镜到底声明、时间码连续性与单批时长上限。返回 ok/charCount/errors/warnings；errors 必须逐项修复后重跑。",
+      "name": "director_validate_prompt",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "assetMode": {
+            "description": "mapped=素材映射；text=纯文字；hybrid=混合。默认 mapped",
+            "type": "string"
+          },
+          "mode": {
+            "description": "new=全新生成；extend=视频延长；edit=视频编辑。默认 new",
+            "type": "string"
+          },
+          "modelVersion": {
+            "description": "Seedance 2.5 或 2.0（决定单批时长上限 30s/15s）。默认 2.5",
+            "type": "string"
+          },
+          "platform": {
+            "description": "jimeng=即梦；libtv=LibTV。默认 jimeng",
+            "type": "string"
+          },
+          "text": {
+            "description": "完整提示词文本，可含外部【本批上传ID映射】表",
+            "type": "string"
+          },
+          "voiceMode": {
+            "description": "mapped_dry_voice=干声绑定；model_voice=模型配音；post_dub=后期配音。默认 mapped_dry_voice",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "交付 Chaoge 项目完整资产台账或轻量制作状态 Markdown 前的确定性门禁自检。校验 YAML 前置区 11 个必填字段与枚举、full_ledger 13 个/light_state 9 个必选二级标题、轻量状态本地核验禁用词、稳定 ID 重复。返回 ok/recordType/stage/route/errors/warnings。",
+      "name": "director_validate_ledger",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "description": "完整台账或制作状态的 Markdown 正文",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
   }
 ]

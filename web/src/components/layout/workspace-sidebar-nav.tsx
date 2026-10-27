@@ -50,6 +50,7 @@ function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[];
             items: [
                 { id: "canvas", title: "自由画布", icon: InfinityIcon, to: "/canvas" },
                 { id: "modules", title: "固定模块", icon: LayoutGridIcon, to: "/modules" },
+
             ],
         },
         {
