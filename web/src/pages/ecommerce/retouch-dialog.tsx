@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Input, Select } from "antd";
-import { Eraser, Lightbulb, Scissors, Type, Download, Layers } from "lucide-react";
+import { Eraser, Lightbulb, Scissors, Sparkles, Type, Download, Layers } from "lucide-react";
 
 import {
     ECOMMERCE_LAYOUT_LABELS,
@@ -22,13 +22,15 @@ import {
     type EcommerceTextLayer,
 } from "@/services/api/ecommerce";
 import { AppModal } from "@/components/ui/product/app-modal";
-import { NXF_BASE, nxfPost, urlToDataUrl } from "./vision-client";
+import { NXF_BASE, nxfPost, uploadDataUrlAsResource, urlToDataUrl } from "./vision-client";
 
 type Props = {
     slot: EcommerceSlotSummary;
     productSourceResourceId: string;
     /** 商品透明主体（BiRefNet，ProductCutoutCard 提取；未出图模式的海报草图/四层树用）。 */
     productCutoutUrl?: string;
+    /** 用户反馈闭环：以当前草图/合成图为垫图，派发正式生图（由父组件带模型口径执行）。 */
+    onGenerateFromSketch?: (sketchResourceId: string) => Promise<void>;
     onClose: () => void;
     onChanged: () => void | Promise<void>;
 };
@@ -42,7 +44,7 @@ const LIGHT_OPTIONS = [
     { label: "右下光", value: "right-bottom" },
 ];
 
-export function EcommerceRetouchDialog({ slot, productSourceResourceId, productCutoutUrl, onClose, onChanged }: Props) {
+export function EcommerceRetouchDialog({ slot, productSourceResourceId, productCutoutUrl, onGenerateFromSketch, onClose, onChanged }: Props) {
     const { message } = App.useApp();
     const [manifest, setManifest] = useState<EcommerceLayerManifest>(() => ({
         background_layer_url: slot.layerManifest?.background_layer_url ?? "",
@@ -198,6 +200,34 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
         }
     }, [slot.id, manifest, onChanged, onClose, message]);
 
+    // ---------------- 🎨 草图垫图出图（用户反馈闭环） ----------------
+    // 把当前草图/合成图上传为资源，作为 style 垫图派发正式生图；
+    // 商品主体仍由 product 源图锁定（通道 B），草图只贡献构图与排版意图。
+    const handleGenerateFromSketch = useCallback(async () => {
+        const sketch = manifest.composed_image_url || composedImage;
+        if (!sketch) {
+            message.info("还没有可用的草图：先完成抠图或排版");
+            return;
+        }
+        if (!onGenerateFromSketch) {
+            message.info("当前入口不支持垫图生成，请从分镜卡「单独生成此屏」走");
+            return;
+        }
+        setBusy("generate");
+        try {
+            await saveEcommerceSlotLayers(slot.id, manifest);
+            const resourceId = await uploadDataUrlAsResource(sketch, `${slot.slotKey}-sketch-v${slot.currentVersion + 1}.png`);
+            await onGenerateFromSketch(resourceId);
+            message.success("已按草图垫图派发正式生图；完成后本屏自动更新");
+            await onChanged();
+            onClose();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "垫图派发失败");
+        } finally {
+            setBusy("");
+        }
+    }, [manifest, composedImage, slot, onGenerateFromSketch, onChanged, onClose, message]);
+
     const handleExportPng = useCallback(() => {
         if (!manifest.composed_image_url) {
             message.info("尚无合成图可导出");
@@ -290,6 +320,17 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                     <div className="flex items-center gap-1.5">
                         <Button onClick={onClose}>取消</Button>
                         <Button type="primary" onClick={() => void handleSave()}>保存四层清单</Button>
+                        {onGenerateFromSketch ? (
+                            <Button
+                                type="primary"
+                                className="!bg-gradient-to-r !from-indigo-500 !to-fuchsia-500 !text-white !border-none"
+                                icon={<Sparkles className="size-4" />}
+                                loading={busy === "generate"}
+                                onClick={() => void handleGenerateFromSketch()}
+                            >
+                                🎨 按草图生成正式图
+                            </Button>
+                        ) : null}
                     </div>
                 </div>
             }

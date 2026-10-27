@@ -6,10 +6,11 @@
 // 顶栏只保留纯工具按钮（历史轮次/复制/重试/下载）；编排动作全部收进向导动线。
 // M3 编排器：确认方案 → 服务端按容量派发 → 轮询对账；Agent 面板为悬浮直挂（无 Drawer 空壳）。
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router";
 import { App, Button, Empty, Input, Select } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import {
-    ArrowLeft, ChevronDown, ChevronUp, CopyPlus, Download, FileArchive, History, Layers, MessageCircle,
+    ArrowLeft, ChevronDown, ChevronUp, CopyPlus, Download, ExternalLink, FileArchive, History, Layers, MessageCircle,
     Pencil, RotateCcw, Rocket, Settings2, Square, Wand2, Zap,
 } from "lucide-react";
 
@@ -37,11 +38,13 @@ import {
     type EcommerceUserBrief,
 } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
+import { useEcommerceStore } from "@/stores/canvas/use-ecommerce-store";
 import { useConfigStore } from "@/stores/use-config-store";
 import { AgentWorkbenchPanel, useEcommerceWorkbenchCanvas } from "./agent-panel-adapter";
 import { EcommerceSlotEditorDialog } from "./slot-editor-dialog";
 import { EcommerceRetouchDialog } from "./retouch-dialog";
 import { ProductCutoutCard } from "./product-cutout-card";
+import { appendImageNodeToCanvas } from "./canvas-bridge";
 import { sellingPointPills, stripMarkdown } from "@/lib/markdown-strip";
 import { downloadBlob, mergeSlotImagesToLongImage } from "./long-image";
 import { resourceFileUrl } from "@/services/api/resources";
@@ -86,6 +89,7 @@ export function EcommerceTaskDetail({
     onOpenConfig?: () => void;
 }) {
     const { message, modal } = App.useApp();
+    const navigate = useNavigate();
     const detail = useEcommerceWorkspaceStore((state) => (productId ? state.detailById[productId] : undefined));
     const loading = useEcommerceWorkspaceStore((state) => state.detailLoading);
     const refreshDetail = useEcommerceWorkspaceStore((state) => state.refreshDetail);
@@ -187,7 +191,7 @@ export function EcommerceTaskDetail({
     // 阶段 5 返工：单屏重派发必须显式带「渠道 + 模型」——与确认整组方案同一口径。
     // 老商品没有派发快照时，不带参数就只能由后端报「请先选择生图模型与渠道」。
     const requestSlotRegenerate = useCallback(
-        async (slotId: string, patch: EcommerceSlotPromptBody = {}) => {
+        async (slotId: string, patch: EcommerceSlotPromptBody = {}, extra?: { styleReferenceResourceIds?: string[] }) => {
             if (!config.imageModel || !isAiConfigReady(config, config.imageModel)) {
                 throw new Error("请先在右侧「生成配置」选择可用的生图模型，再重新生成");
             }
@@ -196,9 +200,37 @@ export function EcommerceTaskDetail({
             return regenerateEcommerceSlot(slotId, patch, {
                 channelId: requestConfig.channelId,
                 model: modelOptionName(config.imageModel),
+                ...extra,
             });
         },
         [config, isAiConfigReady],
+    );
+
+    // 草图→正式图闭环（返工令三）：精修台上手绘/排版的合成草图上传为资源后，
+    // 以 style 垫图角色塞进该屏的重新生成——构图与文案布局跟着草图走。
+    const handleGenerateFromSketch = useCallback(
+        async (slotId: string, sketchResourceId: string) => {
+            await requestSlotRegenerate(slotId, {}, { styleReferenceResourceIds: [sketchResourceId] });
+        },
+        [requestSlotRegenerate],
+    );
+
+    // 返工令四：成品图/原图一键送入「电商工作台」画布——画布对图片节点内置了
+    // 创建编辑副本（垫图再创作）、画质增强、方向校正、下载、入素材库等全套工具，
+    // 电商页不再重复造轮子，直接复用。
+    const handleSendToCanvas = useCallback(
+        async (resourceId: string, title: string) => {
+            let canvasId = agentCanvasId;
+            if (!canvasId) {
+                await ensureCanvas();
+                canvasId = useEcommerceStore.getState().workbenchCanvasId || "";
+            }
+            if (!canvasId) throw new Error("工作台画布创建失败，请稍后重试");
+            await appendImageNodeToCanvas(canvasId, resourceId, title);
+            message.success("已送入工作台画布：可用「创建编辑副本」垫图再创作");
+            navigate(`/canvas/${canvasId}`);
+        },
+        [agentCanvasId, ensureCanvas, message, navigate],
     );
 
     // 长图下载：按屏序取已完成槽位的资源，浏览器本地栅格化（不上传、不改动原图）。
@@ -712,6 +744,7 @@ export function EcommerceTaskDetail({
                         sourceResourceId={product.sourceResourceId}
                         onCutout={setProductCutout}
                         onOpenRetouch={() => setRetouchSlotId(detail.slots[0]?.id ?? null)}
+                        onSendToCanvas={() => void handleSendToCanvas(product.sourceResourceId, product.name || "商品原图")}
                     />
 
                     {/* 第一步：平台与规格（任何状态都保留可展开入口） */}
@@ -923,6 +956,7 @@ export function EcommerceTaskDetail({
                                         onCopyBlur={(value) => handleSlotCopyBlur(slot.id, value, slot.copy || "")}
                                         onBriefSave={(body) => handleBriefSave(slot.id, body)}
                                         onRetouch={() => setRetouchSlotId(slot.id)}
+                                        onSendToCanvas={() => void handleSendToCanvas(slot.resourceId!, slot.title || `${slot.slotKey} 成品图`)}
                                     />
                                 ))}
                             </div>
@@ -994,6 +1028,7 @@ export function EcommerceTaskDetail({
                     slot={detail.slots.find((item) => item.id === retouchSlotId) ?? detail.slots[0]}
                     productSourceResourceId={product.sourceResourceId}
                     productCutoutUrl={productCutout}
+                    onGenerateFromSketch={(sketchResourceId) => handleGenerateFromSketch(retouchSlotId, sketchResourceId)}
                     onClose={() => setRetouchSlotId(null)}
                     onChanged={async () => {
                         await refreshDetail(productId);
@@ -1068,7 +1103,7 @@ function StepSection({
  *   - 未出图 → 分镜脚本卡：场景定位 + 可快改的画面文案 + 构图摘要 + 详细编辑/单独生成。
  */
 function SlotCard({
-    slot, index, total, highlighted, generating, productCutoutUrl, onEdit, onGenerate, onCopyBlur, onBriefSave, onRetouch,
+    slot, index, total, highlighted, generating, productCutoutUrl, onEdit, onGenerate, onCopyBlur, onBriefSave, onRetouch, onSendToCanvas,
 }: {
     slot: EcommerceProductDetail["slots"][number];
     index: number;
@@ -1084,6 +1119,8 @@ function SlotCard({
     onBriefSave: (body: EcommerceBriefBody) => Promise<void>;
     /** v60：打开图层精修台（仅已出图屏）。 */
     onRetouch: () => void;
+    /** 返工令四：成品图送入工作台画布（复用画布内置图片工具），仅已出图屏。 */
+    onSendToCanvas: () => void;
 }) {
     const { message } = App.useApp();
     const generated = Boolean(slot.resourceId);
@@ -1323,6 +1360,11 @@ function SlotCard({
                     <Button size="small" type="link" className="!h-auto !p-0 text-xs" icon={<Layers className="size-3" />} onClick={onRetouch}>
                         {generated ? "图层精修" : "📑 分层/精修"}
                     </Button>
+                    {generated ? (
+                        <Button size="small" type="link" className="!h-auto !p-0 text-xs" icon={<ExternalLink className="size-3" />} onClick={onSendToCanvas}>
+                            送画布
+                        </Button>
+                    ) : null}
                     <Button size="small" type="link" className="!h-auto !p-0 text-xs" icon={<Pencil className="size-3" />} onClick={onEdit}>
                         详细编辑
                     </Button>

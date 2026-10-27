@@ -25,6 +25,26 @@ export async function urlToDataUrl(url: string): Promise<string> {
     });
 }
 
+/** dataURL → 三段式上传为站内资源，返回 resourceId（精修台草图垫图/参考图用）。 */
+export async function uploadDataUrlAsResource(dataUrl: string, fileName: string): Promise<string> {
+    const blob = await (await fetch(dataUrl)).blob();
+    const create = await fetch("/api/resources/uploads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName, size: blob.size }),
+    }).then((r) => r.json());
+    if (!create?.data?.uploadId) throw new Error(create?.msg || "创建上传会话失败");
+    const put = await fetch(`/api/resources/uploads/${create.data.uploadId}/chunks/0`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: blob,
+    });
+    if (!put.ok) throw new Error(`上传失败（${put.status}）`);
+    const done = await fetch(`/api/resources/uploads/${create.data.uploadId}/complete`, { method: "POST" }).then((r) => r.json());
+    if (!done?.data?.resource?.id) throw new Error(done?.msg || "资源落库失败");
+    return done.data.resource.id;
+}
+
 /** 商品透明主体提取（BiRefNet）结果缓存：localStorage 按 resourceId 存 dataURL。 */
 const CUTOUT_PREFIX = "ecom-cutout:";
 

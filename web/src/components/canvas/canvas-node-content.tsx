@@ -15,6 +15,7 @@ import { formatBytes } from "@/lib/image-utils";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { isResourceUrl } from "@/services/api/resources";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import { isCommerceNode } from "@/lib/canvas/commerce-workflow";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasVideoPreviewImage } from "./canvas-video-preview-image";
@@ -65,6 +66,9 @@ export function canvasNodeUsesCustomContent(node: CanvasNodeData, isEditingConte
         node.type === CanvasNodeType.Config ||
         node.type === CanvasNodeType.Script ||
         node.type === CanvasNodeType.BatchTable ||
+        // 电商工坊节点（一键详情/一键复刻）：表单由 CommerceWorkflowNode 自定义渲染。
+        // v1.6.8.12 合并时该分支被上游 LOD 重构覆盖，导致节点显示「未知节点」。
+        (Boolean(node.metadata?.commerceWorkflow) && isCommerceNode(node)) ||
         Boolean(node.metadata?.previsSceneId) ||
         (node.metadata?.workflowKind === "character" && Boolean(node.metadata.characterAssetId)) ||
         (node.metadata?.workflowKind === "story_input" && !isEditingContent) ||

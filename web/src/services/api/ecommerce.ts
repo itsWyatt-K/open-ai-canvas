@@ -336,7 +336,12 @@ export function saveEcommerceSlotPrompt(slotId: string, body: EcommerceSlotPromp
 export function regenerateEcommerceSlot(
     slotId: string,
     body: EcommerceSlotPromptBody,
-    options: { channelId: string; model: string },
+    options: {
+        channelId: string;
+        model: string;
+        /** 额外垫图（如精修台手绘草图）：后端以 style 角色追加到参考图列表。 */
+        styleReferenceResourceIds?: string[];
+    },
 ) {
     return http.post<{ ok: boolean }>(`/ecommerce/slots/${encodeURIComponent(slotId)}/regenerate`, {
         ...body,

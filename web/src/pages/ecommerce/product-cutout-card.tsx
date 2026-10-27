@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { App, Button } from "antd";
-import { ArrowRight, Scissors, Sparkles } from "lucide-react";
+import { ArrowRight, ExternalLink, Scissors, Sparkles } from "lucide-react";
 
 import { cacheCutout, cachedCutout, nxfPost, urlToDataUrl } from "./vision-client";
 
@@ -16,11 +16,13 @@ type Props = {
     onCutout: (dataUrl: string) => void;
     /** 顶部精修台主按钮（全天候可用）。 */
     onOpenRetouch: () => void;
+    /** 返工令四：原图送入工作台画布（复用画布内置图片工具垫图再创作）。 */
+    onSendToCanvas?: () => void;
 };
 
 const CHECKER = "bg-[conic-gradient(#00000014_90deg,#00000000_90deg_180deg,#00000014_180deg_270deg,#00000000_270deg)] bg-[length:16px_16px]";
 
-export function ProductCutoutCard({ sourceResourceId, onCutout, onOpenRetouch }: Props) {
+export function ProductCutoutCard({ sourceResourceId, onCutout, onOpenRetouch, onSendToCanvas }: Props) {
     const { message } = App.useApp();
     const [cutout, setCutout] = useState(() => cachedCutout(sourceResourceId));
     const [extracting, setExtracting] = useState(false);
@@ -105,6 +107,11 @@ export function ProductCutoutCard({ sourceResourceId, onCutout, onOpenRetouch }:
                 >
                     ✨ 透明分层精修台（抠图 / 擦除 / 打光 / PSD）
                 </Button>
+                {onSendToCanvas ? (
+                    <Button size="small" type="link" className="!h-auto !self-start !p-0 text-[11px]" icon={<ExternalLink className="size-3" />} onClick={onSendToCanvas}>
+                        原图送画布：用画布内置「创建编辑副本」垫图再创作
+                    </Button>
+                ) : null}
             </div>
         </section>
     );

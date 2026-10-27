@@ -128,6 +128,9 @@ func (s *Service) UpdateEcommerceSlotPrompt(ctx context.Context, userID, slotID 
 type EcommerceSlotRegenerateOptions struct {
 	ChannelID string `json:"channelId"`
 	Model     string `json:"model"`
+	// StyleReferenceResourceIds 额外风格/垫图参考（如图层精修台草图）：
+	// 追加为 role=style 的参考图，仅参与构图引导，不作为产品主体。
+	StyleReferenceResourceIds []string `json:"styleReferenceResourceIds"`
 }
 
 // nextEcommerceSlotVersion 计算槽位下一个版本号：以 max(current_version, 版本表最大值) 为基线 +1。
@@ -225,6 +228,25 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 		ID: kernel.NewID(), SlotID: slotID, Version: versionNo,
 		Prompt: gate.Filtered, Status: ecommerce.SlotStatusQueued, CreatedAt: time.Now(),
 	}
+	referenceImages := []map[string]any{{
+		"storageKey":  "resource:" + product.SourceResourceID,
+		"role":        "subject",
+		"slotKey":     "reference-main",
+		"strength":    0.85,
+		"controlMode": "canny",
+	}}
+	// 精修台草图垫图（拍板令追加）：用户在图层精修台排好的草图作为 style 参考，
+	// 让正式生图继承草图的构图与文字排版意图。
+	for _, styleRef := range options.StyleReferenceResourceIds {
+		if trimmed := strings.TrimSpace(styleRef); trimmed != "" {
+			referenceImages = append(referenceImages, map[string]any{
+				"storageKey": "resource:" + trimmed,
+				"role":       "style",
+				"slotKey":    "reference-style-sketch",
+				"strength":   0.6,
+			})
+		}
+	}
 	task, taskErr := s.CreateTask(userID, CreateTaskRequest{
 		ProjectID: "",
 		Type:      "canvas_image",
@@ -242,13 +264,7 @@ func (s *Service) RegenerateEcommerceSlot(ctx context.Context, userID, slotID st
 				"quality":   "auto",
 				"count":     "1",
 			},
-			"referenceImages": []map[string]any{{
-				"storageKey":  "resource:" + product.SourceResourceID,
-				"role":        "subject",
-				"slotKey":     "reference-main",
-				"strength":    0.85,
-				"controlMode": "canny",
-			}},
+			"referenceImages": referenceImages,
 			"metadata": map[string]any{
 				"source":                 "ecommerce-slot-regenerate",
 				"ecommerceProductId":     product.ID,
