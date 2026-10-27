@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Button, Checkbox } from "antd";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
-import { AlertCircle, Film, Play, Sparkles, TriangleAlert, X } from "lucide-react";
+import { AlertCircle, Film, Play, RotateCcw, Sparkles, TriangleAlert, X } from "lucide-react";
 
 import type { DramaCast, DramaModelChoice, DramaSegment, DramaShot } from "@/services/api/drama";
 
 import { DramaModelPicker } from "../drama-model-picker";
-import { aspectRatioValue, formatClock, mediaBusy, MediaThumb } from "../drama-shared";
+import { aspectRatioValue, formatClock, mediaBusy, MediaThumb, useResourceMediaUrl } from "../drama-shared";
 import { promptReady, secondsLabel, SegmentInputs, SegmentStatus, segmentState } from "./segment-parts";
 import { isTypingTarget } from "./use-studio";
 import { progressFillStyle } from "@/lib/progress-fill";
@@ -23,6 +23,9 @@ type Props = {
     /** 打开剧情段弹窗；shotId 有值时定位到该镜头。 */
     onOpen: (segmentIndex: number, shotId?: string) => void;
     onGenerate: (indexes: number[], model?: DramaModelChoice) => void;
+    /** 重新处理已生成但后处理失败的段视频；reprocessing 是正在提交的段序号。 */
+    onReprocess: (index: number) => void;
+    reprocessing?: number;
     onWritePrompts: (indexes: number[]) => void;
     /** 本集还没有镜头时的说明：正在写、排队、已暂停或失败，由页面按真实状态给出。 */
     empty: EpisodeEmpty;
@@ -37,6 +40,18 @@ function generatable(segment: DramaSegment) {
     return promptReady(segment) && !mediaBusy(segment.videoStatus);
 }
 
+/** 本段已有生成好的视频（含过期或后处理失败的），不论能否直接用于下一段。 */
+function hasVideo(segment: DramaSegment) {
+    return Boolean(segment.videoResourceId) && (segment.videoStatus === "ready" || segment.videoStatus === "stale" || segment.videoStatus === "failed");
+}
+
+/** 还没有尾帧缩略图时，用视频本身的开头画面作封面。 */
+function CoverVideo({ resourceId }: { resourceId: string }) {
+    const url = useResourceMediaUrl(resourceId, "playback");
+    if (!url) return <span className="drama-sg-cover-empty is-busy" aria-hidden />;
+    return <video className="drama-sg-cover-media" src={`${url}#t=0.1`} muted playsInline preload="metadata" aria-hidden tabIndex={-1} />;
+}
+
 function writable(segment: DramaSegment) {
     return segment.promptStatus !== "queued" && segment.promptStatus !== "running";
 }
@@ -46,7 +61,7 @@ function writable(segment: DramaSegment) {
  * 完整内容在剧情段弹窗里。
  * 选择：单击聚焦，⌘/Ctrl 单击切换选择，Shift 单击连选；快捷键见底部提示。
  */
-export function Storyboard({ shots, segments, aspectRatio, castById, defaultVideoModel, busy, keyboardEnabled, onOpen, onGenerate, onWritePrompts, empty }: Props) {
+export function Storyboard({ shots, segments, aspectRatio, castById, defaultVideoModel, busy, keyboardEnabled, onOpen, onGenerate, onReprocess, reprocessing, onWritePrompts, empty }: Props) {
     const [selected, setSelected] = useState<Set<number>>(new Set());
     const [focused, setFocused] = useState<number>();
     const [anchor, setAnchor] = useState<number>();
@@ -300,6 +315,8 @@ export function Storyboard({ shots, segments, aspectRatio, castById, defaultVide
                                 <button type="button" className="drama-sg-cover" style={{ aspectRatio: aspectRatioValue(aspectRatio) }} onClick={() => onOpen(segment.index)} aria-label={`打开第 ${segment.index + 1} 段`}>
                                     {segment.tailFrameResourceId && segment.videoResourceId ? (
                                         <MediaThumb resourceId={segment.tailFrameResourceId} alt="" />
+                                    ) : segment.videoResourceId && hasVideo(segment) ? (
+                                        <CoverVideo resourceId={segment.videoResourceId} />
                                     ) : (
                                         <span className={`drama-sg-cover-empty ${state.tone === "busy" ? "is-busy" : ""}`}>
                                             <Film className="size-4" aria-hidden />
@@ -358,16 +375,31 @@ export function Storyboard({ shots, segments, aspectRatio, castById, defaultVide
                                 <span className="drama-sg-model" title={segment.videoModel?.label}>
                                     {segment.videoModel?.label || defaultVideoModel?.label || "默认视频模型"}
                                 </span>
-                                <Button
-                                    size="small"
-                                    type={generatable(segment) && segment.videoStatus !== "ready" ? "primary" : "default"}
-                                    icon={<Play className="size-3" />}
-                                    disabled={busy || !generatable(segment)}
-                                    title={!promptReady(segment) ? "先撰写或确认本段视频提示词" : undefined}
-                                    onClick={() => onGenerate([segment.index])}
-                                >
-                                    {mediaBusy(segment.videoStatus) ? (segment.request.firstFramePending ? "等上一段" : "生成中") : segment.videoStatus === "ready" ? "重新生成" : "生成"}
-                                </Button>
+                                <span className="drama-sg-actions">
+                                    {segment.videoReprocessable ? (
+                                        <Button
+                                            size="small"
+                                            type="primary"
+                                            icon={<RotateCcw className="size-3" />}
+                                            disabled={busy}
+                                            loading={reprocessing === segment.index}
+                                            title="只重新处理已生成的视频，不重新生成、不扣费"
+                                            onClick={() => onReprocess(segment.index)}
+                                        >
+                                            重新处理
+                                        </Button>
+                                    ) : null}
+                                    <Button
+                                        size="small"
+                                        type={generatable(segment) && !hasVideo(segment) ? "primary" : "default"}
+                                        icon={<Play className="size-3" />}
+                                        disabled={busy || !generatable(segment)}
+                                        title={!promptReady(segment) ? "先撰写或确认本段视频提示词" : hasVideo(segment) ? "重新调用视频模型生成本段，会产生新的费用" : undefined}
+                                        onClick={() => onGenerate([segment.index])}
+                                    >
+                                        {mediaBusy(segment.videoStatus) ? (segment.videoStatus === "queued" && segment.videoWait ? "等待中" : segment.request.firstFramePending ? "等上一段" : "生成中") : hasVideo(segment) ? "重新生成" : "生成"}
+                                    </Button>
+                                </span>
                             </footer>
                         </article>
                     );

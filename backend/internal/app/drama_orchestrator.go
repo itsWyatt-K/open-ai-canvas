@@ -441,44 +441,20 @@ func (r *dramaRun) advanceEpisode(e *model.DramaEpisode, loadedStage string) err
 		}
 		if ready {
 			e.Stage = model.DramaEpisodeReview
+		} else if _, err := r.enqueueSegmentVideos(e, segments, true); err != nil {
+			// 用户逐段点了“生成视频”的段不必等全集提示词写完。
+			return err
 		}
 	case model.DramaEpisodeReview:
 		if !r.mediaHeld(e) && !r.sampleBlocked(e) && !r.needsReview(e) {
 			e.Stage = model.DramaEpisodeVideo
+		} else if _, err := r.enqueueSegmentVideos(e, segments, true); err != nil {
+			return err
 		}
 	case model.DramaEpisodeVideo:
-		if r.mediaHeld(e) || r.sampleBlocked(e) {
-			break
-		}
-		ready := len(segments) > 0
-		for i, seg := range segments {
-			if seg.VideoStatus == model.DramaMediaReady && seg.VideoResourceID != "" && seg.TailFrameResourceID != "" {
-				continue
-			}
-			ready = false
-			if i > 0 && (segments[i-1].VideoStatus != model.DramaMediaReady || segments[i-1].TailFrameResourceID == "") {
-				break
-			}
-			if !dramaPromptReady(seg) {
-				break
-			}
-			// Edits mark media stale; only an explicit request may regenerate it.
-			if seg.VideoStatus == "" || seg.VideoStatus == model.DramaMediaQueued {
-				shots, loadErr := r.s.repo.DramaShots(e.ID)
-				if loadErr != nil {
-					return loadErr
-				}
-				pending := false
-				for j := range shots {
-					if shots[j].SegmentIndex == seg.SegmentIndex && r.referencesPending(&shots[j]) {
-						pending = true
-					}
-				}
-				if !pending {
-					r.enqueue(model.DramaJobSegmentVideo, e.ID, seg.ID, "", episodePriority(40, e.Number), fmt.Sprintf("%s 第 %d 段视频", label, seg.SegmentIndex+1), nil)
-				}
-			}
-			break
+		ready, err := r.enqueueSegmentVideos(e, segments, false)
+		if err != nil {
+			return err
 		}
 		if ready {
 			e.Stage = model.DramaEpisodeRender
@@ -498,18 +474,44 @@ func (r *dramaRun) advanceEpisode(e *model.DramaEpisode, loadedStage string) err
 	return err
 }
 
-// referencesPending 判断镜头引用的设定参考图是否仍在生成；等待可以显著提升角色一致性。
-func (r *dramaRun) referencesPending(shot *model.DramaShot) bool {
-	for _, id := range dramaShotCastIDs(*shot) {
-		cast := r.castByID[id]
-		if cast == nil {
+// enqueueSegmentVideos 按段序提交下一个可生成的段视频：第 2 段起要等上一段尾帧。
+// requestedOnly 时只提交用户明确请求（queued）的段，用于全集尚未进入视频阶段时。返回全部段视频是否就绪。
+// 等待条件与 dramaVideoWaitReason 同源，详情页显示的等待原因就是这里卡住的条件。
+func (r *dramaRun) enqueueSegmentVideos(e *model.DramaEpisode, segments []model.DramaSegment, requestedOnly bool) (bool, error) {
+	if len(segments) == 0 {
+		return false, nil
+	}
+	var shots []model.DramaShot
+	for i, seg := range segments {
+		if dramaSegmentVideoDone(seg) {
 			continue
 		}
-		if cast.ImageStatus != model.DramaMediaReady || cast.ImageResourceID == "" {
-			return true
+		// Edits mark media stale; only an explicit request may regenerate it.
+		wanted := seg.VideoStatus == model.DramaMediaQueued || (!requestedOnly && seg.VideoStatus == "")
+		if !wanted {
+			return false, nil
 		}
+		if shots == nil {
+			loaded, err := r.s.repo.DramaShots(e.ID)
+			if err != nil {
+				return false, err
+			}
+			shots = loaded
+		}
+		if dramaVideoWaitReason(r.settings, r.production, e, segments, i, shots, r.castLookup) == "" {
+			r.enqueue(model.DramaJobSegmentVideo, e.ID, seg.ID, "", episodePriority(40, e.Number), fmt.Sprintf("第 %d 集 第 %d 段视频", e.Number, seg.SegmentIndex+1), nil)
+		}
+		return false, nil
 	}
-	return false
+	return true, nil
+}
+
+func (r *dramaRun) castLookup(id string) (model.DramaCast, bool) {
+	cast := r.castByID[id]
+	if cast == nil {
+		return model.DramaCast{}, false
+	}
+	return *cast, true
 }
 
 // dispatch 按优先级把排队工作提交为生成任务，受项目并发、账号并发与预算约束。
@@ -1147,7 +1149,9 @@ func (r *dramaRun) submitCastImage(job *model.DramaJob) (*model.Task, bool, erro
 	appearance := firstNonEmpty(cast.Appearance, cast.Description, cast.Role)
 	assets := r.settings.Assets
 	prompt := production.CastImagePrompt(assets, cast.Kind, cast.Name, appearance, r.settings.StylePrompt, r.meta.VisualRules)
-	ratio := r.settings.AspectRatio
+	// 资产参考图统一横版 16:9，与作品画幅无关：场景要容纳完整空间，道具要留足展示余量。
+	// 角色按参考图方案的画幅（内置方案均为 16:9，自定义方案可改）。
+	ratio := production.AssetImageRatio
 	if cast.Kind == "character" {
 		ratio = assets.CharacterRatio
 	}

@@ -263,10 +263,14 @@ export type DramaSegment = {
     videoResourceId?: string;
     tailFrameResourceId?: string;
     videoError?: string;
+    /** 视频已生成，只是后处理（如抽尾帧）失败；可重新处理已有视频，不重新生成。 */
+    videoReprocessable?: boolean;
     videoModel: DramaModelChoice;
     request: DramaSegmentRequest;
     promptJob?: DramaJob;
     videoJob?: DramaJob;
+    /** 视频已请求但尚未提交时，调度实际卡住的原因（等待上一段、参考图、放行或制作暂停）。 */
+    videoWait?: string;
 };
 
 /** 参考图编号与提交顺序一致；sent=false 表示未就绪或超过模型上限，不随请求发送。 */
@@ -327,7 +331,10 @@ export type DramaListPage = { items: DramaListItem[]; page: number; pageSize: nu
 
 export type DramaModelOption = { choice: DramaModelChoice; capability: DramaCapability; label: string; priceLabel: string; maxVideoSeconds?: number };
 
-export type DramaModelCatalog = { defaults: DramaModels; options: Record<DramaCapability, DramaModelOption[]> };
+/** 平台目录里有、但短剧流水线无法使用的模型及原因；前端置灰展示。 */
+export type DramaModelUnavailable = { choice: DramaModelChoice; reason: string };
+
+export type DramaModelCatalog = { defaults: DramaModels; options: Record<DramaCapability, DramaModelOption[]>; unavailable?: Partial<Record<DramaCapability, DramaModelUnavailable[]>> };
 
 export type DramaEstimate = {
     episodes: number;
@@ -455,9 +462,14 @@ export function getDramaCastImpact(projectId: string, castId: string, signal?: A
     return http.get<{ segments: number; episodes: number }>(`${base(projectId)}/cast/${encodeURIComponent(castId)}/impact`, { signal });
 }
 
-/** restyleSegments=true 时引用该设定的剧情段提示词与视频标记过期，需要重新撰写与生成。 */
+/** restyleSegments=true 时引用该设定的剧情段视频标记过期，需要重新生成；段提示词保持不变。 */
 export function regenerateDramaCast(projectId: string, castId: string, restyleSegments: boolean) {
     return http.post<{ affectedSegments: number }>(`${base(projectId)}/cast/${encodeURIComponent(castId)}/regenerate`, { restyleSegments });
+}
+
+/** 重新处理已生成但后处理失败的段视频：重放原任务结果，不重新生成、不扣费。 */
+export function reprocessDramaSegmentVideo(projectId: string, episodeId: string, segmentIndex: number) {
+    return http.post<{ reprocessing: boolean }>(`${base(projectId)}/episodes/${encodeURIComponent(episodeId)}/segments/${segmentIndex}/reprocess`);
 }
 
 /** 按剧情段生成视频；段会按顺序提交，第 2 段起等上一段最后一帧。可同时换视频模型。 */

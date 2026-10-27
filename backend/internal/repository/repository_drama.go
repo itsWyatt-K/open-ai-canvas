@@ -489,12 +489,24 @@ func (r *Repository) UpdateDramaCastFields(id string, fields map[string]any) err
 			if err := tx.Where("episode_id = ? AND segment_index = ?", shot.EpisodeID, shot.SegmentIndex).First(&seg).Error; err != nil {
 				return err
 			}
-			if err := invalidateDramaSegment(tx, seg, map[string]any{"prompt_status": "stale", "video_prompt_override": ""}, true); err != nil {
+			if err := invalidateDramaSegment(tx, seg, map[string]any{"prompt_status": promptStatusAfterInputChange(seg.PromptStatus), "video_prompt_override": ""}, true); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+// promptStatusAfterInputChange 决定撰写素材变化后的提示词状态：写好的才标记过期、等用户确认重写；
+// 待撰写或撰写中的退回待撰写，由调度按新素材自动写；失败保持失败，等用户重试。
+func promptStatusAfterInputChange(current string) string {
+	switch current {
+	case model.DramaMediaReady, model.DramaMediaStale:
+		return model.DramaMediaStale
+	case model.DramaMediaFailed:
+		return model.DramaMediaFailed
+	}
+	return ""
 }
 func (r *Repository) UpdateDramaCastRevision(id string, revision int64, fields map[string]any) (bool, error) {
 	fields["updated_at"] = time.Now()
@@ -561,15 +573,30 @@ func (r *Repository) DramaSegment(projectID string, id string) (*model.DramaSegm
 	return &segment, nil
 }
 
-// MarkDramaSegmentStale 在镜头被修改后把已撰写的段标记为过期，提示用户重新撰写。
-func (r *Repository) MarkDramaSegmentStale(episodeID string, index int) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+// MarkDramaSegmentVideoStale 在参考图重做后让该段已生成或生成中的视频过期。提示词只引用参考图编号，
+// 不含图片内容，因此保持不变；尚未生成的视频提交时会读取新参考图，无需处理。返回是否有视频被标记。
+func (r *Repository) MarkDramaSegmentVideoStale(episodeID string, index int) (bool, error) {
+	marked := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var segment model.DramaSegment
 		if err := tx.Where("episode_id = ? AND segment_index = ?", episodeID, index).First(&segment).Error; err != nil {
 			return err
 		}
-		return invalidateDramaSegment(tx, segment, map[string]any{"prompt_status": model.DramaMediaStale}, true)
+		if segment.VideoStatus != model.DramaMediaReady && segment.VideoStatus != model.DramaMediaRunning {
+			return nil
+		}
+		fields := map[string]any{"video_status": model.DramaMediaStale, "revision": gorm.Expr("revision + 1"), "updated_at": time.Now()}
+		// 版本递增会让撰写中的提示词结果作废，退回待撰写由调度重写。
+		if segment.PromptStatus == model.DramaMediaRunning {
+			fields["prompt_status"] = ""
+		}
+		if err := tx.Model(&model.DramaSegment{}).Where("id = ?", segment.ID).Updates(fields).Error; err != nil {
+			return err
+		}
+		marked = true
+		return markLaterSegmentsStale(tx, segment.EpisodeID, segment.SegmentIndex)
 	})
+	return marked, err
 }
 
 func (r *Repository) DramaShotsReferencingCast(projectID string, castID string) ([]model.DramaShot, error) {
@@ -627,8 +654,14 @@ func (r *Repository) UpdateDramaSegmentRevision(id string, revision int64, field
 
 func markLaterSegmentsStale(tx *gorm.DB, episodeID string, index int) error {
 	// Queued descendants remain requested, but receive a new revision and wait for the new tail.
+	// The new revision also voids running prompt jobs, so those segments go back to pending instead of staying "running".
 	return tx.Model(&model.DramaSegment{}).Where("episode_id = ? AND segment_index > ?", episodeID, index).
-		Updates(map[string]any{"video_status": gorm.Expr("CASE WHEN video_status IN ? THEN ? ELSE video_status END", []string{"ready", "running"}, "stale"), "revision": gorm.Expr("revision + 1"), "updated_at": time.Now()}).Error
+		Updates(map[string]any{
+			"video_status":  gorm.Expr("CASE WHEN video_status IN ? THEN ? ELSE video_status END", []string{"ready", "running"}, "stale"),
+			"prompt_status": gorm.Expr("CASE WHEN prompt_status = ? THEN '' ELSE prompt_status END", model.DramaMediaRunning),
+			"revision":      gorm.Expr("revision + 1"),
+			"updated_at":    time.Now(),
+		}).Error
 }
 
 // invalidateDramaSegment makes user edits and downstream invalidation one transaction.
@@ -666,7 +699,7 @@ func (r *Repository) UpdateDramaShotScript(shot model.DramaShot, fields map[stri
 		if err := tx.Where("episode_id = ? AND segment_index = ?", shot.EpisodeID, shot.SegmentIndex).First(&segment).Error; err != nil {
 			return err
 		}
-		if err := invalidateDramaSegment(tx, segment, map[string]any{"prompt_status": "stale", "video_prompt_override": ""}, true); err != nil {
+		if err := invalidateDramaSegment(tx, segment, map[string]any{"prompt_status": promptStatusAfterInputChange(segment.PromptStatus), "video_prompt_override": ""}, true); err != nil {
 			return err
 		}
 		return tx.Model(&model.DramaEpisode{}).Where("id = ?", shot.EpisodeID).Update("duration_ms", tx.Model(&model.DramaShot{}).Select("COALESCE(SUM(duration_ms),0)").Where("episode_id = ?", shot.EpisodeID)).Error
@@ -704,6 +737,37 @@ func (r *Repository) RetryDramaResultJobs(projectID string) error {
 		return nil
 	})
 }
+
+// ReopenDramaSegmentVideoJob 把生成任务已成功、回写失败的段视频作业重新置为运行中，
+// 调度循环会重放同一任务结果；段状态同步改回生成中。返回作业是否仍满足重放条件。
+func (r *Repository) ReopenDramaSegmentVideoJob(jobID, segmentID string) (bool, error) {
+	reopened := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		result := tx.Model(&model.DramaJob{}).
+			Where("id = ? AND shot_id = ? AND kind = ? AND status = ? AND task_id IN (?)", jobID, segmentID, model.DramaJobSegmentVideo, model.DramaJobFailed, tx.Model(&model.Task{}).Select("id").Where("status = ?", model.TaskStatusSucceeded)).
+			Updates(map[string]any{"status": model.DramaJobRunning, "error": "", "finished_at": nil, "updated_at": now})
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		segment := tx.Model(&model.DramaSegment{}).Where("id = ? AND video_status = ?", segmentID, model.DramaMediaFailed).Updates(map[string]any{"video_status": model.DramaMediaRunning, "video_error": "", "updated_at": now})
+		if segment.Error != nil {
+			return segment.Error
+		}
+		if segment.RowsAffected == 0 {
+			// 段状态已被并发操作改变（例如用户刚点了重新生成），放弃重放。
+			return errReopenRaced
+		}
+		reopened = true
+		return nil
+	})
+	if errors.Is(err, errReopenRaced) {
+		return false, nil
+	}
+	return reopened, err
+}
+
+var errReopenRaced = errors.New("drama segment changed during reopen")
 
 func (r *Repository) RecentDramaSegmentJobs(projectID, episodeID string) ([]model.DramaJob, error) {
 	var jobs []model.DramaJob

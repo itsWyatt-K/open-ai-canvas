@@ -372,7 +372,8 @@ func (s *Service) UpdateDramaCast(userID string, projectID string, castID string
 	return *updated, nil
 }
 
-// RegenerateDramaCast 重做参考图；restyleSegments=true 时让引用该设定的剧情段提示词与视频过期，需重新撰写与生成。
+// RegenerateDramaCast 重做参考图；restyleSegments=true 时让引用该设定的剧情段视频过期，需重新生成。
+// 段提示词只引用“参考图N”编号，不随图片内容变化，保持不变。
 func (s *Service) RegenerateDramaCast(userID string, projectID string, castID string, restyleSegments bool) (map[string]any, error) {
 	project, productionRow, err := s.dramaForUser(userID, projectID)
 	if err != nil {
@@ -403,10 +404,14 @@ func (s *Service) RegenerateDramaCast(userID string, projectID string, castID st
 				continue
 			}
 			marked[key] = true
-			if err := s.repo.MarkDramaSegmentStale(shot.EpisodeID, shot.SegmentIndex); err != nil {
+			changed, err := s.repo.MarkDramaSegmentVideoStale(shot.EpisodeID, shot.SegmentIndex)
+			if err != nil {
 				return nil, err
 			}
-			if err := rewind.to(shot.EpisodeID, model.DramaEpisodePrompts); err != nil {
+			if !changed {
+				continue
+			}
+			if err := rewind.to(shot.EpisodeID, model.DramaEpisodeVideo); err != nil {
 				return nil, err
 			}
 			affected++
@@ -630,9 +635,14 @@ func mediaBusyStatus(status string) bool {
 
 // requireDramaModelOption 只接受当前目录中可由服务端执行的模型，防止提交任意渠道标识。
 func (s *Service) requireDramaModelOption(capability string, choice DramaModelChoice) error {
-	options, err := s.dramaModelOptions(capability)
+	options, unavailable, err := s.dramaModelOptions(capability)
 	if err != nil {
 		return err
+	}
+	for _, item := range unavailable {
+		if dramaSameChoice(item.Choice, choice) {
+			return BadAuthRequest("所选模型不能用于短剧：" + item.Reason)
+		}
 	}
 	for _, option := range options {
 		if option.Choice.LogicalModelID != "" && option.Choice.LogicalModelID == choice.LogicalModelID {
@@ -643,6 +653,13 @@ func (s *Service) requireDramaModelOption(capability string, choice DramaModelCh
 		}
 	}
 	return BadAuthRequest("所选视频模型不可用，请重新选择")
+}
+
+func dramaSameChoice(a, b DramaModelChoice) bool {
+	if a.LogicalModelID != "" || b.LogicalModelID != "" {
+		return a.LogicalModelID == b.LogicalModelID
+	}
+	return a.ChannelID == b.ChannelID && a.ModelKey == b.ModelKey
 }
 
 // releaseDramaEpisodes 放行指定集的视频生成，并把这些集引用、尚未请求的参考图标记为待生成。

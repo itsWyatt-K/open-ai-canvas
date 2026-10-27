@@ -3,6 +3,7 @@
 package app
 
 import (
+	"os"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -90,7 +91,33 @@ func (s *Service) AccountFileStorageUsage(userID string) (*AccountFileStorageUsa
 }
 
 // computeAccountStorageStatus 在 observe=true 时记录或清除超额起点；管理端查看只读不写。
+// localUnlimitedStorage 为 true 时，本地部署永不触发存储超额只读（总架构师施工令
+// 2026-10-27「留稳去锁」：保留上游存储套餐/补传能力，但本地账号默认 100TB 无限配额）。
+// 默认开启；显式设置 CANVAS_LOCAL_UNLIMITED_STORAGE=0/false 可恢复上游容量拦截。
+// localUnlimitedStorageBytes = 100TB，本地无限配额的默认上限。
+const localUnlimitedStorageBytes int64 = 100 * 1024 * 1024 * 1024 * 1024
+
+func localUnlimitedStorage() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CANVAS_LOCAL_UNLIMITED_STORAGE"))) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
 func (s *Service) computeAccountStorageStatus(userID string, now time.Time, observe bool) (*AccountFileStorageUsage, error) {
+	if localUnlimitedStorage() {
+		// 100TB 本地无限配额：永不超额、永不只读，但仍如实返回用量供前端展示。
+		used, err := s.repo.UserStoredFileBytes(userID)
+		if err != nil {
+			return nil, err
+		}
+		return &AccountFileStorageUsage{
+			UsedBytes: used, BaseBytes: localUnlimitedStorageBytes, PurchasedBytes: 0,
+			TotalBytes: localUnlimitedStorageBytes, OverLimit: false, ReadOnly: false,
+		}, nil
+	}
 	policy, err := s.RuntimePolicy()
 	if err != nil {
 		return nil, err

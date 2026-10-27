@@ -11,7 +11,7 @@ import { dramaChoiceKey } from "@/lib/drama/model-choice";
 import { DramaModelPicker } from "../drama-model-picker";
 
 import { mediaBusy } from "../drama-shared";
-import { promptReady, secondsLabel, SegmentInputs, SegmentStatus, SegmentVideo } from "./segment-parts";
+import { promptReady, secondsLabel, SegmentInputs, SegmentStatus, SegmentVideo, videoWaitLabel } from "./segment-parts";
 
 const SHOT_SIZES = ["特写", "近景", "中景", "全景", "远景"];
 const CAMERAS = ["固定", "推", "拉", "摇", "跟", "环绕", "升降", "手持"];
@@ -39,6 +39,8 @@ type Props = {
     onSavePrompt: (segment: DramaSegment, override: string) => void;
     onWritePrompt: (segment: DramaSegment) => void;
     onGenerate: (segment: DramaSegment, model?: DramaModelChoice) => void;
+    reprocessing: boolean;
+    onReprocess: (segment: DramaSegment) => void;
     defaultVideoModel: DramaModelChoice;
     onOpenCast: (castId: string) => void;
 };
@@ -47,7 +49,7 @@ type Props = {
  * 剧情段弹窗：左侧是段视频、生成依据（首帧与参考图）和段内镜头脚本，右侧是本段完整视频提示词。
  * 提示词区展示的就是提交时发送的全文：开头的参考图对应说明由系统追加，正文可直接修改。
  */
-export function SegmentDialog({ detail, segmentIndex, shotId, castById, aspectRatio, busy, writing, defaultVideoModel, onClose, onNavigate, onPatchShot, onSavePrompt, onWritePrompt, onGenerate, onOpenCast }: Props) {
+export function SegmentDialog({ detail, segmentIndex, shotId, castById, aspectRatio, busy, writing, reprocessing, defaultVideoModel, onClose, onNavigate, onPatchShot, onSavePrompt, onWritePrompt, onGenerate, onReprocess, onOpenCast }: Props) {
     const segments = detail?.segments || [];
     const position = segments.findIndex((item) => item.index === segmentIndex);
     const segment = position >= 0 ? segments[position] : undefined;
@@ -93,8 +95,24 @@ export function SegmentDialog({ detail, segmentIndex, shotId, castById, aspectRa
                             <SegmentVideo segment={segment} aspectRatio={aspectRatio} />
                             {segment.videoStatus === "failed" && segment.videoError ? (
                                 <div className="drama-sd-error">
-                                    <strong>视频生成失败</strong>
+                                    <strong>{segment.videoReprocessable ? "视频已生成，后处理失败" : "视频生成失败"}</strong>
                                     <span>{segment.videoError}</span>
+                                    {segment.videoReprocessable ? (
+                                        <>
+                                            <span>重新处理只针对这条已生成的视频，不会重新生成或扣费。</span>
+                                            <div className="drama-sd-error-actions">
+                                                <Button size="small" icon={<RotateCcw className="size-3.5" />} loading={reprocessing} disabled={busy} onClick={() => onReprocess(segment)}>
+                                                    重新处理视频
+                                                </Button>
+                                            </div>
+                                        </>
+                                    ) : null}
+                                </div>
+                            ) : null}
+                            {segment.videoStatus === "queued" && segment.videoWait ? (
+                                <div className="drama-sd-error is-wait" role="status">
+                                    <strong>视频尚未提交</strong>
+                                    <span>{segment.videoWait}</span>
                                 </div>
                             ) : null}
                             <SegmentGenerate key={segment.id} segment={segment} busy={busy} defaultVideoModel={defaultVideoModel} onGenerate={(model) => onGenerate(segment, model)} />
@@ -146,7 +164,15 @@ function SegmentGenerate({ segment, busy, defaultVideoModel, onGenerate }: { seg
         <div className="drama-sd-generate">
             <DramaModelPicker capability="video" size="sm" value={choice} onChange={setChoice} placeholder="视频模型" />
             <Button type="primary" icon={<Play className="size-4" />} disabled={busy || !promptReady(segment) || running} onClick={() => onGenerate(changed ? choice : undefined)}>
-                {running ? (segment.request.firstFramePending ? `排队中 · 等第 ${segment.index} 段` : "视频生成中") : segment.videoStatus === "ready" ? "重新生成本段视频" : "生成本段视频"}
+                {running
+                    ? segment.videoStatus === "queued" && segment.videoWait
+                        ? videoWaitLabel(segment.videoWait)
+                        : segment.request.firstFramePending
+                          ? `排队中 · 等第 ${segment.index} 段`
+                          : "视频生成中"
+                    : segment.videoResourceId && segment.videoStatus !== ""
+                      ? "重新生成本段视频"
+                      : "生成本段视频"}
             </Button>
         </div>
     );

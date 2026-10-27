@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { App, Button, Checkbox, Input, InputNumber, Select, Switch } from "antd";
-import { AlertCircle, ArrowRight, CheckCheck, Clapperboard, Film, Gem, Inbox, Lock, MapPinned, PauseCircle, RefreshCw, RotateCcw, ScrollText, Sparkles, UserRound, UsersRound, Wand2 } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCheck, Clapperboard, Film, Gem, Inbox, Lock, MapPinned, Maximize2, PauseCircle, RefreshCw, RotateCcw, ScrollText, Sparkles, UserRound, UsersRound, Wand2 } from "lucide-react";
 
+import { CanvasImagePreview } from "@/components/canvas/canvas-image-preview";
 import { dramaChoiceKey } from "@/lib/drama/model-choice";
 import {
     getDramaCastImpact,
@@ -19,7 +20,7 @@ import {
     type DramaSummary,
 } from "@/services/api/drama";
 
-import { CAST_KIND_LABEL, formatCredits, MEDIA_MODE_LABEL, mediaBusy, MediaThumb, parseList } from "../drama-shared";
+import { aspectRatioValue, CAST_KIND_LABEL, formatCredits, MEDIA_MODE_LABEL, mediaBusy, MediaThumb, parseList } from "../drama-shared";
 import { AssetSchemePicker } from "../asset-scheme";
 import { DramaModelPicker, useDramaModelCatalog } from "../drama-model-picker";
 import { PromptSkillField } from "../prompt-skill";
@@ -35,9 +36,30 @@ const CAST_KINDS: DramaCastKind[] = ["character", "prop", "scene"];
 
 type CastFilter = "all" | "failed" | "busy" | "locked";
 
+/** 资产参考图统一横版 16:9；角色按参考图方案的画幅（内置方案均为 16:9）。图片完整显示不裁切，占位与成图同尺寸。 */
+const ASSET_IMAGE_RATIO = "16:9";
+
+function castRatio(kind: DramaCastKind, ratios: CastRatios) {
+    const ratio = (kind === "character" && ratios.character) || ASSET_IMAGE_RATIO;
+    const [width, height] = ratio.split(":").map(Number);
+    const orientation = width && height ? (width > height ? "is-wide" : width < height ? "is-tall" : "is-square") : "is-tall";
+    return { style: { "--drama-cast-ratio": aspectRatioValue(ratio) } as CSSProperties, orientation };
+}
+
+export type CastRatios = { character: string };
+
+const castImageLoading = <span className="drama-cast-media-state is-loading" role="status" aria-label="参考图加载中" />;
+const castImageFailed = (
+    <span className="drama-cast-media-state">
+        <AlertCircle className="size-3.5" />
+        图片加载失败
+    </span>
+);
+
 export function CastPanel({
     projectId,
     cast,
+    ratios,
     focusId,
     retrying,
     assetsPending,
@@ -49,6 +71,7 @@ export function CastPanel({
 }: {
     projectId: string;
     cast: DramaCast[];
+    ratios: CastRatios;
     focusId: string;
     retrying: boolean;
     assetsPending: boolean;
@@ -80,6 +103,7 @@ export function CastPanel({
         return true;
     });
     const active = focused && focused.kind === kind ? focused : list[0];
+    const kindRatio = castRatio(kind, ratios);
     return (
         <div className="drama-view drama-cast-layout">
             <section className="drama-view-main">
@@ -119,11 +143,11 @@ export function CastPanel({
                             </Button>
                         </div>
                     ) : null}
-                    <div className={`drama-cast-grid ${kind !== "character" ? "is-scene" : ""}`}>
+                    <div className={`drama-cast-grid ${kindRatio.orientation}`}>
                         {list.map((item) => (
                             <button key={item.id} type="button" className="drama-cast-card" aria-current={item.id === active?.id} onClick={() => onFocus(item.id)}>
-                                <div className={`drama-cast-card-media ${item.kind !== "character" ? "is-scene" : ""}`}>
-                                    {item.imageResourceId ? <MediaThumb resourceId={item.imageResourceId} alt={item.name} /> : null}
+                                <div className="drama-cast-card-media" style={kindRatio.style}>
+                                    {item.imageResourceId ? <MediaThumb resourceId={item.imageResourceId} alt={item.name} loading={castImageLoading} failed={castImageFailed} /> : null}
                                     {!item.imageResourceId || mediaBusy(item.imageStatus) || item.imageStatus === "failed" || item.imageStatus === "" ? (
                                         <div className={`drama-shot-placeholder ${mediaBusy(item.imageStatus) ? "is-busy" : ""}`}>
                                             {item.imageStatus === "failed" ? (
@@ -163,7 +187,7 @@ export function CastPanel({
             </section>
             <aside className="drama-view-side thin-scrollbar">
                 {active ? (
-                    <CastEditor key={active.id} projectId={projectId} cast={active} onChanged={onChanged} />
+                    <CastEditor key={active.id} projectId={projectId} cast={active} ratios={ratios} onChanged={onChanged} />
                 ) : (
                     <div className="drama-empty is-compact">
                         <span>选择一个设定查看详情</span>
@@ -174,8 +198,9 @@ export function CastPanel({
     );
 }
 
-function CastEditor({ projectId, cast, onChanged }: { projectId: string; cast: DramaCast; onChanged: () => void }) {
+function CastEditor({ projectId, cast, ratios, onChanged }: { projectId: string; cast: DramaCast; ratios: CastRatios; onChanged: () => void }) {
     const { message } = App.useApp();
+    const [previewing, setPreviewing] = useState(false);
     const [name, setName] = useState(cast.name);
     const [aliases, setAliases] = useState(parseList(cast.aliasesJson));
     const [appearance, setAppearance] = useState(cast.appearance);
@@ -199,7 +224,7 @@ function CastEditor({ projectId, cast, onChanged }: { projectId: string; cast: D
             return regenerateDramaCast(projectId, cast.id, restyle);
         },
         onSuccess: (result) => {
-            message.success(result.affectedSegments ? `正在重新生成参考图；${result.affectedSegments} 个剧情段的提示词与视频需重新生成` : "正在重新生成参考图");
+            message.success(result.affectedSegments ? `正在重新生成参考图；${result.affectedSegments} 个剧情段的视频需重新生成` : "正在重新生成参考图");
             onChanged();
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "操作失败"),
@@ -209,8 +234,15 @@ function CastEditor({ projectId, cast, onChanged }: { projectId: string; cast: D
     const kindLabel = CAST_KIND_LABEL[cast.kind];
     return (
         <div className="drama-editor">
-            <div className={`drama-cast-hero ${!isCharacter ? "is-scene" : ""}`}>
-                {cast.imageResourceId ? <MediaThumb resourceId={cast.imageResourceId} alt={cast.name} /> : null}
+            <div className="drama-cast-hero" style={castRatio(cast.kind, ratios).style}>
+                {cast.imageResourceId ? <MediaThumb resourceId={cast.imageResourceId} alt={cast.name} loading={castImageLoading} failed={castImageFailed} /> : null}
+                {cast.imageResourceId ? (
+                    <button type="button" className="drama-cast-hero-zoom" aria-label={`放大查看${cast.name}的参考图`} title="点击放大查看" onClick={() => setPreviewing(true)}>
+                        <span className="drama-cast-hero-zoom-hint" aria-hidden="true">
+                            <Maximize2 className="size-3.5" />
+                        </span>
+                    </button>
+                ) : null}
                 {!cast.imageResourceId || mediaBusy(cast.imageStatus) || cast.imageStatus === "failed" ? (
                     <div className={`drama-shot-placeholder ${mediaBusy(cast.imageStatus) ? "is-busy" : ""}`}>
                         {cast.imageStatus === "failed" ? (
@@ -252,7 +284,7 @@ function CastEditor({ projectId, cast, onChanged }: { projectId: string; cast: D
             ) : null}
             <div className="drama-editor-impact">
                 <Checkbox checked={restyle} onChange={(event) => setRestyle(event.target.checked)}>
-                    重新生成引用它的剧情段
+                    让引用它的剧情段视频重新生成
                 </Checkbox>
                 {impact ? (
                     <span>
@@ -269,6 +301,7 @@ function CastEditor({ projectId, cast, onChanged }: { projectId: string; cast: D
                 </Button>
             </div>
             <p className="drama-editor-note">旧版本保留在版本记录中；锁定后参考图不会被重新生成。</p>
+            {previewing && cast.imageResourceId ? <CanvasImagePreview storageKey={`resource:${cast.imageResourceId}`} alt={`${cast.name} · ${kindLabel}参考图`} onClose={() => setPreviewing(false)} /> : null}
         </div>
     );
 }
@@ -604,7 +637,7 @@ export function SettingsPanel({ projectId, summary, cast, onChanged }: { project
                                         </span>
                                     </div>
                                     <Checkbox checked={restyleSegments} onChange={(event) => setRestyleSegments(event.target.checked)}>
-                                        同时重新生成引用它们的剧情段
+                                        同时让引用它们的剧情段视频重新生成
                                     </Checkbox>
                                     {CAST_KINDS.map((kind) => (
                                         <Button
@@ -614,7 +647,7 @@ export function SettingsPanel({ projectId, summary, cast, onChanged }: { project
                                             onClick={() =>
                                                 modal.confirm({
                                                     title: `按当前方案重做 ${countOf(kind)} 个${CAST_KIND_LABEL[kind]}参考图？`,
-                                                    content: `每张参考图都会重新生成并计费${restyleSegments ? "，引用它们的剧情段需要重新撰写提示词并生成视频" : ""}。旧版本保留在版本记录中。`,
+                                                    content: `每张参考图都会重新生成并计费${restyleSegments ? "，引用它们且已生成的剧情段视频需要重新生成" : ""}。旧版本保留在版本记录中。`,
                                                     okText: "开始重做",
                                                     cancelText: "取消",
                                                     centered: true,

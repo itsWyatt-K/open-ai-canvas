@@ -179,7 +179,7 @@ func ScriptPrompt(ctx ScriptContext) string {
 	b.WriteString("【场景表】\n" + firstNonEmpty(ctx.SceneSummary, "无") + "\n\n")
 	fmt.Fprintf(&b, "输出约 %d 个镜头：\n", shotTarget)
 	b.WriteString(`{"shots":[{"scene":"场景名","characters":["出镜角色名"],"props":["画面中出现的关键道具名"],"speaker":"说话人（旁白写“旁白”，无台词留空）",` +
-		`"dialogue":"一句台词（6–20 字，无则空）","action":"画面里发生的动作","shotSize":"特写/近景/中景/全景/远景",` +
+		fmt.Sprintf(`"dialogue":"一句台词（4–%d 字，无则空）","action":"画面里发生的动作","shotSize":"特写/近景/中景/全景/远景",`, settings.Storyboard.MaxLineRunes()) +
 		`"camera":"固定/推/拉/摇/跟/环绕","durationSeconds":4,"transition":"cut/fadeblack/fadewhite","imagePrompt":"本镜起幅画面：人物站位与朝向、动作、表情、构图、光线、环境",` +
 		`"videoPrompt":"本镜头时长内的动作与镜头运动描述，按时间顺序写清起止","sourceQuote":"对应原文的一小句"}]}` + "\n")
 	b.WriteString(settings.Storyboard.PromptRules(settings.EpisodeSeconds, ctx.Segment))

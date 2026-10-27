@@ -71,6 +71,8 @@ func TestReserveUserUploadQuotaRejectsTotalStoredFilesAtLimit(t *testing.T) {
 }
 
 func TestAccountFileStorageUsageUsesStoredFilePolicy(t *testing.T) {
+	// 显式关闭本地无限配额短路，验证上游策略配额路径（2026-10-27 去商业锁改造）。
+	t.Setenv("CANVAS_LOCAL_UNLIMITED_STORAGE", "0")
 	svc := newResourceTestService(t)
 	if err := svc.repo.Create(&model.Resource{ID: "resource-1", UserID: "user-1", Status: model.ResourceStatusReady, Provider: "local", ObjectKey: "ready.png", Size: 3 << 20}); err != nil {
 		t.Fatal(err)

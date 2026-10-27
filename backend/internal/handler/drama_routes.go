@@ -153,6 +153,13 @@ func registerDramaRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		return svc.RequestDramaSegmentPrompts(userID, c.Param("id"), c.Param("episodeId"), req)
 	}))
+	r.POST("/dramas/:id/episodes/:episodeId/segments/:index/reprocess", dramaRoute(svc, 0, func(c *gin.Context, userID string) (any, error) {
+		index, err := strconv.Atoi(c.Param("index"))
+		if err != nil || index < 0 {
+			return nil, service.BadAuthRequest("剧情段序号无效")
+		}
+		return svc.ReprocessDramaSegmentVideo(userID, c.Param("id"), c.Param("episodeId"), index)
+	}))
 	r.PATCH("/dramas/:id/episodes/:episodeId/segments/:index", dramaRoute(svc, 64<<10, func(c *gin.Context, userID string) (any, error) {
 		index, err := strconv.Atoi(c.Param("index"))
 		if err != nil || index < 0 {

@@ -125,9 +125,37 @@ export function resourceUrl(id?: string) {
     return id ? resourceFileUrl(id) : "";
 }
 
-export function MediaThumb({ resourceId, alt, className, fallback }: { resourceId?: string; alt: string; className?: string; fallback?: ReactNode }) {
+/** 加载失败后的自动重试间隔：访问地址过期、缩略图尚未生成或解码排队超时多是暂时的。 */
+const THUMB_RETRY_DELAYS_MS = [1500, 5000];
+
+/**
+ * 资源缩略图。加载失败会自动重试两次，之后显示 failed（缺省为 fallback）；
+ * loading 是加载中的占位（缺省为 fallback）。
+ */
+export function MediaThumb({ resourceId, alt, className, fallback, loading, failed }: { resourceId?: string; alt: string; className?: string; fallback?: ReactNode; loading?: ReactNode; failed?: ReactNode }) {
+    const [retry, setRetry] = useState({ resourceId, attempt: 0 });
+    const attempt = retry.resourceId === resourceId ? retry.attempt : 0;
     if (!resourceId) return <>{fallback ?? null}</>;
-    return <CachedResourceImage storageKey={`resource:${resourceId}`} alt={alt} className={className} variant="thumbnail" fallback={fallback ?? null} draggable={false} />;
+    const pending = loading ?? fallback ?? null;
+    const delay = THUMB_RETRY_DELAYS_MS[attempt];
+    const failure =
+        delay === undefined ? (
+            (failed ?? fallback ?? null)
+        ) : (
+            <ThumbRetry delayMs={delay} onRetry={() => setRetry({ resourceId, attempt: attempt + 1 })}>
+                {pending}
+            </ThumbRetry>
+        );
+    return <CachedResourceImage key={`${resourceId}:${attempt}`} storageKey={`resource:${resourceId}`} alt={alt} className={className} variant="thumbnail" fallback={failure} loadingFallback={pending} draggable={false} />;
+}
+
+function ThumbRetry({ delayMs, onRetry, children }: { delayMs: number; onRetry: () => void; children: ReactNode }) {
+    const [handler] = useState(() => onRetry);
+    useEffect(() => {
+        const timer = window.setTimeout(handler, delayMs);
+        return () => window.clearTimeout(timer);
+    }, [delayMs, handler]);
+    return <>{children}</>;
 }
 
 export function mediaBusy(status: DramaMediaStatus) {

@@ -140,7 +140,9 @@ export function WorkspaceWalletModal({
         setPaymentsLoading(true);
         Promise.all([listTopupProducts(), listPaymentProviders()])
             .then(([productResult, providerResult]) => {
-                const enabledProducts = productResult.products.filter((item) => item.enabled);
+                // 本地去商业锁（2026-10-27 施工令）：隐藏存储套餐购买入口（后端 storage_products
+                // 与 100TB 无限配额保留；积分等其他套餐不受影响）。
+                const enabledProducts = productResult.products.filter((item) => item.enabled && item.kind !== "storage");
                 const usableProviders = providerResult.providers.filter((item) => item.enabled && item.pluginEnabled && item.configured);
                 setProducts(enabledProducts);
                 setProviders(usableProviders);
@@ -412,7 +414,7 @@ export function WorkspaceWalletModal({
 function WalletLedgerRow({ entry }: { entry: CreditLedgerEntry }) {
     const positive = entry.amountMicrocredits > 0;
     const note = entry.note ? generationErrorMessage(entry.note) : "";
-    const title = entry.type === "consume" ? "模型调用" : entry.type === "refund" ? "消费退款" : entry.type === "payment_topup" ? "在线充值" : entry.type === "redeem" ? "兑换码充值" : note || "积分调整";
+    const title = entry.type === "consume" ? "模型调用" : entry.type === "refund" ? "消费退款" : entry.type === "payment_topup" ? "在线充值" : entry.type === "redeem" ? "兑换码充值" : entry.type === "referral_commission" ? "推广返佣" : note || "积分调整";
     return (
         <article className="workspace-wallet-ledger-row">
             <span className={cn("workspace-wallet-ledger-icon", positive ? "is-income" : "is-consume")}>{positive ? <Coins /> : <CreditCard />}</span>
