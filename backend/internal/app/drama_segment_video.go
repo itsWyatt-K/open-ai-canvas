@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"yingce/backend/internal/model"
@@ -140,6 +141,12 @@ func (s *Service) prepareDramaSegment(settings DramaSettings, draft dramaSegment
 	if request.Operation == "text_to_video" {
 		capacity = 0
 	}
+	// 自动取参考图时按“每段最多参考图”收紧，人物排在最前，优先保证角色一致；手动指定的段只受模型上限约束。
+	settingLimited := draft.view.ReferenceMode != "custom" && settings.ReferenceLimit > 0 && settings.ReferenceLimit < capacity
+	if settingLimited {
+		capacity = settings.ReferenceLimit
+	}
+	request.ReferenceCapacity, request.ModelMaxImages = max(capacity, 0), profile.MaxImages
 	for _, reference := range draft.view.Request.References {
 		cast, exists := casts[reference.CastID]
 		if !exists {
@@ -154,10 +161,21 @@ func (s *Service) prepareDramaSegment(settings DramaSettings, draft dramaSegment
 			}
 			refs = append(refs, ref)
 			capacity--
-			header = append(header, reference.Label+"："+reference.Name)
+			line := reference.Label + "：" + reference.Name
+			if cast.Locked {
+				// 用户锁定（含上传）的形象是硬约束，文字设定与图片冲突时以图片为准。
+				line += "（已锁定形象：" + map[string]string{"character": "五官、发型、服装", "prop": "外形、材质、颜色", "scene": "空间布局、陈设、光线"}[cast.Kind] + "必须与此图一致，文字描述与图片不符时以图片为准）"
+			}
+			header = append(header, line)
 		} else {
 			header = append(header, reference.Label+"（"+reference.Name+"）未附图，请依据文字设定："+firstNonEmpty(cast.Appearance, cast.Description))
-			request.Warning = "部分参考图未就绪或超出模型上限，详见参考图列表"
+			ready := cast.ImageStatus == model.DramaMediaReady && cast.ImageResourceID != ""
+			if ready && capacity <= 0 && settingLimited {
+				request.ReferenceLimited = true
+				request.Warning = fmt.Sprintf("本段引用 %d 个设定，按每段最多 %d 张参考图发送，其余按文字设定；可在生成依据里手动调整", len(draft.view.Request.References), settings.ReferenceLimit)
+			} else if request.Warning == "" {
+				request.Warning = "部分参考图未就绪或超出模型上限，详见参考图列表"
+			}
 		}
 		request.References = append(request.References, reference)
 	}
@@ -219,7 +237,7 @@ func (r *dramaRun) submitSegmentVideo(job *model.DramaJob) (*model.Task, bool, e
 			previous = &rows[i-1]
 		}
 	}
-	for _, draft := range buildDramaSegmentDrafts(r.settings, r.meta, shots, casts) {
+	for _, draft := range buildDramaSegmentDrafts(r.settings, r.meta, shots, casts, rows) {
 		if draft.view.Index != segment.SegmentIndex {
 			continue
 		}
@@ -355,6 +373,9 @@ func (s *Service) ReprocessDramaSegmentVideo(userID, projectID, episodeID string
 	return nil, BadAuthRequest("找不到可重新处理的视频结果，请重新生成本段视频")
 }
 
+// dramaTailDownloadTimeout 是抽尾帧前读取段视频的上限；超时转为可重新处理的失败，而不是一直“生成中”。
+const dramaTailDownloadTimeout = 3 * time.Minute
+
 func (s *Service) extractDramaTailFrame(userID, resourceID string) (string, error) {
 	if s.dramaTailFrameHook != nil {
 		return s.dramaTailFrameHook(userID, resourceID)
@@ -364,6 +385,13 @@ func (s *Service) extractDramaTailFrame(userID, resourceID string) (string, erro
 		return "", err
 	}
 	defer body.Close()
+	// 读取对象存储可能卡住：超时后关闭读取流让 io.Copy 返回，避免一段视频阻塞整个调度循环。
+	var stalled atomic.Bool
+	watchdog := time.AfterFunc(dramaTailDownloadTimeout, func() {
+		stalled.Store(true)
+		_ = body.Close()
+	})
+	defer watchdog.Stop()
 	if !strings.HasPrefix(resource.MimeType, "video/") {
 		return "", errors.New("尾帧来源不是视频")
 	}
@@ -382,8 +410,12 @@ func (s *Service) extractDramaTailFrame(userID, resourceID string) (string, erro
 		return "", err
 	}
 	_, copyErr := io.Copy(file, body)
+	watchdog.Stop()
 	closeErr := file.Close()
 	if copyErr != nil {
+		if stalled.Load() {
+			return "", fmt.Errorf("读取段视频超时（%d 秒），可稍后点“重新处理”", int(dramaTailDownloadTimeout.Seconds()))
+		}
 		return "", copyErr
 	}
 	if closeErr != nil {

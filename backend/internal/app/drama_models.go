@@ -275,6 +275,9 @@ func (s *Service) EstimateDrama(req DramaEstimateRequest) (DramaEstimate, error)
 	words := max(req.WordCount, chapters*1000)
 	// 竖屏短剧每集约 90 秒，对应原文 2000-3000 字；章节过短时按字数折算。
 	episodes := int(math.Round(float64(words) / 2500 * 90 / float64(settings.EpisodeSeconds)))
+	if req.EpisodeMode == DramaEpisodeModeChapter {
+		episodes = chapters
+	}
 	episodes = max(episodes, 1)
 	shotsPerEpisode := settings.Storyboard.ShotTarget(settings.EpisodeSeconds)
 	profile, err := s.dramaVideoProfile(models.Video)

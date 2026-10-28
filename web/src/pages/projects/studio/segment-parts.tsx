@@ -82,7 +82,16 @@ export function SegmentVideo({ segment, aspectRatio, className = "" }: { segment
  * 生成依据：首帧（第 2 段起是上一段视频的最后一帧）和随请求发送的参考图。
  * 参考图编号与提示词里的“参考图N”一致；未附图的设定说明原因。
  */
-export function SegmentInputs({ segment, castById, compact = false, onOpenCast }: { segment: DramaSegment; castById: Map<string, DramaCast>; compact?: boolean; onOpenCast?: (id: string) => void }) {
+/** 参考图未随请求发送的原因；与后端 prepareDramaSegment 的判断一致。 */
+export function referenceMissingReason(segment: DramaSegment, cast: DramaCast | undefined) {
+    if (cast?.imageStatus === "failed") return "参考图生成失败";
+    if (mediaBusy(cast?.imageStatus || "")) return "参考图生成中";
+    if (!cast?.imageResourceId || cast.imageStatus !== "ready") return "参考图未生成";
+    if (segment.request.operation === "text_to_video") return "模型按文生视频生成，不收参考图";
+    return segment.request.referenceLimited ? "超出每段参考图上限" : "超出模型参考图上限";
+}
+
+export function SegmentInputs({ segment, castById, compact = false, frameOnly = false, onOpenCast }: { segment: DramaSegment; castById: Map<string, DramaCast>; compact?: boolean; frameOnly?: boolean; onOpenCast?: (id: string) => void }) {
     const { request } = segment;
     const first = segment.index === 0 && !request.firstFrameResourceId && !request.firstFramePending;
     return (
@@ -101,9 +110,9 @@ export function SegmentInputs({ segment, castById, compact = false, onOpenCast }
                     )}
                 </div>
             </Tooltip>
-            {request.references.map((ref) => {
+            {(frameOnly ? [] : request.references).map((ref) => {
                 const cast = castById.get(ref.castId);
-                const reason = ref.sent ? "" : cast?.imageStatus === "failed" ? "参考图生成失败" : mediaBusy(cast?.imageStatus || "") ? "参考图生成中" : !cast?.imageResourceId ? "参考图未生成" : "超出模型参考图上限";
+                const reason = ref.sent ? "" : referenceMissingReason(segment, cast);
                 const body = (
                     <>
                         <span className={`drama-sg-thumb is-wide ${ref.sent ? "" : "is-missing"}`}>

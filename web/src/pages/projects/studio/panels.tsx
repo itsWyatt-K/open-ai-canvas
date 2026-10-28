@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { App, Button, Checkbox, Input, InputNumber, Select, Switch } from "antd";
-import { AlertCircle, ArrowRight, CheckCheck, Clapperboard, Film, Gem, Inbox, Lock, MapPinned, Maximize2, PauseCircle, RefreshCw, RotateCcw, ScrollText, Sparkles, UserRound, UsersRound, Wand2 } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCheck, Clapperboard, Film, Gem, Inbox, Lock, MapPinned, Maximize2, PauseCircle, RefreshCw, RotateCcw, ScrollText, Sparkles, Upload, UserRound, UsersRound, Wand2 } from "lucide-react";
 
 import { CanvasImagePreview } from "@/components/canvas/canvas-image-preview";
 import { dramaChoiceKey } from "@/lib/drama/model-choice";
@@ -9,6 +9,7 @@ import {
     getDramaCastImpact,
     regenerateDramaCast,
     regenerateDramaCasts,
+    setDramaCastImage,
     updateDramaCast,
     updateDramaSettings,
     type DramaCapability,
@@ -26,6 +27,7 @@ import { DramaModelPicker, useDramaModelCatalog } from "../drama-model-picker";
 import { PromptSkillField } from "../prompt-skill";
 import { StoryboardRules } from "../storyboard-rules";
 import { progressFillStyle } from "@/lib/progress-fill";
+import { uploadResourceFile } from "@/services/api/resources";
 
 // 制作台的三个整页视图：设定（角色 / 道具 / 场景）、待处理、制作设置。都在主区域内展示，不使用抽屉遮挡。
 
@@ -229,6 +231,19 @@ function CastEditor({ projectId, cast, ratios, onChanged }: { projectId: string;
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "操作失败"),
     });
+    // 上传的形象图直接成为参考图并锁定：不会被重新生成覆盖，剧情段视频按这张图生成。
+    const fileRef = useRef<HTMLInputElement>(null);
+    const upload = useMutation({
+        mutationFn: async (file: File) => {
+            const resource = await uploadResourceFile(file, "image", { fileName: file.name });
+            return setDramaCastImage(projectId, cast.id, resource.id, restyle);
+        },
+        onSuccess: (result) => {
+            message.success(result.affectedSegments ? `已替换并锁定形象；${result.affectedSegments} 个剧情段的视频需重新生成` : "已替换并锁定形象，之后的剧情段视频按这张图生成");
+            onChanged();
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "上传失败"),
+    });
     const impact = impactQuery.data;
     const isCharacter = cast.kind === "character";
     const kindLabel = CAST_KIND_LABEL[cast.kind];
@@ -253,7 +268,7 @@ function CastEditor({ projectId, cast, ratios, onChanged }: { projectId: string;
                         ) : mediaBusy(cast.imageStatus) ? (
                             "参考图生成中…"
                         ) : (
-                            "尚未生成参考图，确认描述后点下方生成"
+                            "尚未生成参考图：确认描述后点下方生成，或上传已有的形象图"
                         )}
                     </div>
                 ) : null}
@@ -296,11 +311,35 @@ function CastEditor({ projectId, cast, ratios, onChanged }: { projectId: string;
                 <Button disabled={!dirty} loading={save.isPending} onClick={() => save.mutate()}>
                     保存设定
                 </Button>
-                <Button type="primary" icon={<RefreshCw className="size-4" />} disabled={cast.locked || mediaBusy(cast.imageStatus)} loading={regenerate.isPending} onClick={() => regenerate.mutate()}>
+                <Button icon={<Upload className="size-4" />} loading={upload.isPending} onClick={() => fileRef.current?.click()}>
+                    上传形象图
+                </Button>
+                <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    aria-label={`上传${cast.name}的形象图`}
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (!file) return;
+                        if (!file.type.startsWith("image/")) {
+                            message.warning("请选择 PNG、JPG 或 WebP 图片");
+                            return;
+                        }
+                        if (file.size > 20 * 1024 * 1024) {
+                            message.warning("图片不超过 20MB");
+                            return;
+                        }
+                        upload.mutate(file);
+                    }}
+                />
+                <Button type="primary" className="drama-editor-wide" icon={<RefreshCw className="size-4" />} disabled={cast.locked || mediaBusy(cast.imageStatus)} loading={regenerate.isPending} onClick={() => regenerate.mutate()}>
                     {cast.imageResourceId ? (dirty ? "保存并重新生成" : "重新生成") : dirty ? "保存并生成参考图" : "生成参考图"}
                 </Button>
             </div>
-            <p className="drama-editor-note">旧版本保留在版本记录中；锁定后参考图不会被重新生成。</p>
+            <p className="drama-editor-note">旧版本保留在版本记录中；锁定后参考图不会被重新生成。上传的形象图会自动锁定，生成剧情段视频时随请求发送，并要求外貌、发型与服装以它为准。</p>
             {previewing && cast.imageResourceId ? <CanvasImagePreview storageKey={`resource:${cast.imageResourceId}`} alt={`${cast.name} · ${kindLabel}参考图`} onClose={() => setPreviewing(false)} /> : null}
         </div>
     );
@@ -726,6 +765,11 @@ export function SettingsPanel({ projectId, summary, cast, onChanged }: { project
                                         </button>
                                     ))}
                                 </div>
+                            </section>
+                            <section className="drama-cfg-card">
+                                <SettingsTitle title="每段最多参考图" detail="自动取参考图时的上限，人物优先；0 为按视频模型上限" />
+                                <InputNumber className="!w-full" min={0} max={20} precision={0} value={settings.referenceLimit || 0} onChange={(value) => setSettings({ ...settings, referenceLimit: value || 0 })} suffix="张" aria-label="每段最多参考图" />
+                                <p className="drama-cfg-note">超出的设定按文字描述生成，不附图。个别段需要更多参考图时，在剧情段弹窗里手动指定，只受模型上限约束。</p>
                             </section>
                             <section className="drama-cfg-card">
                                 <SettingsTitle title="预算上限" detail="0 表示不限，达到后自动暂停" />

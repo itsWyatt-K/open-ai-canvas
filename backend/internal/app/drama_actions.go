@@ -211,27 +211,6 @@ func (s *Service) ApproveDramaEpisode(userID, projectID, episodeID string) (Dram
 	return s.DramaEpisodeDetail(userID, projectID, episodeID)
 }
 
-func (s *Service) UpdateDramaEpisodeTitle(userID string, projectID string, episodeID string, title string) (model.DramaEpisode, error) {
-	project, _, err := s.dramaForUser(userID, projectID)
-	if err != nil {
-		return model.DramaEpisode{}, err
-	}
-	title = strings.TrimSpace(title)
-	if title == "" || utf8.RuneCountInString(title) > 60 {
-		return model.DramaEpisode{}, BadAuthRequest("集标题需为 1 到 60 字")
-	}
-	episode, err := s.repo.DramaEpisode(project.ID, episodeID)
-	if err != nil {
-		return model.DramaEpisode{}, err
-	}
-	// 标题不影响已生成内容，不递增版本，避免打断正在进行的调度写入。
-	if err := s.repo.UpdateDramaEpisodeTitle(episode.ID, title); err != nil {
-		return model.DramaEpisode{}, err
-	}
-	episode.Title = title
-	return *episode, nil
-}
-
 // RescriptDramaEpisode 重新改编一集；旧镜头的产物版本保留在版本库中。
 func (s *Service) RescriptDramaEpisode(userID string, projectID string, episodeID string) (DramaEpisodeDetail, error) {
 	project, productionRow, err := s.dramaForUser(userID, projectID)
@@ -275,7 +254,7 @@ func (s *Service) UpdateDramaShot(userID, projectID, shotID string, req UpdateDr
 		value  *string
 		limit  int
 	}{
-		{"speaker", &shot.Speaker, req.Speaker, 60}, {"dialogue", &shot.Dialogue, req.Dialogue, 200}, {"action", &shot.Action, req.Action, 1000},
+		{"speaker", &shot.Speaker, req.Speaker, 60}, {"dialogue", &shot.Dialogue, req.Dialogue, dramaMaxDialogueRunes}, {"action", &shot.Action, req.Action, 1000},
 		{"shot_size", &shot.ShotSize, req.ShotSize, 30}, {"image_prompt", &shot.ImagePrompt, req.ImagePrompt, 2000}, {"camera", &shot.Camera, req.Camera, 60}, {"video_prompt", &shot.VideoPrompt, req.VideoPrompt, 2000},
 	} {
 		if f.value == nil {
@@ -392,31 +371,7 @@ func (s *Service) RegenerateDramaCast(userID string, projectID string, castID st
 	}
 	affected := 0
 	if restyleSegments {
-		shots, err := s.repo.DramaShotsReferencingCast(project.ID, cast.ID)
-		if err != nil {
-			return nil, err
-		}
-		rewind := s.newEpisodeRewind(project.ID)
-		marked := map[string]bool{}
-		for _, shot := range shots {
-			key := shot.EpisodeID + "|" + itoa(shot.SegmentIndex)
-			if marked[key] {
-				continue
-			}
-			marked[key] = true
-			changed, err := s.repo.MarkDramaSegmentVideoStale(shot.EpisodeID, shot.SegmentIndex)
-			if err != nil {
-				return nil, err
-			}
-			if !changed {
-				continue
-			}
-			if err := rewind.to(shot.EpisodeID, model.DramaEpisodeVideo); err != nil {
-				return nil, err
-			}
-			affected++
-		}
-		if err := rewind.commit(); err != nil {
+		if affected, err = s.restyleDramaCastSegments(project.ID, cast.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -424,6 +379,36 @@ func (s *Service) RegenerateDramaCast(userID string, projectID string, castID st
 		return nil, err
 	}
 	return map[string]any{"affectedSegments": affected}, nil
+}
+
+// restyleDramaCastSegments 让引用该设定、已生成或生成中的剧情段视频过期，并把所在集退回视频阶段。返回过期的段数。
+func (s *Service) restyleDramaCastSegments(projectID, castID string) (int, error) {
+	shots, err := s.repo.DramaShotsReferencingCast(projectID, castID)
+	if err != nil {
+		return 0, err
+	}
+	rewind := s.newEpisodeRewind(projectID)
+	marked := map[string]bool{}
+	affected := 0
+	for _, shot := range shots {
+		key := shot.EpisodeID + "|" + itoa(shot.SegmentIndex)
+		if marked[key] {
+			continue
+		}
+		marked[key] = true
+		changed, err := s.repo.MarkDramaSegmentVideoStale(shot.EpisodeID, shot.SegmentIndex)
+		if err != nil {
+			return 0, err
+		}
+		if !changed {
+			continue
+		}
+		if err := rewind.to(shot.EpisodeID, model.DramaEpisodeVideo); err != nil {
+			return 0, err
+		}
+		affected++
+	}
+	return affected, rewind.commit()
 }
 
 // DramaAssetSchemeCatalog 是参考图方案目录：内置方案的默认提示词与可用变量。

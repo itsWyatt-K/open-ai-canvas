@@ -15,7 +15,8 @@ import (
 // 总架构师施工令（2026-10-27 v1.7 合流）：本地 50-66 号段已 applied 严禁改动；
 // 上游 v1.7.x 新增迁移 61-72 共 12 条按「+6 平移」铁律重写为 67-78。
 // 第一刀（v1.7.0）：61-71 → 67-77；第二刀（v1.7.1+main）：72 → 78。
-const CurrentSchemaVersion int64 = 78
+// 第三刀（v1.7.2）：73-74 → 79-80。
+const CurrentSchemaVersion int64 = 80
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -320,6 +321,20 @@ var schemaMigrations = []migration{
 	}},
 {version: 77, name: "drama_segment_mode", checksum: "sha256:drama-segment-mode-v71-20261026", apply: migrateDramaSegmentMode},
 {version: 78, name: "referral_center", checksum: "sha256:referral-center-v72-20261027", apply: migrateReferralCenter},
+	{version: 79, name: "drama_episode_source_format", checksum: "sha256:drama-episode-source-format-v73-20261027", apply: func(tx *gorm.DB) error {
+		// 旧集没有素材类型，空串按小说原文处理。
+		if tx.Migrator().HasColumn(&model.DramaEpisode{}, "SourceFormat") {
+			return nil
+		}
+		return tx.Migrator().AddColumn(&model.DramaEpisode{}, "SourceFormat")
+	}},
+	{version: 80, name: "drama_segment_references", checksum: "sha256:drama-segment-references-v74-20261027", apply: func(tx *gorm.DB) error {
+		// 空串表示按镜头自动取参考图，旧段保持原行为。
+		if tx.Migrator().HasColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON") {
+			return nil
+		}
+		return tx.Migrator().AddColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON")
+	}},
 }
 
 // migrateReferralCenter 增加推广人标记和推广码、绑定、返佣三张表；旧用户默认不是推广人。

@@ -116,14 +116,19 @@ func (s *Service) tickDrama(productionRow *model.DramaProduction) error {
 		return err
 	}
 	productionRow = fresh
-	if productionRow.Status != model.DramaStatusRunning {
-		return nil
-	}
 	project, err := s.repo.ProjectForUser(productionRow.UserID, productionRow.ProjectID)
 	if err != nil {
 		return err
 	}
 	run := &dramaRun{s: s, production: productionRow, project: project, settings: parseDramaSettings(productionRow.SettingsJSON), meta: parseDramaBibleMeta(productionRow.BibleJSON)}
+	if productionRow.Status != model.DramaStatusRunning {
+		// 暂停后已派发的任务仍会完成：照常回写结果（视频入库、抽尾帧），否则段会一直停在“生成中”，下一段也拿不到首帧。
+		status := productionRow.Status
+		if err := run.syncJobs(); err != nil {
+			return err
+		}
+		return s.repo.SaveDramaProductionProgress(run.production, status, run.production.Status != status)
+	}
 	if err := run.syncJobs(); err != nil {
 		return err
 	}
@@ -429,9 +434,18 @@ func (r *dramaRun) advanceEpisode(e *model.DramaEpisode, loadedStage string) err
 	}
 	switch e.Stage {
 	case model.DramaEpisodeScript:
-		if e.Error == "" {
-			r.enqueue(model.DramaJobScript, e.ID, "", "", episodePriority(60, e.Number), label+" 剧本与分镜", nil)
+		if e.Error != "" || r.active[dramaJobKey(model.DramaJobScript, e.ID, "", "")] {
+			break
 		}
+		handled, err := r.applyDirectStoryboard(e)
+		if err != nil {
+			return err
+		}
+		if handled {
+			// 分镜已直接写入（阶段与版本由 ApplyDramaScript 更新）或已记录错误，本轮不再回写阶段。
+			return nil
+		}
+		r.enqueue(model.DramaJobScript, e.ID, "", "", episodePriority(60, e.Number), label+" 剧本与分镜", nil)
 	case model.DramaEpisodePrompts:
 		ready := len(segments) > 0
 		for _, seg := range segments {
@@ -706,7 +720,7 @@ func (r *dramaRun) applyPlan(job *model.DramaJob, task *model.Task) error {
 		for _, index := range item.Chapters {
 			ids = append(ids, chapters[index-1].ID)
 		}
-		episodes = append(episodes, model.DramaEpisode{ID: newID(), ProjectID: r.project.ID, Number: next, Title: truncateRunes(item.Title, 60), Synopsis: truncateRunes(item.Synopsis, 1000), Hook: truncateRunes(item.Hook, 300), Cliffhanger: truncateRunes(item.Cliffhanger, 300), ChapterIDsJSON: encodeStringList(ids), Stage: model.DramaEpisodeQueued, Revision: 1, CreatedAt: now, UpdatedAt: now})
+		episodes = append(episodes, model.DramaEpisode{ID: newID(), ProjectID: r.project.ID, Number: next, Title: truncateRunes(item.Title, 60), Synopsis: truncateRunes(item.Synopsis, 1000), Hook: truncateRunes(item.Hook, 300), Cliffhanger: truncateRunes(item.Cliffhanger, 300), ChapterIDsJSON: encodeStringList(ids), SourceFormat: model.DramaSourceNovel, Stage: model.DramaEpisodeQueued, Revision: 1, CreatedAt: now, UpdatedAt: now})
 	}
 	expected := r.production.PlanCursor
 	r.production.PlanCursor = payload.End
@@ -732,9 +746,42 @@ func (r *dramaRun) applyScript(job *model.DramaJob, task *model.Task) error {
 	if episode.Stage != model.DramaEpisodeScript || episode.Revision != payload.Revision {
 		return nil
 	}
+	return r.applyScriptShots(episode, scripted, production.ParseScriptCast(text), production.ParseScriptEpisode(text))
+}
+
+// applyDirectStoryboard 用户上传的分镜能直接解析时跳过文本模型，镜头与台词原样入库。返回是否已处理。
+func (r *dramaRun) applyDirectStoryboard(e *model.DramaEpisode) (bool, error) {
+	if production.NormalizeSourceFormat(e.SourceFormat) != production.SourceStoryboard {
+		return false, nil
+	}
+	chapters, err := r.loadChapters(decodeStringList(e.ChapterIDsJSON))
+	if err != nil || len(chapters) == 0 {
+		return false, err
+	}
+	texts := make([]string, 0, len(chapters))
+	for _, chapter := range chapters {
+		texts = append(texts, chapter.Text)
+	}
+	scripted, ok := production.ParseStoryboardSource(strings.Join(texts, "\n"))
+	if !ok {
+		return false, nil
+	}
+	if err := r.applyScriptShots(e, scripted, nil, production.ScriptEpisode{}); err != nil {
+		return true, r.s.repo.UpdateDramaEpisodeUser(e.ID, map[string]any{"error": "分镜导入失败：" + err.Error()})
+	}
+	return true, nil
+}
+
+// applyScriptShots 把镜头表写入本集：解析角色、道具与场景引用，按分镜规则计时并切分剧情段。
+// hints 是剧本给出的新设定外观，用于即时建档；info 补齐逐集追加时缺少的梗概。
+func (r *dramaRun) applyScriptShots(episode *model.DramaEpisode, scripted []production.ScriptShot, hints []production.ScriptCast, info production.ScriptEpisode) error {
 	casts, err := r.s.repo.DramaCasts(r.project.ID)
 	if err != nil {
 		return err
+	}
+	hintByKey := map[string]production.ScriptCast{}
+	for _, hint := range hints {
+		hintByKey[hint.Kind+"|"+production.NormalizeName(hint.Name)] = hint
 	}
 	characters, props, scenes := dramaKindIndex(casts, "character"), dramaKindIndex(casts, "prop"), dramaKindIndex(casts, "scene")
 	now := time.Now()
@@ -748,15 +795,20 @@ func (r *dramaRun) applyScript(job *model.DramaJob, task *model.Task) error {
 		if id, ok := index.Lookup(name); ok {
 			return id
 		}
-		// 剧本里首次出现的人物或地点即时建档，后续集通过别名归并复用。
+		// 剧本里首次出现的人物或地点即时建档，后续集通过别名归并复用；剧本给了外观就一并写入，参考图才有依据。
 		cast := model.DramaCast{ID: newID(), ProjectID: r.project.ID, Kind: kind, Name: truncateRunes(name, 60), AliasesJSON: "[]", Position: position, CreatedAt: now, UpdatedAt: now}
+		if hint, ok := hintByKey[kind+"|"+production.NormalizeName(name)]; ok {
+			cast.Appearance = truncateRunes(hint.Appearance, 1000)
+			if kind == "character" {
+				cast.VoiceInstructions = truncateRunes(hint.Voice, 500)
+			}
+		}
 		position++
 		created = append(created, cast)
 		index.Add(cast.ID, cast.Name)
 		return cast.ID
 	}
 	shots := make([]model.DramaShot, 0, len(scripted))
-	var total int64
 	for index, item := range scripted {
 		castIDs := []string{}
 		for _, name := range item.Characters {
@@ -774,28 +826,37 @@ func (r *dramaRun) applyScript(job *model.DramaJob, task *model.Task) error {
 				propIDs = append(propIDs, id)
 			}
 		}
-		duration := r.settings.Storyboard.ShotMs(item.DurationSeconds, item.Dialogue)
-		total += duration
-		shot := model.DramaShot{ID: newID(), ProjectID: r.project.ID, EpisodeID: episode.ID, Position: index, Scene: truncateRunes(item.Scene, 120), SceneCastID: resolve(scenes, "scene", item.Scene), CastIDsJSON: encodeStringList(castIDs), PropIDsJSON: encodeStringList(propIDs), Speaker: truncateRunes(item.Speaker, 60), Dialogue: truncateRunes(item.Dialogue, 200), Action: truncateRunes(item.Action, 1000), ShotSize: truncateRunes(item.ShotSize, 30), Camera: truncateRunes(item.Camera, 60), DurationMs: duration, ImagePrompt: truncateRunes(item.ImagePrompt, 2000), VideoPrompt: truncateRunes(item.VideoPrompt, 2000), SourceQuote: truncateRunes(item.SourceQuote, 300), Transition: production.NormalizeTransition(item.Transition), CreatedAt: now, UpdatedAt: now}
+		shot := model.DramaShot{ID: newID(), ProjectID: r.project.ID, EpisodeID: episode.ID, Position: index, Scene: truncateRunes(item.Scene, 120), SceneCastID: resolve(scenes, "scene", item.Scene), CastIDsJSON: encodeStringList(castIDs), PropIDsJSON: encodeStringList(propIDs), Speaker: truncateRunes(item.Speaker, 60), Dialogue: truncateRunes(item.Dialogue, dramaMaxDialogueRunes), Action: truncateRunes(item.Action, 1000), ShotSize: truncateRunes(item.ShotSize, 30), Camera: truncateRunes(item.Camera, 60), DurationMs: r.settings.Storyboard.ShotMs(item.DurationSeconds, item.Dialogue), ImagePrompt: truncateRunes(item.ImagePrompt, 2000), VideoPrompt: truncateRunes(item.VideoPrompt, 2000), SourceQuote: truncateRunes(item.SourceQuote, 300), Transition: production.NormalizeTransition(item.Transition), CreatedAt: now, UpdatedAt: now}
 		shots = append(shots, shot)
 	}
 	profile, err := r.s.dramaVideoProfile(r.settings.Models.Video)
 	if err != nil {
 		return err
 	}
-	for _, shot := range shots {
-		if shot.DurationMs > int64(profile.maxSeconds())*1000 {
-			return errors.New("单镜时长超过视频模型上限，请调整分镜规则")
+	// 说完长台词的镜头可能超过视频模型单次上限：夹到上限而不是整集失败，台词保持原样，用户可在剧本里拆镜。
+	limit := int64(profile.maxSeconds()) * 1000
+	var total int64
+	for i := range shots {
+		if limit > 0 && shots[i].DurationMs > limit {
+			shots[i].DurationMs = limit
 		}
+		total += shots[i].DurationMs
 	}
 	assignDramaSegments(shots, r.settings.Storyboard.SegmentLimits(profile.maxSeconds()))
 	if err := r.s.repo.CreateDramaCasts(created); err != nil {
 		return err
 	}
+	fields := map[string]any{"shot_count": len(shots), "duration_ms": total, "stage": model.DramaEpisodePrompts, "error": "", "approved": false}
+	if strings.TrimSpace(episode.Synopsis) == "" && info.Synopsis != "" {
+		fields["synopsis"], fields["hook"], fields["cliffhanger"] = truncateRunes(info.Synopsis, 1000), truncateRunes(info.Hook, 300), truncateRunes(info.Cliffhanger, 300)
+	}
 	revision := episode.Revision
-	_, err = r.s.repo.ApplyDramaScript(episode.ID, &revision, map[string]any{"shot_count": len(shots), "duration_ms": total, "stage": model.DramaEpisodePrompts, "error": "", "approved": false}, shots)
+	_, err = r.s.repo.ApplyDramaScript(episode.ID, &revision, fields, shots)
 	return err
 }
+
+// dramaMaxDialogueRunes 是单镜台词的存储上限；远高于分镜规则的单镜字数，只防异常输入，不用于裁剪正常台词。
+const dramaMaxDialogueRunes = 500
 
 func dramaKindIndex(casts []model.DramaCast, kind string) *production.CastIndex {
 	index := production.NewCastIndex()
@@ -925,7 +986,11 @@ func (r *dramaRun) submitSegmentPrompt(job *model.DramaJob) (*model.Task, bool, 
 	for _, cast := range r.casts {
 		castByID[cast.ID] = cast
 	}
-	drafts := buildDramaSegmentDrafts(r.settings, r.meta, shots, castByID)
+	rows, err := r.s.repo.DramaSegments(segment.EpisodeID)
+	if err != nil {
+		return nil, false, err
+	}
+	drafts := buildDramaSegmentDrafts(r.settings, r.meta, shots, castByID, rows)
 	for position, draft := range drafts {
 		if draft.view.Index != segment.SegmentIndex {
 			continue
@@ -1135,6 +1200,7 @@ func (r *dramaRun) submitScript(job *model.DramaJob) (*model.Task, bool, error) 
 		Title:   r.project.Name, Settings: r.settings.Settings, VisualRules: r.meta.VisualRules,
 		EpisodeNumber: episode.Number, EpisodeTitle: episode.Title, Synopsis: episode.Synopsis, Hook: episode.Hook, Cliffhanger: episode.Cliffhanger,
 		CastSummary: r.castSummary("character", 30), PropSummary: r.castSummary("prop", 20), SceneSummary: r.castSummary("scene", 20), SourceChapters: chapters,
+		SourceFormat: episode.SourceFormat,
 	})
 	task, err := r.createTask("text", "text", prompt, r.textInput(job, production.ScriptSystemPrompt()))
 	return task, false, err
