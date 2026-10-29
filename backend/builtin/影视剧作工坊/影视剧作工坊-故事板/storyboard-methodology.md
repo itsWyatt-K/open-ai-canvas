@@ -1,7 +1,5 @@
 # 分镜创作方法论
 
-> **【云端 Agent 视觉观察纪律（#877）】**：当任务涉及画布已上传图片的内容分析、反推或一致性参考时，Agent 必须先调用 `canvas_inspect_image`（支持 `nodeIds` 批量传入与 `purpose` 声明）观察图像；未调用观察工具或超出复看预算时，严禁凭空捏造画面细节；如需跨项目提取结构化视觉 DNA，可引导结合 E-Reverse 工具使用。
-
 > 来源：《影视动画分镜入门》（原名 *Storyboarding Essentials*）
 > 作者：戴维·哈兰·鲁索（David Harland Russo）、本杰明·里德·菲利普斯（Benjamin Reid Phillips）
 > 译者：孙宝库｜四川美术出版社，2021

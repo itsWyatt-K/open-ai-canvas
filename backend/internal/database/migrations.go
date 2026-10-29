@@ -13,10 +13,9 @@ import (
 )
 
 // 总架构师施工令（2026-10-27 v1.7 合流）：本地 50-66 号段已 applied 严禁改动；
-// 上游 v1.7.x 新增迁移 61-72 共 12 条按「+6 平移」铁律重写为 67-78。
-// 第一刀（v1.7.0）：61-71 → 67-77；第二刀（v1.7.1+main）：72 → 78。
-// 第三刀（v1.7.2）：73-74 → 79-80。
-const CurrentSchemaVersion int64 = 80
+// 上游 v1.7.x 新增迁移按「+6 平移」铁律重写：61-71 → 67-77、72 → 78、73-74 → 79-80、75-77 → 81-83。
+// 第一刀（v1.7.0）；第二刀（v1.7.1+main）；第三刀（v1.7.2）；第四刀（v1.7.3.2）。
+const CurrentSchemaVersion int64 = 83
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -335,6 +334,70 @@ var schemaMigrations = []migration{
 		}
 		return tx.Migrator().AddColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON")
 	}},
+	{version: 81, name: "user_groups_pricing_currency", checksum: "sha256:user-groups-pricing-currency-v75-20261028", apply: migrateUserGroupsPricingCurrency},
+	{version: 82, name: "agent_memory_document_skill_discovery", checksum: "sha256:agent-memory-document-skill-discovery-v76-20261028", apply: migrateAgentMemoryDocumentSkillDiscovery},
+	{version: 83, name: "agent_memory_document_columns", checksum: "sha256:agent-memory-document-columns-v77-20261028", apply: migrateAgentMemoryDocumentColumns},
+}
+
+// migrateAgentMemoryDocumentColumns 补齐记忆文件的条目序号与修订的工具调用 ID。
+// 早期构建执行 v76 时这两列还不存在，v76 已记为完成不会重跑；新库由 v76 建全，这里是空操作。
+func migrateAgentMemoryDocumentColumns(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.AgentMemoryDocument{}, &model.AgentMemoryDocumentRevision{}); err != nil {
+		return err
+	}
+	// 新增列对旧行是 NULL；写成零值，与新建行一致。
+	if err := tx.Model(&model.AgentMemoryDocument{}).Where("next_entry_seq IS NULL").Update("next_entry_seq", 0).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.AgentMemoryDocumentRevision{}).Where("call_id IS NULL").Update("call_id", "").Error
+}
+
+// migrateAgentMemoryDocumentSkillDiscovery 新建用户记忆文件及其修订表，并给用户技能状态补
+// Agent 自动发现模式与读取统计列。旧状态 agent_mode 为空，按 auto 处理，行为与“已安装即可发现”一致。
+func migrateAgentMemoryDocumentSkillDiscovery(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.AgentMemoryDocument{}, &model.AgentMemoryDocumentRevision{}); err != nil {
+		return err
+	}
+	for _, field := range []string{"AgentMode", "AgentUseCount", "AgentLastUsedAt"} {
+		if tx.Migrator().HasColumn(&model.UserSkillState{}, field) {
+			continue
+		}
+		if err := tx.Migrator().AddColumn(&model.UserSkillState{}, field); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateUserGroupsPricingCurrency 增加用户分组、分组渠道绑定，以及模型计价货币、充值商品货币和账单分组快照列。
+// 旧用户 user_group 为空（归入 default），旧模型按积分计价，旧商品按人民币计价，计费结果不变。
+func migrateUserGroupsPricingCurrency(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.UserGroup{}, &model.UserGroupChannel{}); err != nil {
+		return err
+	}
+	columns := []struct {
+		model any
+		field string
+	}{
+		{&model.User{}, "UserGroup"},
+		{&model.ChannelModel{}, "PriceCurrency"},
+		{&model.TopupProduct{}, "Currency"},
+		{&model.BillingOrder{}, "UserGroup"},
+		{&model.BillingOrder{}, "PriceCurrency"},
+		{&model.BillingOrder{}, "CurrencyRateMicrocredits"},
+	}
+	for _, column := range columns {
+		if tx.Migrator().HasColumn(column.model, column.field) {
+			continue
+		}
+		if err := tx.Migrator().AddColumn(column.model, column.field); err != nil {
+			return err
+		}
+	}
+	if !tx.Migrator().HasIndex(&model.User{}, "UserGroup") {
+		return tx.Migrator().CreateIndex(&model.User{}, "UserGroup")
+	}
+	return nil
 }
 
 // migrateReferralCenter 增加推广人标记和推广码、绑定、返佣三张表；旧用户默认不是推广人。

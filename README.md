@@ -341,13 +341,6 @@ cd docs && bun run types:check
 <table>
 <tr>
 <td width="50%" valign="top">
-  <img src="assets/user-ddcat.jpg" alt="ddCat" width="56" align="left">
-  <strong>ddCat<br><sub>项目发起者 · 微信：ddcat0829</sub></strong><br>
-  <a href="mailto:ddcat666@126.com">ddcat666@126.com</a><br>
-  <em>在计算机里头没有任何黑魔法，所有的东西只不过是我现在不知道而已，总有一天我会把所有的细节、所有的内部的东西全搞明白的。</em>
-  <br clear="left">
-</td>
-<td width="50%" valign="top">
   <img src="assets/user-sikongyue.png" alt="爱笑的毛毛虫" width="56" align="left">
   <strong>爱笑的毛毛虫<br><sub>用户名：sikongyue</sub></strong><br>
   <a href="mailto:315515767@qq.com">315515767@qq.com</a><br>

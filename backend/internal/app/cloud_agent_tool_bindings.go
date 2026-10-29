@@ -23,10 +23,11 @@ func cloudAgentToolHandlers() map[string]cloudAgentToolHandler {
 		agenttool.ImageAnnotationRender:  {Read: cloudAgentHandleImageAnnotationRender},
 		agenttool.SkillReadFile:          {Read: cloudAgentHandleSkillReadFile},
 		agenttool.SkillSearch:            {Read: cloudAgentHandleSkillSearch},
+		agenttool.SkillMarketSearch:      {Read: cloudAgentHandleSkillMarketSearch},
+		agenttool.SkillRecommend:         {Read: cloudAgentHandleSkillRecommend},
 		agenttool.TaskGet:                {Read: cloudAgentHandleTaskGet},
 		agenttool.CanvasInspectImage:     {Pipeline: cloudAgentToolVision},
-		agenttool.RecallLessons:          {Read: cloudAgentHandleRecallLessons},
-		agenttool.RememberLesson:         {Read: cloudAgentHandleRememberLesson},
+		agenttool.MemoryUpdate:           {Read: cloudAgentHandleMemoryUpdate},
 		agenttool.ImageLayerSplit:        {Pipeline: cloudAgentToolMedia},
 		agenttool.ModelList:              {Read: cloudAgentHandleModelList},
 		agenttool.CanvasCreateStoryboard: {Write: applyCloudAgentStoryboardMutation, Preview: cloudAgentPreviewStoryboardCreate},
@@ -46,6 +47,9 @@ func cloudAgentToolHandlers() map[string]cloudAgentToolHandler {
 		agenttool.EcommerceConfirmPlan:      {Pipeline: cloudAgentToolMedia, Write: cloudAgentAdaptLocalWrite(cloudAgentEcommerceConfirmPlan), Preview: cloudAgentPreviewEcommerceAction("确认企划并派发生图（计费动作）")},
 		agenttool.DirectorValidatePrompt:    {Read: cloudAgentAdaptLocalRead(cloudAgentDirectorValidatePrompt)},
 		agenttool.DirectorValidateLedger:    {Read: cloudAgentAdaptLocalRead(cloudAgentDirectorValidateLedger)},
+		// v1.7.3.2 上游增量：短剧画布投送双工具绑定。
+		agenttool.DramaGetContext:       {Read: cloudAgentHandleDramaGetContext},
+		agenttool.DramaAdoptCanvasMedia: {Write: applyCloudAgentDramaAdopt, Preview: cloudAgentPreviewDramaAdopt},
 	}
 }
 

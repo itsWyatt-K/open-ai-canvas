@@ -36,6 +36,8 @@ func piOutputLimitFixture(t *testing.T) (*Service, *gorm.DB, string) {
 		}
 		profile := mustEncodeModelCapabilityConfig(t, DefaultModelCapabilityConfigForModel("chat-completion", "text-test"))
 		for _, row := range []any{
+			// 任务准入按用户分组过滤渠道，账号必须真实存在（与 SQLite 夹具一致）。
+			&model.User{ID: "user", Username: "user", Role: model.UserRoleUser, Status: model.UserStatusActive},
 			&model.ModelChannel{ID: "channel", Scope: model.ChannelScopeSystem, Enabled: true},
 			&model.ChannelModel{ID: "cm", ChannelID: "channel", ModelKey: "text-test", Capability: "text", Protocol: model.ChannelInterfaceChatCompletion, CapabilityConfigJSON: profile, BillingMode: "fixed_request", UnitPriceMicrocredits: 100, PriceConfigured: true, Enabled: true},
 			&model.ChannelModelPriceTier{ID: "tier", ChannelModelID: "cm", SelectorKey: "{}", SelectorJSON: "{}", BillingMode: "fixed_request", UnitPriceMicrocredits: 100, PriceConfigured: true, Enabled: true},
@@ -47,6 +49,8 @@ func piOutputLimitFixture(t *testing.T) (*Service, *gorm.DB, string) {
 		}
 	}
 	s.disablePiRuntime, s.legacyCloudAgentRootTask = true, false
+	// 用例只校验重试次数与纠正上下文，不校验退避时长；生产的 1s/2s/4s 退避会让 bounded-failure 白等 7 秒。
+	s.cloudAgentModelRetryBase = 10 * time.Millisecond
 	if err := os.WriteFile(filepath.Join(s.dataDir, ".settings-key"), make([]byte, 32), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +80,9 @@ func TestPiOutputLimitCorrection(t *testing.T) {
 		{"oversized-text", []int{0, 1}, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// 每个子用例有独立的库（SQLite 临时文件或 PostgreSQL 临时 schema）和 Service，可以并行；
+			// 串行时 PostgreSQL 下每个子用例都要整库迁移，是该包最慢的用例。
+			t.Parallel()
 			s, db, runID := piOutputLimitFixture(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 			defer cancel()

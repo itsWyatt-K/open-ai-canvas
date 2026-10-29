@@ -17,8 +17,6 @@ description: >
   or asks to create video prompts, image prompts, character sheets, or first-frame images.
 ---
 
-> **【云端 Agent 视觉观察纪律（#877）】**：当任务涉及画布已上传图片的内容分析、反推或一致性参考时，Agent 必须先调用 `canvas_inspect_image`（支持 `nodeIds` 批量传入与 `purpose` 声明）观察图像；未调用观察工具或超出复看预算时，严禁凭空捏造画面细节；如需跨项目提取结构化视觉 DNA，可引导结合 E-Reverse 工具使用。
-
 # Seedance 2.0 视频 & 图片提示词生成器
 
 > **落位说明**（并入影视剧作工坊时添加，正文保留原文）
