@@ -20,6 +20,7 @@ import {
     copyStoryboardText,
     fetchKeyframeDataUrl,
     toHandoffShots,
+    goldenThreeShotIndexes,
     writeEreverseHandoff,
     writeLiveReferenceHandoff,
 } from "./handoff";
@@ -108,6 +109,10 @@ export default function EReversePage() {
     const [jobId, setJobId] = useState<string | null>(null);
     const [status, setStatus] = useState<EreverseJobStatus | null>(null);
     const [view, setView] = useState<EreverseView | null>(null);
+    // 镜头筛选与成本闸门（夜间施工令阶段三）：null=全选；防 8×N 盲目扣费，投送只带走勾选镜。
+    const [selectedSceneIndexes, setSelectedSceneIndexes] = useState<Set<number> | null>(null);
+    // 🛡️ 敏感品类防封改写：开启时分镜行 plotDescription 用 compliancePrompt 双轨稿。
+    const [preferCompliance, setPreferCompliance] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -132,6 +137,7 @@ export default function EReversePage() {
                     setStatus(s);
                     if (s.stage === "done" && s.pft) {
                         setView(presentEreversePft(s.pft, jobId, ereverseAssetUrl));
+                        setSelectedSceneIndexes(null);
                     }
                     if (s.stage === "error") setView(null);
                 })
@@ -186,8 +192,8 @@ export default function EReversePage() {
 
     /** 视觉配方提示词（结果区摘要 + 直播台出口共用一份口径）。 */
     const visualDnaText = useMemo(() => (view ? buildVisualDnaText(view) : ""), [view]);
-    /** 画布 / 制片台出口的镜头序列快照。 */
-    const handoffShots = useMemo(() => (view ? toHandoffShots(view) : []), [view]);
+    /** 画布 / 制片台出口的镜头序列快照（只带勾选镜——成本闸门，防 8×N 盲目扣费）。 */
+    const handoffShots = useMemo(() => (view ? toHandoffShots(view, { selectedIndexes: selectedSceneIndexes ?? undefined }) : []), [view, selectedSceneIndexes]);
     /** 画布分镜 builder 产物（复制到剪贴板供「粘贴」动线）。 */
     const storyboardShots = useMemo(() => (view ? buildStoryboardShots(view) : []), [view]);
 
@@ -218,19 +224,19 @@ export default function EReversePage() {
 
     const handleSendToCanvas = useCallback(async () => {
         if (!view) return;
-        writeEreverseHandoff({ target: "canvas", sourceName: view.sourceName, shots: handoffShots, visualDnaText });
+        writeEreverseHandoff({ target: "canvas", sourceName: view.sourceName, shots: handoffShots, visualDnaText, sourceVideoUrl: /^https?:\/\//.test(videoPath) ? videoPath : undefined, preferCompliance });
         const copied = await copyStoryboardText(storyboardShots);
-        navigate("/canvas?from=ereverse&target=canvas");
-        message.success(copied ? "已带入反推配方并复制分镜文本，请在画布「一键复刻」/分镜节点中粘贴/选择" : "已带入反推配方，请在画布「一键复刻」/分镜节点中粘贴/选择");
-    }, [view, handoffShots, storyboardShots, visualDnaText, navigate, message]);
+        navigate("/canvas?handoff=ereverse");
+        message.success(copied ? `已带入 ${handoffShots.length} 镜并复制分镜文本：画布将自动落出关键帧参考、自家主体锁定卡与分镜表（不自动生成、不扣费）` : "已带入反推配方：画布将自动落出关键帧参考、自家主体锁定卡与分镜表（不自动生成、不扣费）");
+    }, [view, handoffShots, storyboardShots, visualDnaText, videoPath, preferCompliance, navigate, message]);
 
     const handleSendToProjects = useCallback(async () => {
         if (!view) return;
-        writeEreverseHandoff({ target: "projects", sourceName: view.sourceName, shots: handoffShots, visualDnaText });
+        writeEreverseHandoff({ target: "projects", sourceName: view.sourceName, shots: handoffShots, visualDnaText, preferCompliance });
         const copied = await copyStoryboardText(storyboardShots);
-        navigate("/projects?from=ereverse&target=projects");
-        message.success(copied ? "已带入反推配方并复制分镜文本，请在制片台分镜中粘贴/选择" : "已带入反推配方，请在制片台分镜中粘贴/选择");
-    }, [view, handoffShots, storyboardShots, visualDnaText, navigate, message]);
+        navigate("/projects?handoff=ereverse");
+        message.success(copied ? `已带入 ${handoffShots.length} 镜：制片台分镜导入处提供「从爆款反推导入」一键按钮` : "已带入反推配方：制片台分镜导入处提供「从爆款反推导入」一键按钮");
+    }, [view, handoffShots, storyboardShots, visualDnaText, preferCompliance, navigate, message]);
 
     const handleSendToLiveStudio = useCallback(async () => {
         if (!view) return;
@@ -275,7 +281,7 @@ export default function EReversePage() {
                         to="/modules"
                         className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-border/60 bg-surface px-3 py-1.5 text-xs font-medium text-foreground/70 shadow-sm transition-colors hover:border-primary/50 hover:text-primary"
                     >
-                        <ArrowLeft className="size-3.5" /> 返回模块大厅
+                        <ArrowLeft className="size-3.5" /> 返回定制模块
                     </Link>
                     {/* 返工令 Round 5 · 状态收敛：原来这里一排 6 个技术 Tag（ffmpeg / ASR / 四个引擎名）
                         全铺在页面中央，小白一进来就被黑话劝退。现在收成右上角一个极简状态点，
@@ -580,22 +586,56 @@ export default function EReversePage() {
                         </div>
 
                         {/* 分镜表（返工令 Round 5）：按镜头列出景别 / 运镜 / 视觉提示词 / 台词，
-                            数据全部来自本轮反推结果（view.scenes），VLM 未产出的字段留空不臆造。 */}
+                            数据全部来自本轮反推结果（view.scenes），VLM 未产出的字段留空不臆造。
+                            夜间施工令阶段三：每镜前加投送复选框（默认全选）+ 黄金三镜快捷筛——
+                            成本闸门，防 8×N 盲目扣费；投送只带走勾选镜。 */}
                         <div>
-                            <h3 className="mb-2 text-sm font-medium text-foreground/70">分镜表（按镜头重拍用）</h3>
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <h3 className="text-sm font-medium text-foreground/70">分镜表（按镜头重拍用）</h3>
+                                <Button
+                                    size="small"
+                                    type="text"
+                                    title="只投送前 3 秒钩子镜 + 最长镜（高潮）+ 收尾镜，先小成本试水"
+                                    onClick={() => view && setSelectedSceneIndexes(goldenThreeShotIndexes(view))}
+                                >
+                                    ⚡ 仅选黄金三镜
+                                </Button>
+                                <Button size="small" type="text" onClick={() => setSelectedSceneIndexes(null)}>
+                                    全选
+                                </Button>
+                                <span className="text-caption text-foreground/40">
+                                    已选 {selectedSceneIndexes ? selectedSceneIndexes.size : view.scenes.length} / {view.scenes.length} 镜投送
+                                </span>
+                            </div>
                             <div className="flex flex-col gap-1.5">
-                                {view.scenes.map((scene) => (
-                                    <div key={scene.index} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-line-subtle bg-surface-subtle/40 px-2 py-1.5 text-caption">
-                                        <span className="font-mono text-foreground/40">#{scene.index + 1} {formatMs(scene.startMs)}</span>
-                                        <span className="font-medium text-foreground/75">
-                                            {[scene.shotType, scene.cameraMovement].filter(Boolean).join(" · ") || "景别未识别"}
-                                        </span>
-                                        <span className="line-clamp-2 min-w-0 flex-1 text-foreground/55">
-                                            {scene.visualPrompt || scene.tags.join("、") || "无视觉提示词"}
-                                        </span>
-                                        {scene.dialogue ? <span className="line-clamp-1 min-w-0 basis-full text-foreground/45">台词：{scene.dialogue}</span> : null}
-                                    </div>
-                                ))}
+                                {view.scenes.map((scene) => {
+                                    const checked = !selectedSceneIndexes || selectedSceneIndexes.has(scene.index);
+                                    return (
+                                        <div key={scene.index} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-line-subtle bg-surface-subtle/40 px-2 py-1.5 text-caption">
+                                            <Checkbox
+                                                checked={checked}
+                                                onChange={(event) => {
+                                                    setSelectedSceneIndexes((previous) => {
+                                                        const base = previous ?? new Set(view.scenes.map((item) => item.index));
+                                                        const next = new Set(base);
+                                                        if (event.target.checked) next.add(scene.index);
+                                                        else next.delete(scene.index);
+                                                        return next;
+                                                    });
+                                                }}
+                                                aria-label={`选择镜头 ${scene.index + 1} 投送`}
+                                            />
+                                            <span className="font-mono text-foreground/40">#{scene.index + 1} {formatMs(scene.startMs)}</span>
+                                            <span className="font-medium text-foreground/75">
+                                                {[scene.shotType, scene.cameraMovement].filter(Boolean).join(" · ") || "景别未识别"}
+                                            </span>
+                                            <span className="line-clamp-2 min-w-0 flex-1 text-foreground/55">
+                                                {scene.visualPrompt || scene.tags.join("、") || "无视觉提示词"}
+                                            </span>
+                                            {scene.dialogue ? <span className="line-clamp-1 min-w-0 basis-full text-foreground/45">台词：{scene.dialogue}</span> : null}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -615,6 +655,13 @@ export default function EReversePage() {
                     直播台参考图模块真实自动预填——toast 按目标分别如实说明。 */}
                 <section className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4" data-yq="ereverse-exits" aria-label="一键复刻出口">
                     <strong className="text-xs font-semibold text-foreground/75">🚀 拆解完成，选一条复刻出路</strong>
+                    <Checkbox
+                        checked={preferCompliance}
+                        onChange={(event) => setPreferCompliance(event.target.checked)}
+                        title="开启后分镜行画面描述改用敏感品类防封改写稿（无改写稿的镜头自动回退物理描述）"
+                    >
+                        🛡️ 敏感品类防封改写（投送时分镜画面描述用 compliance 稿）
+                    </Checkbox>
                     <div className="flex flex-wrap items-center gap-2">
                         <Button
                             type="primary"

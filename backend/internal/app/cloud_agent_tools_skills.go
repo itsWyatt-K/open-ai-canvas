@@ -469,6 +469,68 @@ func (s *Service) cloudAgentSkillPoolForSearch(userID string, state *cloudAgentR
 	return pool, nil
 }
 
+// cloudAgentSkills 兼容入口：按显式技能 ID 构建带卡标题索引的快照池。
+// 上游 v1.7.3 把检索池改为运行时冻结版本（cloudAgentSkillPoolForSearch）后，
+// 本地卡级召回（超哥参考卡）与测试仍需要「给定技能 ID → 带标题快照」的直连路径。
+func (s *Service) cloudAgentSkills(userID string, pinned []string) ([]cloudAgentSkill, error) {
+	if len(pinned) == 0 {
+		return []cloudAgentSkill{}, nil
+	}
+	ids := append([]string(nil), pinned...)
+	sort.Strings(ids)
+	entries, err := s.skillDomain().AgentSkillCatalogByIDs(userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	versionIDs := make([]string, 0, len(entries))
+	usable := entries[:0]
+	for _, entry := range entries {
+		if entry.Installed {
+			usable = append(usable, entry)
+			versionIDs = append(versionIDs, entry.VersionID)
+		}
+	}
+	paths, err := s.skillDomain().SkillVersionTextPaths(versionIDs)
+	if err != nil {
+		return nil, err
+	}
+	pool := make([]cloudAgentSkill, 0, len(usable))
+	for _, entry := range usable {
+		files := map[string]string{cloudAgentSkillEntryPath: ""}
+		for _, path := range paths[entry.VersionID] {
+			files[path] = ""
+		}
+		pool = append(pool, cloudAgentSkill{ID: entry.SkillID, Name: entry.Name, Description: entry.Description, Version: entry.VersionID, Hash: entry.ContentHash, Files: files})
+	}
+	// 卡标题索引：与 skill_read_file 同源；读取失败按包损坏处理，不让检索静默退化成纯 slug 匹配。
+	for index := range pool {
+		bundle, err := s.SkillPackageBundle(userID, pool[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		titles := make(map[string]string, len(bundle.Files))
+		h1s := make(map[string]string, len(bundle.Files))
+		for _, file := range bundle.Files {
+			if file.Path == cloudAgentSkillEntryPath || !cloudAgentSkillCardTextFile(file.Path) {
+				continue
+			}
+			content, err := base64.StdEncoding.DecodeString(file.ContentBase64)
+			if err != nil {
+				return nil, fmt.Errorf("解码技能 %s 的文件 %s 失败: %w", pool[index].ID, file.Path, err)
+			}
+			if cardIndex, h1 := cloudAgentSkillCardHeadingIndex(string(content)); cardIndex != "" {
+				titles[file.Path] = cardIndex
+				if h1 != "" {
+					h1s[file.Path] = h1
+				}
+			}
+		}
+		pool[index].CardTitles = titles
+		pool[index].CardTitleH1 = h1s
+	}
+	return pool, nil
+}
+
 // cloudAgentReadSkillFile 读取本轮可读技能的文件。版本以建 run 时冻结的为准：技能在运行中更新后
 // 本轮不再读取，避免把同一技能两个版本的内容混在一起。读取成功会计入技能使用次数，用于目录排序。
 func (s *Service) cloudAgentReadSkillFile(userID string, state *cloudAgentRuntime, args agenttool.SkillReadArgs) (any, error) {
@@ -524,21 +586,13 @@ func (s *Service) cloudAgentReadSkillFile(userID string, state *cloudAgentRuntim
 		// skill_read_file; keep the run context to stable metadata and paths.
 		// The description is public metadata (market listing) and lets the
 		// model route between activated skills without reading any body.
-		snapshot := cloudAgentSkill{ID: id, Name: skill.SkillName, Description: skill.Description, Version: skill.VersionID, Hash: skill.ContentHash, Files: map[string]string{cloudAgentSkillEntryPath: ""}}
-		files, err := s.SkillPackageFiles(userID, id)
-		if err != nil {
-			return nil, err
-		}
-		for _, file := range files {
-			// The entry is listed separately; file bodies are fetched on demand.
-			if file.Path == cloudAgentSkillEntryPath {
-				continue
-			}
+		snapshot := cloudAgentSkill{ID: id, Name: detail.SkillName, Description: detail.Description, Version: detail.VersionID, Hash: detail.ContentHash, Files: map[string]string{cloudAgentSkillEntryPath: ""}}
+		for _, path := range paths[version] {
 			// Executable/binary packages are never executed; text references are data only.
-			if !strings.HasSuffix(file.Path, ".md") && !strings.HasSuffix(file.Path, ".txt") && !strings.HasSuffix(file.Path, ".json") {
+			if !strings.HasSuffix(path, ".md") && !strings.HasSuffix(path, ".txt") && !strings.HasSuffix(path, ".json") {
 				continue
 			}
-			snapshot.Files[file.Path] = ""
+			snapshot.Files[path] = ""
 		}
 		// 卡标题索引：一次性整包读取，抽取每张卡的标题结构。与上面的文件清单共用
 		// 同一快照校验；读取失败按包损坏处理，不让检索静默退化成纯 slug 匹配。

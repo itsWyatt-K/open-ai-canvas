@@ -79,11 +79,11 @@ func TestCloudAgentSkillReadFileReadsChaogeReference(t *testing.T) {
 	if err := db.Create(&model.UserSkillState{ID: "state-chaoge-read", UserID: "user", SkillID: "chaoge-film-director-flex", Added: true}).Error; err != nil {
 		t.Fatal(err)
 	}
-	snapshots, err := s.cloudAgentSkills("user", []string{"chaoge-film-director-flex"})
+	pool, err := s.cloudAgentBuildSkillPool("user", "", []string{"chaoge-film-director-flex"}, defaultCloudAgentContextBudget())
 	if err != nil {
-		t.Fatalf("cloudAgentSkills: %v", err)
+		t.Fatalf("cloudAgentBuildSkillPool: %v", err)
 	}
-	state := &cloudAgentRuntime{Skills: snapshots}
+	state := &cloudAgentRuntime{SkillVersions: pool.Versions}
 	call := cloudAgentCall{ID: "read-chaoge"}
 	call.Function.Name = "skill_read_file"
 	call.Function.Arguments = `{"skillId":"chaoge-film-director-flex","path":"cards/one-take.md"}`

@@ -6,7 +6,7 @@ import (
 
 	"yingce/backend/internal/model"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -35,7 +35,8 @@ func TestAgentMemoryDocumentColumnsMigrationRepairsEarlyV76Tables(t *testing.T) 
 	if err := db.Exec("INSERT INTO agent_memory_documents (user_id, entries_json, revision, hash, char_count, mode, capacity) VALUES ('early-user', '[]', 1, '', 0, 'auto', 5000)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("DELETE FROM schema_migrations WHERE version = 77").Error; err != nil {
+	// 号段条约：上游 v77 在本地平移为 CurrentSchemaVersion（末条迁移）；删末条记录模拟"v77 未执行"。
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", CurrentSchemaVersion).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := MigrateSchema(db); err != nil {

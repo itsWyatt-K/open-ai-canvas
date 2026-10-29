@@ -1,5 +1,5 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, LayoutGrid as LayoutGridIcon, PanelLeftClose, PanelLeftOpen, Plus, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, LayoutGrid as LayoutGridIcon, MonitorPlay as MonitorPlayIcon, PanelLeftClose, PanelLeftOpen, Plus, SearchCheck as SearchCheckIcon, ShoppingBag as ShoppingBagIcon, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -42,26 +42,43 @@ function toolItem(slug: NavigationToolSlug, to: string): WorkspaceNavItem {
 }
 
 function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
-    // 拍板令阶段二：双入口精简——主导航只留「自由画布」+「固定模块」；
-    // 短剧/电商/E-Reverse/工具箱收进 /modules 模块大厅；任务与资产保留为底部快捷入口；
-    // 设置/管理后台/钱包走左下角用户卡片菜单（footer 保持为空）。
-    void features;
+    // 夜间施工令阶段二：恢复上游影策原生导航布局，并在核心创作区新增本地「定制模块」入口组——
+    // 主入口 /modules（定制模块大厅）+ 三大王牌定制工作台直达；其余原生项按 feature flag 正常展示。
     const groups: WorkspaceNavGroup[] = [
         {
             items: [
-                { id: "canvas", title: "自由画布", icon: InfinityIcon, to: "/canvas" },
-                { id: "modules", title: "固定模块", icon: LayoutGridIcon, to: "/modules" },
-
+                { ...toolItem("create", "/"), id: "home", title: "创作" },
+                ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects"), title: "短剧制作" }] : []),
+                { ...toolItem("canvas", "/canvas"), title: "自由画布" },
             ],
         },
         {
-            heading: "快捷入口",
+            heading: "定制模块",
             items: [
-                ...(features.taskCenterEnabled ? [{ id: "tasks", title: "任务", icon: HistoryIcon, to: "/tasks" }] : []),
+                { id: "custom-modules", title: "✨ 定制模块", icon: LayoutGridIcon, to: "/modules" },
+                ...(features.ecommerceEnabled ? [{ id: "custom-ecommerce", title: "🛍️ 电商详情工坊", icon: ShoppingBagIcon, to: "/ecommerce" }] : []),
+                { id: "custom-live-studio", title: "🎬 直播间装修台", icon: MonitorPlayIcon, to: "/modules/live-studio" },
+                { id: "custom-ereverse", title: "🔍 爆款视觉反推", icon: SearchCheckIcon, to: "/ereverse" },
+            ],
+        },
+        {
+            heading: "资源与工具",
+            items: [
+                ...(features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: "图片生成", icon: ImageIcon, to: "/toolbox/image" }] : []),
+                ...(features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: "视频生成", icon: Video, to: "/toolbox/video" }] : []),
+                { ...toolItem("skills", "/skills"), title: "技能" },
+                ...(features.pluginCenterEnabled ? [{ ...toolItem("plugins", "/plugins"), title: "插件" }] : []),
+            ],
+        },
+        {
+            heading: "资产与历史",
+            items: [
                 { ...toolItem("assets", "/assets"), title: "资产" },
+                ...(features.taskCenterEnabled ? [{ id: "tasks", title: "创作历史", icon: HistoryIcon, to: "/tasks" }] : []),
             ],
         },
     ];
+    // 管理、设置和退出登录通过左下角用户卡片菜单进入（footer 保持为空，与上游一致）。
     return { groups, footer: [] };
 }
 
@@ -328,14 +345,15 @@ function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collaps
     );
 }
 
-// 菜单项 id 与实际路由不一定同名：多入口模块（电商/短剧/E-Reverse/工具箱）统一高亮
-// 「固定模块」；/create 与根路径属于画布创作态。
+// 菜单项 id 与实际路由不一定同名：定制模块族（大厅/电商/E-Reverse）统一高亮
+// 「定制模块」主入口；短剧制作在原生导航有自己的项，不再并入；/create 与根路径属于画布创作态。
 export function workspaceNavActiveId(pathname: string, section?: string | null) {
     const segments = pathname.split("/").filter(Boolean);
-    if (segments[0] === "toolbox" && segments[1]) return "modules";
+    if (segments[0] === "modules" && segments[1]) return "custom-live-studio";
+    if (segments[0] === "toolbox" && segments[1]) return segments[1] === "video" ? "toolbox-video" : "toolbox-image";
     const slug = segments[0] || "canvas";
     if (slug === "create" || slug === "canvas") return "canvas";
-    if (slug === "modules" || slug === "ecommerce" || slug === "projects" || slug === "ereverse") return "modules";
+    if (slug === "modules" || slug === "ecommerce" || slug === "ereverse") return "custom-modules";
     return slug === "settings" && section ? `settings:${section}` : slug;
 }
 

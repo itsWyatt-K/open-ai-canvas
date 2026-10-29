@@ -1,4 +1,4 @@
-// 固定模块大厅（拍板令阶段二：/modules）——双入口导航的模块矩阵页。
+// 定制模块大厅（拍板令阶段二：/modules）——双入口导航的模块矩阵页。
 // 阶段三战役三分级：第一排置顶放大三张主力工作台卡，第二排紧凑排列工具型入口。
 // 返工令 Round 3 去廉价感：① 卡片标题前的系统 Emoji 全部删除（与顶部图标双图标叠加是廉价感来源）；
 // ② 主力大卡封面从「渐变底 + 48×48 线条图标」升级为微缩 UI 结构示意插画（内联，零请求）；
@@ -207,7 +207,7 @@ export function ModulesPage() {
         // 而不是靠继承默认色——此前变量定义了却没绑定，实测颜色仍是旧版 rgb(29,29,33)/oklab。
         <div className="mx-auto flex min-h-full max-w-[1200px] flex-col gap-5 bg-surface-base px-5 py-6 text-ink-primary">
             <header className="flex flex-col gap-1">
-                <h1 className="text-page-title font-semibold tracking-tight">固定模块大厅</h1>
+                <h1 className="text-page-title font-semibold tracking-tight">定制模块大厅</h1>
                 <p className="text-body text-ink-secondary">选一个模块开始创作；画布始终是它们的自由组合台。</p>
             </header>
 

@@ -31,7 +31,7 @@ export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onCl
         };
         return [
             { id: "canvas", title: "自由画布", icon: Home, to: "/canvas" },
-            { id: "modules", title: "固定模块", icon: Home, to: "/modules" },
+            { id: "modules", title: "定制模块", icon: Home, to: "/modules" },
             { id: "modules-live", title: "直播间装修与透明分层台", icon: Home, to: "/modules/live-studio" },
             { id: "modules-ecommerce", title: "电商详情页工坊", icon: Home, to: "/ecommerce" },
             { id: "modules-projects", title: "AI 短剧制作", icon: Home, to: "/projects" },

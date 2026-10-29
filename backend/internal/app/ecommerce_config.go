@@ -79,7 +79,7 @@ func (s *Service) validateEcommerceModels(cfg ecommerce.ConfigView) error {
 		if strings.TrimSpace(item.id) == "" {
 			continue // 留空=用默认，不拦
 		}
-		if _, err := s.ResolveLogicalModel(item.id, intent); err != nil {
+		if _, err := s.ResolveLogicalModel(nil, item.id, intent); err != nil {
 			return NewAppError(http.StatusBadRequest, fmt.Sprintf("%s不可用：%v", item.role, err))
 		}
 	}

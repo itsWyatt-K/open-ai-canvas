@@ -63,7 +63,11 @@ func TestChaogeRealDBSmoke(t *testing.T) {
 			return len(snapshots[0].CardTitles)
 		}())
 	}
-	state := &cloudAgentRuntime{Skills: snapshots}
+	pool, err := svc.cloudAgentBuildSkillPool(chaogeSmokeUser, "", []string{"chaoge-film-director-flex"}, defaultCloudAgentContextBudget())
+	if err != nil {
+		t.Fatalf("cloudAgentBuildSkillPool: %v", err)
+	}
+	state := &cloudAgentRuntime{SkillVersions: pool.Versions}
 
 	run := func(name, arguments string) map[string]any {
 		t.Helper()

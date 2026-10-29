@@ -34,9 +34,15 @@ export type EreverseHandoffShot = {
     cameraMovement: string;
     prompt: string;
     visualPrompt: string;
+    /** 🛡️ 敏感品类防封改写版（双轨映射；空串=该镜没有改写稿）。 */
+    compliancePrompt: string;
     negativePrompt: string;
     dialogue: string;
     keyframeUrl: string | null;
+    /** 场景标签池（叙事标签 → 分镜行 narrativeIntent）。 */
+    tags?: string[];
+    /** 前 3 秒钩子标注（黄金三镜与 narrativeIntent 用）。 */
+    hook?: string;
 };
 
 export type EreverseHandoff = {
@@ -46,27 +52,52 @@ export type EreverseHandoff = {
     createdAt: string;
     shots: EreverseHandoffShot[];
     visualDnaText: string;
+    /** 原对标视频地址（可选）：画布消费器据此建视频参考节点（Seedance 可 @；H3 自动降级）。 */
+    sourceVideoUrl?: string;
+    /** 🛡️ 防封双轨：true 时消费器用 compliancePrompt 填 plotDescription，否则用 visualPrompt。 */
+    preferCompliance?: boolean;
 };
 
 /** localStorage 体积护栏：超限先丢参考帧，再不行只留纯文本，绝不静默失败。 */
 export const EREVERSE_HANDOFF_MAX_CHARS = 3_500_000;
 
 /** 反推视图 → 画布分镜节点口径的镜头序列（复用项目现有 builder，不新造契约）。 */
-export function toHandoffShots(view: EreverseView): EreverseHandoffShot[] {
-    return view.scenes.map((scene, index) => ({
-        index,
-        title: `镜头 ${String(index + 1).padStart(2, "0")}`,
-        startMs: scene.startMs,
-        endMs: scene.endMs,
-        durationMs: scene.durationMs,
-        shotType: scene.shotType,
-        cameraMovement: scene.cameraMovement,
-        prompt: scene.compliancePrompt || scene.visualPrompt || scene.tags.join("、"),
-        visualPrompt: scene.visualPrompt,
-        negativePrompt: scene.negativePrompt,
-        dialogue: scene.dialogue,
-        keyframeUrl: scene.keyframeUrl,
-    }));
+export function toHandoffShots(view: EreverseView, options?: { selectedIndexes?: Set<number> }): EreverseHandoffShot[] {
+    return view.scenes
+        .map((scene, index) => ({ scene, index }))
+        .filter(({ index }) => !options?.selectedIndexes || options.selectedIndexes.has(index))
+        .map(({ scene, index }) => ({
+            index,
+            title: `镜头 ${String(index + 1).padStart(2, "0")}`,
+            startMs: scene.startMs,
+            endMs: scene.endMs,
+            durationMs: scene.durationMs,
+            shotType: scene.shotType,
+            cameraMovement: scene.cameraMovement,
+            prompt: scene.compliancePrompt || scene.visualPrompt || scene.tags.join("、"),
+            visualPrompt: scene.visualPrompt,
+            compliancePrompt: scene.compliancePrompt || "",
+            negativePrompt: scene.negativePrompt,
+            dialogue: scene.dialogue,
+            keyframeUrl: scene.keyframeUrl,
+            tags: scene.tags,
+            hook: index === 0 && scene.startMs < 3000 ? "前 3 秒钩子" : "",
+        }));
+}
+
+/** 黄金三镜选择器：前 3 秒钩子镜 + 最长镜（高潮）+ 收尾镜——成本闸门的快捷筛。 */
+export function goldenThreeShotIndexes(view: EreverseView): Set<number> {
+    const scenes = view.scenes;
+    if (!scenes.length) return new Set();
+    const picks = new Set<number>();
+    picks.add(0);
+    picks.add(scenes.length - 1);
+    let longest = 0;
+    scenes.forEach((scene, index) => {
+        if (scene.durationMs > scenes[longest].durationMs) longest = index;
+    });
+    picks.add(longest);
+    return picks;
 }
 
 /** 视觉配方提示词：镜头视觉提示词 + 场景标签池，供直播台参考图模块 / 人工粘贴。 */
@@ -104,7 +135,7 @@ export async function fetchKeyframeDataUrl(url: string): Promise<string | null> 
 }
 
 /** 写画布 / 制片台快照（同一键覆盖写，target 区分目标）。 */
-export function writeEreverseHandoff(input: { target: EreverseHandoffTarget; sourceName: string; shots: EreverseHandoffShot[]; visualDnaText: string }): void {
+export function writeEreverseHandoff(input: { target: EreverseHandoffTarget; sourceName: string; shots: EreverseHandoffShot[]; visualDnaText: string; sourceVideoUrl?: string; preferCompliance?: boolean }): void {
     const payload: EreverseHandoff = {
         source: "ereverse",
         target: input.target,
@@ -112,6 +143,8 @@ export function writeEreverseHandoff(input: { target: EreverseHandoffTarget; sou
         createdAt: new Date().toISOString(),
         shots: input.shots,
         visualDnaText: input.visualDnaText.slice(0, 1800),
+        sourceVideoUrl: input.sourceVideoUrl,
+        preferCompliance: input.preferCompliance,
     };
     try {
         window.localStorage.setItem(EREVERSE_HANDOFF_KEY, JSON.stringify(payload));
@@ -141,6 +174,44 @@ export async function copyStoryboardText(shots: EreverseStoryboardShot[]): Promi
     } catch {
         return false;
     }
+}
+
+/** 只读查看载荷（制片台导入预览用；确认导入后才 removeEreverseHandoff）。 */
+export function peekEreverseHandoff(target: EreverseHandoffTarget): EreverseHandoff | null {
+    try {
+        const raw = window.localStorage.getItem(EREVERSE_HANDOFF_KEY);
+        if (!raw) return null;
+        const payload = JSON.parse(raw) as EreverseHandoff;
+        if (payload?.source !== "ereverse" || payload.target !== target || !payload.shots?.length) return null;
+        return payload;
+    } catch {
+        return null;
+    }
+}
+
+/** 清除载荷（制片台确认导入后调用；画布侧走 readEreverseHandoffOnce 的 consume-once）。 */
+export function removeEreverseHandoff(): void {
+    try {
+        window.localStorage.removeItem(EREVERSE_HANDOFF_KEY);
+    } catch {
+        /* 存储不可用时忽略 */
+    }
+}
+
+/**
+ * 载荷 → Markdown 分镜表（制片台「分镜导入」格式的直喂文本）。
+ * 🛡️ 防封双轨：preferCompliance 时画面列用 compliancePrompt（空则回退 visualPrompt）。
+ */
+export function ereverseHandoffMarkdownTable(payload: EreverseHandoff): string {
+    const header = `| 镜头 | 时长(秒) | 景别 | 运镜 | 画面 | 台词 | 叙事标签 |\n| --- | --- | --- | --- | --- | --- | --- |`;
+    const rows = payload.shots.map((shot) => {
+        const seconds = Math.max(1, Math.round(((shot.endMs - shot.startMs) / 1000) * 10) / 10);
+        const visual = (payload.preferCompliance ? shot.compliancePrompt : shot.visualPrompt) || shot.prompt || "";
+        const narrative = [shot.hook, (shot.tags || []).join("、")].filter(Boolean).join(" · ");
+        const cell = (value: string) => value.replace(/\|/g, "／").replace(/\n/g, " ");
+        return `| ${shot.index + 1} | ${seconds} | ${cell(shot.shotType)} | ${cell(shot.cameraMovement)} | ${cell(visual)} | ${cell(shot.dialogue)} | ${cell(narrative)} |`;
+    });
+    return [`# 爆款复刻 · ${payload.sourceName || "对标视频"}`, header, ...rows].join("\n");
 }
 
 /**

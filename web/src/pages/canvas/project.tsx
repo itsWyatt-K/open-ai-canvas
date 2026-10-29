@@ -14,6 +14,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { loadAssetsForUse } from "@/services/user-data-sync";
 import { canvasAssetHandoffIds } from "@/lib/canvas/canvas-asset-handoff";
+import { buildEreverseCanvasHandoff, clearEreverseHandoffMark, readEreverseHandoffOnce } from "@/lib/canvas/ereverse-handoff-consume";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { createCanvasGenerationLiveProjectAdapter, registerCanvasGenerationLiveProject } from "@/services/canvas-generation-consumer";
 import { getActiveUserScope } from "@/lib/user-scope";
@@ -656,6 +657,25 @@ function CanvasViewportPage() {
         next.delete("agent");
         setSearchParams(next, { replace: true });
     }, [projectLoaded, searchParams, setSearchParams, openAgent]);
+
+    // 爆款反推 → 画布消费器（夜间施工令阶段三）：?handoff=ereverse 时落出关键帧参考、
+    // 自家主体锁定卡与分镜表（只建节点不触发生成、不扣费），consume-once 后清理标记与快照。
+    const ereverseHandoffConsumedRef = useRef(false);
+    useEffect(() => {
+        if (!projectLoaded || ereverseHandoffConsumedRef.current) return;
+        const payload = readEreverseHandoffOnce(window.location.search, "canvas");
+        if (!payload) return;
+        ereverseHandoffConsumedRef.current = true;
+        const maxX = nodesRef.current.reduce((acc, node) => Math.max(acc, node.position.x + node.width), 0);
+        void buildEreverseCanvasHandoff(payload, { x: maxX + 80, y: 80 })
+            .then((result) => {
+                setNodes((prev) => [...prev, ...result.nodes]);
+                setConnections((prev) => [...prev, ...result.connections]);
+                message.success(`已按爆款「${result.sourceName}」落出 ${result.rows.length} 镜分镜表：请先替换「🌟 自家主体锁定卡」，再按便签三步走试水（不会自动扣费）`);
+            })
+            .catch(() => message.error("反推结果落画布失败：关键帧下载超时或格式异常，请回反推台重新投送"))
+            .finally(() => clearEreverseHandoffMark());
+    }, [projectLoaded, message, setNodes, setConnections]);
 
     // 沉浸专注进入时收起智能体与小地图、重置 Dock 唤出态；仅响应「进入」瞬间，避免关闭专注内主动唤出的面板。
     const prevFocusModeRef = useRef(focusMode);

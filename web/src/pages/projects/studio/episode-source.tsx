@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Checkbox, Input } from "antd";
 import { AlertTriangle, FileUp, X } from "lucide-react";
@@ -7,6 +7,7 @@ import { AppModal } from "@/components/ui/product/app-modal";
 import { decodeNovelText } from "@/lib/canvas/canvas-document";
 import { EPISODE_SOURCE_CHARS, sourceChars } from "@/lib/drama/novel-parse";
 import { addDramaEpisode, getDramaChapter, updateDramaChapter, updateDramaEpisode, type DramaChapterRef, type DramaSourceFormat } from "@/services/api/drama";
+import { ereverseHandoffMarkdownTable, peekEreverseHandoff, removeEreverseHandoff, type EreverseHandoff } from "@/pages/ereverse/handoff";
 
 import { formatCount, SOURCE_FORMAT_LABEL, SourceFormatPicker } from "../drama-shared";
 
@@ -167,12 +168,25 @@ export function AddEpisodeModal({
     const [title, setTitle] = useState("");
     const [format, setFormat] = useState<DramaSourceFormat>(defaultFormat);
     const [text, setText] = useState("");
+    // 爆款反推 → 制片台消费器（夜间施工令阶段三）：?handoff=ereverse 投送后，
+    // 弹窗顶部提供一键导入——载荷转 Markdown 分镜表直填，确认后才清快照。
+    const [handoff, setHandoff] = useState<EreverseHandoff | null>(null);
     useEffect(() => {
         if (!open) return;
         setTitle("");
         setText("");
         setFormat(defaultFormat);
+        setHandoff(peekEreverseHandoff("projects"));
     }, [defaultFormat, open]);
+    const importHandoff = useCallback(() => {
+        if (!handoff) return;
+        setText(ereverseHandoffMarkdownTable(handoff));
+        setFormat("storyboard");
+        if (!title.trim()) setTitle(`爆款复刻 · ${handoff.sourceName || "对标视频"}`.slice(0, 60));
+        removeEreverseHandoff();
+        setHandoff(null);
+        message.success(`已带入 ${handoff.shots.length} 镜分镜表：确认内容后点「导入这一集」`);
+    }, [handoff, title, message]);
     const chars = sourceChars(text);
     const add = useMutation({
         mutationFn: () => addDramaEpisode(projectId, { title: title.trim(), text, sourceFormat: format }),
@@ -207,6 +221,10 @@ export function AddEpisodeModal({
                         <AlertTriangle className="size-4 shrink-0" />
                         {blockedReason}
                     </div>
+                ) : handoff ? (
+                    <button type="button" className="drama-composer-notice" onClick={importHandoff}>
+                        📥 从爆款反推导入 {handoff.shots.length} 镜分镜表（「{handoff.sourceName}」）——点击直填，不自动生成、不扣费
+                    </button>
                 ) : null
             }
             footer={

@@ -1,4 +1,4 @@
-﻿// 直播间装修与透明分层台（拍板令阶段三：/modules/live-studio）。
+// 直播间装修与透明分层台（拍板令阶段三：/modules/live-studio）。
 // 布局（返工令 Round 3/4）：左栏控制面板（固定 340px 可滚动）+ 右栏常驻 9:16 画布舞台（占屏 ≥55%）。
 // 一进入页面右侧即渲染 9:16 手机画框（暗夜流光渐变底 + 直播间仿真 UI + 顶部/底部安全区虚线），
 // 不再等 backgroundUrl；Round 4 起画布可拖拽、正下方常驻「一键光影合成 / 导出」操作栏，
@@ -738,7 +738,7 @@ export function LiveStudioPage() {
             <aside className="flex w-full shrink-0 flex-col gap-3 lg:h-full lg:w-[340px] lg:overflow-y-auto lg:pr-1">
                 <header className="flex flex-col gap-1">
                     <Link to="/modules" className="inline-flex items-center gap-1 text-xs text-foreground/55 hover:text-primary">
-                        <ArrowLeft className="size-3.5" /> 返回大厅
+                        <ArrowLeft className="size-3.5" /> 返回定制模块
                     </Link>
                     <h1 className="text-base font-semibold">直播间装修台</h1>
                     <p className="text-caption leading-5 text-foreground/50">左栏装修，右侧 9:16 画布实时预览：不生成背景也能直接用默认夜景底开播（抠主体、加促销大字、一键合成），想要专属背景再生成。</p>
