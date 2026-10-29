@@ -466,7 +466,43 @@ func (s *Service) cloudAgentSkillPoolForSearch(userID string, state *cloudAgentR
 		}
 		pool = append(pool, cloudAgentSkill{ID: entry.SkillID, Name: entry.Name, Description: entry.Description, Version: entry.VersionID, Hash: entry.ContentHash, Files: files})
 	}
+	// 卡标题索引是中文关键词卡级 4 分命中的唯一来源（超哥参考卡等），检索池必须带全——
+	// 上游 v1.7.3 重构漏掉了这一步（skill_search 中文词全部退化到描述层 2 分），此处补回。
+	if err := s.fillCloudAgentSkillCardTitles(userID, pool); err != nil {
+		return nil, err
+	}
 	return pool, nil
+}
+
+// fillCloudAgentSkillCardTitles 就地填充池内每个技能的卡标题/H1 索引；读取失败按包
+// 损坏处理（不让检索静默退化成纯 slug 匹配）。
+func (s *Service) fillCloudAgentSkillCardTitles(userID string, pool []cloudAgentSkill) error {
+	for index := range pool {
+		bundle, err := s.SkillPackageBundle(userID, pool[index].ID)
+		if err != nil {
+			return err
+		}
+		titles := make(map[string]string, len(bundle.Files))
+		h1s := make(map[string]string, len(bundle.Files))
+		for _, file := range bundle.Files {
+			if file.Path == cloudAgentSkillEntryPath || !cloudAgentSkillCardTextFile(file.Path) {
+				continue
+			}
+			content, err := base64.StdEncoding.DecodeString(file.ContentBase64)
+			if err != nil {
+				return fmt.Errorf("解码技能 %s 的文件 %s 失败: %w", pool[index].ID, file.Path, err)
+			}
+			if cardIndex, h1 := cloudAgentSkillCardHeadingIndex(string(content)); cardIndex != "" {
+				titles[file.Path] = cardIndex
+				if h1 != "" {
+					h1s[file.Path] = h1
+				}
+			}
+		}
+		pool[index].CardTitles = titles
+		pool[index].CardTitleH1 = h1s
+	}
+	return nil
 }
 
 // cloudAgentSkills 兼容入口：按显式技能 ID 构建带卡标题索引的快照池。
@@ -502,31 +538,8 @@ func (s *Service) cloudAgentSkills(userID string, pinned []string) ([]cloudAgent
 		}
 		pool = append(pool, cloudAgentSkill{ID: entry.SkillID, Name: entry.Name, Description: entry.Description, Version: entry.VersionID, Hash: entry.ContentHash, Files: files})
 	}
-	// 卡标题索引：与 skill_read_file 同源；读取失败按包损坏处理，不让检索静默退化成纯 slug 匹配。
-	for index := range pool {
-		bundle, err := s.SkillPackageBundle(userID, pool[index].ID)
-		if err != nil {
-			return nil, err
-		}
-		titles := make(map[string]string, len(bundle.Files))
-		h1s := make(map[string]string, len(bundle.Files))
-		for _, file := range bundle.Files {
-			if file.Path == cloudAgentSkillEntryPath || !cloudAgentSkillCardTextFile(file.Path) {
-				continue
-			}
-			content, err := base64.StdEncoding.DecodeString(file.ContentBase64)
-			if err != nil {
-				return nil, fmt.Errorf("解码技能 %s 的文件 %s 失败: %w", pool[index].ID, file.Path, err)
-			}
-			if cardIndex, h1 := cloudAgentSkillCardHeadingIndex(string(content)); cardIndex != "" {
-				titles[file.Path] = cardIndex
-				if h1 != "" {
-					h1s[file.Path] = h1
-				}
-			}
-		}
-		pool[index].CardTitles = titles
-		pool[index].CardTitleH1 = h1s
+	if err := s.fillCloudAgentSkillCardTitles(userID, pool); err != nil {
+		return nil, err
 	}
 	return pool, nil
 }

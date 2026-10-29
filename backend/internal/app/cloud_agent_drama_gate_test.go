@@ -35,7 +35,8 @@ func TestDramaConsolidationRetrievalGate(t *testing.T) {
 	t.Cleanup(func() { _ = gsql.Close() })
 	svc := &Service{repo: repository.New(gdb), dataDir: dataDir}
 
-	// 前置：真库 builtin 56 / drama 8（收敛终态）
+	// 前置：真库 builtin 75 / drama 27（收敛终态；2026-10-30 v1.7.3.2 合流补齐 19 个
+	// 上游短剧系内置技能——影策短剧制作工作流/剧本撰写/剪辑节奏等，此前 v1.7.2 合并漏带）
 	var builtin, drama int64
 	if err := gdb.Raw("SELECT COUNT(*) FROM skills WHERE source_type='builtin'").Scan(&builtin).Error; err != nil {
 		t.Fatal(err)
@@ -43,11 +44,11 @@ func TestDramaConsolidationRetrievalGate(t *testing.T) {
 	if err := gdb.Raw("SELECT COUNT(*) FROM skills WHERE source_type='builtin' AND tag='drama'").Scan(&drama).Error; err != nil {
 		t.Fatal(err)
 	}
-	if builtin != 56 || drama != 8 {
-		t.Fatalf("真库未达收敛终态：builtin=%d drama=%d，want 56/8", builtin, drama)
+	if builtin != 75 || drama != 27 {
+		t.Fatalf("真库未达收敛终态：builtin=%d drama=%d，want 75/27", builtin, drama)
 	}
 
-	// 取 8 个 drama 保留包的 ID（不硬编码，按库取）
+	// 取全部 drama 保留包的 ID（不硬编码，按库取）
 	rows, err := gdb.Raw("SELECT id FROM skills WHERE source_type='builtin' AND tag='drama'").Rows()
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +68,7 @@ func TestDramaConsolidationRetrievalGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cloudAgentSkills: %v", err)
 	}
+	// snapshots = 已安装 drama 包（真库当前 8 个装齐；目录级收敛由上方 75/27 tripwire 锁定）
 	if len(snapshots) != 8 {
 		t.Fatalf("snapshot count = %d, want 8", len(snapshots))
 	}
