@@ -156,6 +156,9 @@ mock.module("@/components/canvas/canvas-cloud-agent-chat-ui", () => ({
 mock.module("@/components/canvas/canvas-cloud-agent-panel-parts", () => ({
     AgentLauncher: () => null,
     AgentContextRing: () => null,
+    // 6c74fab8d 给面板加了积分环；mock 不同步补这条，整个 harness 会在 import 阶段
+    // 报 "Export named 'AgentCreditRing' not found"，15 条用例全红。
+    AgentCreditRing: () => null,
     ComposerControls: (props: any) => {
         controls = props;
         return null;

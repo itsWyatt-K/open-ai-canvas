@@ -3,7 +3,7 @@
 //
 // 阶段 5 返工：右侧「模型与高级设置」默认折叠（小白第一步只需要「平台 + 卖点 + 确认生图」），
 // 折叠态只在右上角留一个带当前模型名的入口按钮，把屏幕高度让给分镜卡。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { App } from "antd";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
@@ -17,6 +17,7 @@ export default function EcommercePage() {
     const { message } = App.useApp();
     const [activeId, setActiveId] = useState<string | null>(null);
     const [configCollapsed, setConfigCollapsed] = useState(true);
+    const products = useEcommerceWorkspaceStore((state) => state.products);
     const refreshProducts = useEcommerceWorkspaceStore((state) => state.refreshProducts);
     const openProduct = useEcommerceWorkspaceStore((state) => state.openProduct);
     const error = useEcommerceWorkspaceStore((state) => state.error);
@@ -26,6 +27,32 @@ export default function EcommercePage() {
         void refreshProducts();
     }, [refreshProducts]);
 
+    // 返工令四-1（根治项）：组件级默认选中——进 /ecommerce 不点任何东西，
+    // 商品列表就绪后自动选中第一个并打开详情，右侧直接出现 7 屏画廊。
+    // 旧病灶：只有 handleOpen（用户点击）才 setActiveId，真人视角进页面看到的是
+    // 「还没有选择商品任务」大白板（探针脚本代点曾把它掩盖掉）。
+    // 兜底口径：
+    //   ① 列表就绪且无选中项 → 选中第一个；
+    //   ② 列表刷新后原选中项被删除/不再存在 → 重新选中第一个；
+    //   ③ 用户点「返回商品列表」主动清空 → 本轮暂停自动选中（clearedByUser），
+    //      列表再次变化（导入/删除/刷新）或用户重新点选后自动恢复。
+    const clearedByUser = useRef(false);
+    useEffect(() => {
+        clearedByUser.current = false;
+    }, [products]);
+    useEffect(() => {
+        if (products.length === 0) {
+            if (activeId) setActiveId(null);
+            return;
+        }
+        const activeMissing = Boolean(activeId) && !products.some((item) => item.id === activeId);
+        if ((!activeId || activeMissing) && !clearedByUser.current) {
+            const first = products[0].id;
+            setActiveId(first);
+            void openProduct(first);
+        }
+    }, [products, activeId, openProduct]);
+
     // 全局错误 toast（store.error 由各 action 写入，变化即提示）
     useEffect(() => {
         if (!error) return;
@@ -33,8 +60,14 @@ export default function EcommercePage() {
     }, [error, message]);
 
     const handleOpen = (id: string) => {
+        clearedByUser.current = false;
         setActiveId(id);
         void openProduct(id);
+    };
+
+    const handleBack = () => {
+        clearedByUser.current = true;
+        setActiveId(null);
     };
 
     // 折叠态入口上的「当前模型」摘要（文案/生图各自取真实选用模型名）。
@@ -47,7 +80,7 @@ export default function EcommercePage() {
                 <EcommerceTaskList activeId={activeId} onOpen={handleOpen} />
                 <EcommerceTaskDetail
                     productId={activeId}
-                    onBack={() => setActiveId(null)}
+                    onBack={handleBack}
                     onOpenConfig={() => setConfigCollapsed(false)}
                 />
                 {!configCollapsed ? <EcommerceConfigPanel collapsed={configCollapsed} onToggle={() => setConfigCollapsed(true)} /> : null}

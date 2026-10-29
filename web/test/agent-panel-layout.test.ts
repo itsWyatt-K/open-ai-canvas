@@ -54,7 +54,8 @@ describe("Agent window layout", () => {
 
 describe("Agent submission sync preflight contract", () => {
     it("scopes submit and approval saves to the active canvas before Agent POST", () => {
-        const source = readFileSync(resolve(import.meta.dir, "../src/components/canvas/canvas-cloud-agent-panel.tsx"), "utf8");
+        // 行尾归一化 \n：Windows 工作副本（core.autocrlf=true）是 CRLF，多行 needle 按 LF 编写。
+        const source = readFileSync(resolve(import.meta.dir, "../src/components/canvas/canvas-cloud-agent-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
         // 提交同步当前页面绑定的画布；审批同步该轮运行自己的画布（离开画布后仍能审批写回）。无画布时都跳过。
         expect(source).toContain("if (canvasId) await prepareCanvasForCloudAction(canvasId);");
         expect(source).toContain('if (decision === "approve" && run.canvasId) {');

@@ -31,9 +31,16 @@ export const SPLIT_MODULE_GROUPS: Record<string, readonly string[]> = {
 
 const srcRoot = resolve(import.meta.dir, "../../src");
 
-/** 读取 src 下的文件；若它被拆分过，一并读取同组模块。 */
+/**
+ * 读取 src 下的文件；若它被拆分过，一并读取同组模块。
+ *
+ * 行尾统一归一化为 \n：仓库以 core.autocrlf=true 检出，Windows 工作副本是 CRLF，
+ * 而源码断言里的多行 needle / `\n}\n` 提取正则按 LF 编写——不归一化时这类断言
+ * 只在 Linux/macOS 通过，Windows 全红（先例：auth-theme / canvas-image-upload 的
+ * 读取处各自 normalize）。归一化只影响断言文本形态，不改变任何契约语义。
+ */
 export function moduleGroupSource(relativePath: string): string {
     const normalized = relativePath.replace(/^(\.\.\/)*src\//, "").replace(/^\.\//, "");
     const files = [normalized, ...(SPLIT_MODULE_GROUPS[normalized] ?? [])];
-    return files.map((file) => readFileSync(resolve(srcRoot, file), "utf8")).join("\n");
+    return files.map((file) => readFileSync(resolve(srcRoot, file), "utf8").replace(/\r\n/g, "\n")).join("\n");
 }

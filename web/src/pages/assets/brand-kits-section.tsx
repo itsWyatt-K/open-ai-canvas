@@ -46,7 +46,7 @@ export function BrandKitsSection() {
                                 </Tooltip>
                             ))}
                         </div>
-                        <div className="mt-1.5 flex flex-wrap gap-1 text-[10px] opacity-60">
+                        <div className="mt-1.5 flex flex-wrap gap-1 text-caption opacity-60">
                             {kitKeywords(kit.dna).map((keyword) => (
                                 <span key={keyword} className="rounded border border-border/50 px-1">
                                     {keyword}

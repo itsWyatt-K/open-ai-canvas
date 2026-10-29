@@ -193,7 +193,14 @@ export function useCanvasBatchTable({ readOnly, nodesRef, connectionsRef, assets
         setNodes(nextNodes);
         setConnections(nextConnections);
         setSelectedNodeIds(new Set(targets.map((target) => target.nodeId)));
-        if (enqueueGenerationBatch(nodeId, "batch_image", targets, { concurrency })) message.success(`${targets.length} 个任务已加入并发队列`);
+        // 回归上游 prepareCanvasBatchTableGeneration 时不能丢布尔契约：
+        // generateConfirmedCommerceRows 以 Boolean(executeBatchGeneration(...)) 判断是否入队成功，
+        // 漏写 return true 会让电商工作流在任务已入队后仍抛「图片任务未提交」。
+        if (enqueueGenerationBatch(nodeId, "batch_image", targets, { concurrency })) {
+            message.success(`${targets.length} 个任务已加入并发队列`);
+            return true;
+        }
+        return false;
     }, [assets, connectionsRef, effectiveConfig, enqueueGenerationBatch, isAiConfigReady, message, nodesRef, setConnections, setNodes, setSelectedNodeIds]);
 
     const generateRows = useCallback((nodeId: string, requestedRowIds?: string[]) => {

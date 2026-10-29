@@ -1,0 +1,2456 @@
+{
+  "base": "http://127.0.0.1:3000",
+  "collectedAt": "2026-10-28T06:30:08.582Z",
+  "pages": [
+    {
+      "viewport": "1366x768",
+      "route": "/modules",
+      "label": "模块大厅",
+      "ok": true,
+      "url": "/modules",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 557,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [
+        {
+          "cls": "flex h-full flex-col overflow-hidden rounded-card ",
+          "w": 365,
+          "h": 317,
+          "x": 220,
+          "y": 196,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 73
+        },
+        {
+          "cls": "grid size-12 place-items-center rounded-control bg",
+          "w": 48,
+          "h": 48,
+          "x": 378,
+          "y": 221,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 0
+        },
+        {
+          "cls": "flex h-full flex-col overflow-hidden rounded-card ",
+          "w": 365,
+          "h": 317,
+          "x": 601,
+          "y": 196,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 41
+        },
+        {
+          "cls": "grid size-12 place-items-center rounded-control bg",
+          "w": 48,
+          "h": 48,
+          "x": 759,
+          "y": 221,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 0
+        },
+        {
+          "cls": "flex h-full flex-col overflow-hidden rounded-card ",
+          "w": 365,
+          "h": 317,
+          "x": 981,
+          "y": 196,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 91
+        },
+        {
+          "cls": "grid size-12 place-items-center rounded-control bg",
+          "w": 48,
+          "h": 48,
+          "x": 1140,
+          "y": 221,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 0
+        },
+        {
+          "cls": "flex h-full items-center gap-3 rounded-card border",
+          "w": 557,
+          "h": 119,
+          "x": 220,
+          "y": 564,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 51
+        },
+        {
+          "cls": "flex h-full items-center gap-3 rounded-card border",
+          "w": 557,
+          "h": 119,
+          "x": 789,
+          "y": 564,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 31
+        }
+      ],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|400|rgb(79, 70, 229)",
+          16
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          6
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          5
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          5
+        ],
+        [
+          "13px|700|rgb(79, 70, 229)",
+          5
+        ],
+        [
+          "14px|400|rgb(79, 70, 229)",
+          3
+        ],
+        [
+          "11px|400|color(srgb 0.113725 0.113725 0.129412 / 0.46)",
+          2
+        ],
+        [
+          "13px|400|rgb(34, 34, 34)",
+          2
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          2
+        ],
+        [
+          "14px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.78)",
+          1
+        ],
+        [
+          "13px|400|oklab(0.17 0.00165382 -0.00576757 / 0.6)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.113725 0.113725 0.129412 / 0.52)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.36)",
+          1
+        ]
+      ],
+      "primaryBtns": 1,
+      "solidCtas": 0,
+      "ctaZones": 0,
+      "ctaZonesOk": 0,
+      "aiMagicCtas": 0,
+      "dirty": [],
+      "perf": {
+        "domNodes": 303,
+        "maxDepth": 18,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 0
+      },
+      "area": {
+        "visualPct": 0,
+        "controlPct": 2.3
+      }
+    },
+    {
+      "viewport": "1366x768",
+      "route": "/ecommerce",
+      "label": "电商工坊",
+      "ok": true,
+      "url": "/ecommerce",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 557,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 561,
+          "y": 572,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 51
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 820,
+          "y": 572,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 64
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 1078,
+          "y": 572,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 50
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 561,
+          "y": 1044,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 70
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 820,
+          "y": 1044,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 101
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 1078,
+          "y": 1044,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 72
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 561,
+          "y": 1517,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 115
+        }
+      ],
+      "wrapped": [
+        {
+          "kind": "ellipsis",
+          "text": "当前卖点：便携收纳充电仓设计：圆柱形紫砂色收纳盒",
+          "leafW": 430
+        }
+      ],
+      "wrappedTotal": 1,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|500|rgb(29, 29, 33)",
+          26
+        ],
+        [
+          "12px|500|rgb(255, 255, 255)",
+          16
+        ],
+        [
+          "12px|400|rgb(255, 255, 255)",
+          14
+        ],
+        [
+          "11px|400|color(srgb 0.059062 0.0590181 0.0704275 / 0.65)",
+          10
+        ],
+        [
+          "12px|400|oklch(0.596 0.145 163.225)",
+          9
+        ],
+        [
+          "12px|500|color(srgb 0.059062 0.0590181 0.0704275 / 0.85)",
+          7
+        ],
+        [
+          "11px|400|oklch(0.596 0.145 163.225)",
+          7
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          6
+        ],
+        [
+          "12px|400|oklch(0.205 0.005 286)",
+          5
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          4
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.55)",
+          3
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          2
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          2
+        ]
+      ],
+      "primaryBtns": 10,
+      "solidCtas": 8,
+      "ctaZones": 7,
+      "ctaZonesOk": 7,
+      "aiMagicCtas": 1,
+      "dirty": [],
+      "perf": {
+        "domNodes": 652,
+        "maxDepth": 21,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 7
+      },
+      "area": {
+        "visualPct": 46.1,
+        "controlPct": 26
+      }
+    },
+    {
+      "viewport": "1366x768",
+      "route": "/ecommerce#retouch-open",
+      "label": "电商工坊·精修台开",
+      "ok": true,
+      "url": "/ecommerce",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 557,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 561,
+          "y": 572,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 51
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 820,
+          "y": 572,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 64
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 1078,
+          "y": 572,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 50
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 561,
+          "y": 1044,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 70
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 820,
+          "y": 1044,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 101
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 1078,
+          "y": 1044,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 72
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 247,
+          "h": 460,
+          "x": 561,
+          "y": 1517,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 115
+        }
+      ],
+      "wrapped": [
+        {
+          "kind": "ellipsis",
+          "text": "当前卖点：便携收纳充电仓设计：圆柱形紫砂色收纳盒",
+          "leafW": 430
+        }
+      ],
+      "wrappedTotal": 1,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|500|rgb(29, 29, 33)",
+          36
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          18
+        ],
+        [
+          "12px|500|rgb(255, 255, 255)",
+          16
+        ],
+        [
+          "12px|400|rgb(255, 255, 255)",
+          14
+        ],
+        [
+          "11px|400|color(srgb 0.059062 0.0590181 0.0704275 / 0.65)",
+          10
+        ],
+        [
+          "12px|400|oklch(0.596 0.145 163.225)",
+          9
+        ],
+        [
+          "12px|500|color(srgb 0.059062 0.0590181 0.0704275 / 0.85)",
+          7
+        ],
+        [
+          "11px|400|oklch(0.596 0.145 163.225)",
+          7
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "12px|400|oklch(0.205 0.005 286)",
+          5
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          4
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.4)",
+          4
+        ],
+        [
+          "12px|500|rgb(220, 38, 38)",
+          4
+        ]
+      ],
+      "primaryBtns": 12,
+      "solidCtas": 9,
+      "ctaZones": 8,
+      "ctaZonesOk": 8,
+      "aiMagicCtas": 2,
+      "dirty": [],
+      "perf": {
+        "domNodes": 786,
+        "maxDepth": 21,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 7
+      },
+      "area": {
+        "visualPct": 90.1,
+        "controlPct": 37.3
+      }
+    },
+    {
+      "viewport": "1366x768",
+      "route": "/modules/live-studio",
+      "label": "直播装修台",
+      "ok": true,
+      "url": "/modules/live-studio",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 557,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|500|rgb(29, 29, 33)",
+          18
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          8
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "12px|500|rgb(255, 255, 255)",
+          4
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          3
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          2
+        ],
+        [
+          "11px|400|color(srgb 0.113725 0.113725 0.129412 / 0.46)",
+          2
+        ],
+        [
+          "13px|400|rgb(34, 34, 34)",
+          2
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          2
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.5)",
+          2
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.4)",
+          2
+        ],
+        [
+          "14px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.78)",
+          1
+        ],
+        [
+          "13px|400|oklab(0.17 0.00165382 -0.00576757 / 0.6)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.113725 0.113725 0.129412 / 0.52)",
+          1
+        ]
+      ],
+      "primaryBtns": 3,
+      "solidCtas": 2,
+      "ctaZones": 1,
+      "ctaZonesOk": 1,
+      "aiMagicCtas": 0,
+      "dirty": [],
+      "perf": {
+        "domNodes": 320,
+        "maxDepth": 18,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 0
+      },
+      "area": {
+        "visualPct": 0,
+        "controlPct": 8.5
+      }
+    },
+    {
+      "viewport": "1366x768",
+      "route": "/projects",
+      "label": "短剧制片台",
+      "ok": true,
+      "url": "/projects",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1366,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 768,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 557,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          6
+        ],
+        [
+          "11px|400|oklab(0.17 0.00165382 -0.00576757 / 0.56)",
+          5
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          3
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          2
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          2
+        ],
+        [
+          "11px|400|color(srgb 0.113725 0.113725 0.129412 / 0.46)",
+          2
+        ],
+        [
+          "13px|400|rgb(34, 34, 34)",
+          2
+        ],
+        [
+          "14px|500|rgb(255, 255, 255)",
+          2
+        ],
+        [
+          "14px|500|rgb(29, 29, 33)",
+          2
+        ],
+        [
+          "14px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.78)",
+          1
+        ],
+        [
+          "13px|400|oklab(0.17 0.00165382 -0.00576757 / 0.6)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.113725 0.113725 0.129412 / 0.52)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.36)",
+          1
+        ]
+      ],
+      "primaryBtns": 2,
+      "solidCtas": 1,
+      "ctaZones": 0,
+      "ctaZonesOk": 0,
+      "aiMagicCtas": 0,
+      "dirty": [],
+      "perf": {
+        "domNodes": 261,
+        "maxDepth": 18,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 0
+      },
+      "area": {
+        "visualPct": 0,
+        "controlPct": 3.2
+      }
+    },
+    {
+      "viewport": "1920x1080",
+      "route": "/modules",
+      "label": "模块大厅",
+      "ok": true,
+      "url": "/modules",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 869,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [
+        {
+          "cls": "flex h-full flex-col overflow-hidden rounded-card ",
+          "w": 376,
+          "h": 317,
+          "x": 480,
+          "y": 196,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 73
+        },
+        {
+          "cls": "grid size-12 place-items-center rounded-control bg",
+          "w": 48,
+          "h": 48,
+          "x": 644,
+          "y": 221,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 0
+        },
+        {
+          "cls": "flex h-full flex-col overflow-hidden rounded-card ",
+          "w": 376,
+          "h": 317,
+          "x": 872,
+          "y": 196,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 41
+        },
+        {
+          "cls": "grid size-12 place-items-center rounded-control bg",
+          "w": 48,
+          "h": 48,
+          "x": 1036,
+          "y": 221,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 0
+        },
+        {
+          "cls": "flex h-full flex-col overflow-hidden rounded-card ",
+          "w": 376,
+          "h": 317,
+          "x": 1264,
+          "y": 196,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 91
+        },
+        {
+          "cls": "grid size-12 place-items-center rounded-control bg",
+          "w": 48,
+          "h": 48,
+          "x": 1428,
+          "y": 221,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 0
+        },
+        {
+          "cls": "flex h-full items-center gap-3 rounded-card border",
+          "w": 574,
+          "h": 119,
+          "x": 480,
+          "y": 564,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 51
+        },
+        {
+          "cls": "flex h-full items-center gap-3 rounded-card border",
+          "w": 574,
+          "h": 119,
+          "x": 1066,
+          "y": 564,
+          "buttons": 0,
+          "actionButtons": 0,
+          "panelTriggers": 0,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 31
+        }
+      ],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|400|rgb(79, 70, 229)",
+          16
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          6
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          5
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          5
+        ],
+        [
+          "13px|700|rgb(79, 70, 229)",
+          5
+        ],
+        [
+          "14px|400|rgb(79, 70, 229)",
+          3
+        ],
+        [
+          "11px|400|color(srgb 0.113725 0.113725 0.129412 / 0.46)",
+          2
+        ],
+        [
+          "13px|400|rgb(34, 34, 34)",
+          2
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          2
+        ],
+        [
+          "14px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.78)",
+          1
+        ],
+        [
+          "13px|400|oklab(0.17 0.00165382 -0.00576757 / 0.6)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.113725 0.113725 0.129412 / 0.52)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.36)",
+          1
+        ]
+      ],
+      "primaryBtns": 1,
+      "solidCtas": 0,
+      "ctaZones": 0,
+      "ctaZonesOk": 0,
+      "aiMagicCtas": 0,
+      "dirty": [],
+      "perf": {
+        "domNodes": 303,
+        "maxDepth": 18,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 0
+      },
+      "area": {
+        "visualPct": 0,
+        "controlPct": 1.1
+      }
+    },
+    {
+      "viewport": "1920x1080",
+      "route": "/ecommerce",
+      "label": "电商工坊",
+      "ok": true,
+      "url": "/ecommerce",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 869,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 561,
+          "y": 568,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 51
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1004,
+          "y": 568,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 64
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1448,
+          "y": 568,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 50
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 561,
+          "y": 1286,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 70
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1004,
+          "y": 1286,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 101
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1448,
+          "y": 1286,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 72
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 561,
+          "y": 2005,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 115
+        }
+      ],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|500|rgb(29, 29, 33)",
+          26
+        ],
+        [
+          "12px|500|rgb(255, 255, 255)",
+          16
+        ],
+        [
+          "12px|400|rgb(255, 255, 255)",
+          14
+        ],
+        [
+          "11px|400|color(srgb 0.059062 0.0590181 0.0704275 / 0.65)",
+          10
+        ],
+        [
+          "12px|400|oklch(0.596 0.145 163.225)",
+          9
+        ],
+        [
+          "12px|500|color(srgb 0.059062 0.0590181 0.0704275 / 0.85)",
+          7
+        ],
+        [
+          "11px|400|oklch(0.596 0.145 163.225)",
+          7
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          6
+        ],
+        [
+          "12px|400|oklch(0.205 0.005 286)",
+          5
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          4
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.55)",
+          3
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          2
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          2
+        ]
+      ],
+      "primaryBtns": 10,
+      "solidCtas": 8,
+      "ctaZones": 7,
+      "ctaZonesOk": 7,
+      "aiMagicCtas": 1,
+      "dirty": [],
+      "perf": {
+        "domNodes": 652,
+        "maxDepth": 21,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 7
+      },
+      "area": {
+        "visualPct": 76,
+        "controlPct": 19.4
+      }
+    },
+    {
+      "viewport": "1920x1080",
+      "route": "/ecommerce#retouch-open",
+      "label": "电商工坊·精修台开",
+      "ok": true,
+      "url": "/ecommerce",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 869,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 561,
+          "y": 568,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 51
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1004,
+          "y": 568,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 64
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1448,
+          "y": 568,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 50
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 561,
+          "y": 1286,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 70
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1004,
+          "y": 1286,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 101
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 1448,
+          "y": 1286,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 72
+        },
+        {
+          "cls": "yq-slot-card-virtual flex min-w-0 flex-col gap-2 o",
+          "w": 431,
+          "h": 707,
+          "x": 561,
+          "y": 2005,
+          "buttons": 6,
+          "actionButtons": 3,
+          "panelTriggers": 1,
+          "inputs": 0,
+          "badges": 0,
+          "chars": 115
+        }
+      ],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|500|rgb(29, 29, 33)",
+          36
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          18
+        ],
+        [
+          "12px|500|rgb(255, 255, 255)",
+          16
+        ],
+        [
+          "12px|400|rgb(255, 255, 255)",
+          14
+        ],
+        [
+          "11px|400|color(srgb 0.059062 0.0590181 0.0704275 / 0.65)",
+          10
+        ],
+        [
+          "12px|400|oklch(0.596 0.145 163.225)",
+          9
+        ],
+        [
+          "12px|500|color(srgb 0.059062 0.0590181 0.0704275 / 0.85)",
+          7
+        ],
+        [
+          "11px|400|oklch(0.596 0.145 163.225)",
+          7
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "12px|400|oklch(0.205 0.005 286)",
+          5
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          4
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.4)",
+          4
+        ],
+        [
+          "12px|500|rgb(220, 38, 38)",
+          4
+        ]
+      ],
+      "primaryBtns": 12,
+      "solidCtas": 9,
+      "ctaZones": 8,
+      "ctaZonesOk": 8,
+      "aiMagicCtas": 2,
+      "dirty": [],
+      "perf": {
+        "domNodes": 786,
+        "maxDepth": 21,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 7
+      },
+      "area": {
+        "visualPct": 98.3,
+        "controlPct": 25.2
+      }
+    },
+    {
+      "viewport": "1920x1080",
+      "route": "/modules/live-studio",
+      "label": "直播装修台",
+      "ok": true,
+      "url": "/modules/live-studio",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 869,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "12px|500|rgb(29, 29, 33)",
+          18
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          8
+        ],
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "12px|500|rgb(255, 255, 255)",
+          4
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          3
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          2
+        ],
+        [
+          "11px|400|color(srgb 0.113725 0.113725 0.129412 / 0.46)",
+          2
+        ],
+        [
+          "13px|400|rgb(34, 34, 34)",
+          2
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          2
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.5)",
+          2
+        ],
+        [
+          "12px|400|oklab(0.17 0.00165382 -0.00576757 / 0.4)",
+          2
+        ],
+        [
+          "14px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.78)",
+          1
+        ],
+        [
+          "13px|400|oklab(0.17 0.00165382 -0.00576757 / 0.6)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.113725 0.113725 0.129412 / 0.52)",
+          1
+        ]
+      ],
+      "primaryBtns": 3,
+      "solidCtas": 2,
+      "ctaZones": 1,
+      "ctaZonesOk": 1,
+      "aiMagicCtas": 0,
+      "dirty": [],
+      "perf": {
+        "domNodes": 315,
+        "maxDepth": 18,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 0
+      },
+      "area": {
+        "visualPct": 0,
+        "controlPct": 4.1
+      }
+    },
+    {
+      "viewport": "1920x1080",
+      "route": "/projects",
+      "label": "短剧制片台",
+      "ok": true,
+      "url": "/projects",
+      "title": "源起 · 智能创作工作台",
+      "authenticated": true,
+      "containers": [
+        {
+          "tag": "div",
+          "cls": "app-user-workspace h-dvh overflow-hidden text-foreground app",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-shell flex h-dvh min-h-0 w-full flex-col overf",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-main-row flex min-h-0 min-w-0 flex-1 overflow-",
+          "w": 1920,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "aside",
+          "cls": "app-workspace-sidebar flex h-full shrink-0 flex-col overflow",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-nav flex h-full shrink-0 flex-col",
+          "w": 200,
+          "h": 1080,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3",
+          "w": 200,
+          "h": 54,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-sidebar-brand-button group",
+          "w": 184,
+          "h": 38,
+          "x": 8,
+          "y": 12
+        },
+        {
+          "tag": "span",
+          "cls": "brand-logo-frame app-workspace-brand-mark grid size-8 shrink",
+          "w": 28,
+          "h": 28,
+          "x": 50,
+          "y": 17
+        },
+        {
+          "tag": "span",
+          "cls": "app-workspace-brand-wordmark truncate text-[var(--fs-body)] ",
+          "w": 65,
+          "h": 14,
+          "x": 86,
+          "y": 16
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-c",
+          "w": 200,
+          "h": 869,
+          "x": 0,
+          "y": 54
+        },
+        {
+          "tag": "div",
+          "cls": "app-workspace-nav-group flex shrink-0 flex-col",
+          "w": 176,
+          "h": 88,
+          "x": 12,
+          "y": 78
+        },
+        {
+          "tag": "a",
+          "cls": "app-workspace-nav-link group relative isolate flex min-h-11 ",
+          "w": 176,
+          "h": 40,
+          "x": 12,
+          "y": 78
+        }
+      ],
+      "cards": [],
+      "wrapped": [],
+      "wrappedTotal": 0,
+      "hScroll": false,
+      "ladder": [
+        [
+          "13px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          6
+        ],
+        [
+          "13px|400|rgb(29, 29, 33)",
+          6
+        ],
+        [
+          "11px|400|oklab(0.17 0.00165382 -0.00576757 / 0.56)",
+          5
+        ],
+        [
+          "12px|500|color(srgb 0.113725 0.113725 0.129412 / 0.66)",
+          3
+        ],
+        [
+          "13px|400|rgb(79, 70, 229)",
+          2
+        ],
+        [
+          "13px|500|rgb(29, 29, 33)",
+          2
+        ],
+        [
+          "11px|400|color(srgb 0.113725 0.113725 0.129412 / 0.46)",
+          2
+        ],
+        [
+          "13px|400|rgb(34, 34, 34)",
+          2
+        ],
+        [
+          "14px|500|rgb(255, 255, 255)",
+          2
+        ],
+        [
+          "14px|500|rgb(29, 29, 33)",
+          2
+        ],
+        [
+          "14px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.78)",
+          1
+        ],
+        [
+          "13px|400|oklab(0.17 0.00165382 -0.00576757 / 0.6)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.113725 0.113725 0.129412 / 0.52)",
+          1
+        ],
+        [
+          "11px|600|color(srgb 0.059062 0.0590181 0.0704275 / 0.36)",
+          1
+        ]
+      ],
+      "primaryBtns": 2,
+      "solidCtas": 1,
+      "ctaZones": 0,
+      "ctaZonesOk": 0,
+      "aiMagicCtas": 0,
+      "dirty": [],
+      "perf": {
+        "domNodes": 250,
+        "maxDepth": 18,
+        "conic": 0,
+        "dropShadow": 0,
+        "contentVisibility": 0
+      },
+      "area": {
+        "visualPct": 0,
+        "controlPct": 1.4
+      }
+    }
+  ]
+}

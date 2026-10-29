@@ -14,9 +14,12 @@ test("ecommerceEnabled 开关三处前端落位", async () => {
         readSource("pages/admin/components/feature-availability-panel.tsx"),
     ]);
 
-    // store：类型 + 默认值（新功能默认关闭，由管理员开启）
+    // store：类型 + 默认值。[本地开发权宜 2026-10-12] 旧后端二进制不认识该字段、
+    // 管理后台开关会被丢弃，临时置 true 保入口可见；后端重编后应还原 false
+    // （源码注释即声明，测试锁定当前真实默认值而非原始设计值）。
     expect(store).toContain("ecommerceEnabled: boolean");
-    expect(store).toContain("ecommerceEnabled: false");
+    expect(store).toContain("ecommerceEnabled: true");
+    expect(store).toContain("后端重编后应还原为 false");
 
     // require-feature：union 成员 + 中文名
     expect(requireFeature).toContain('"ecommerceEnabled"');

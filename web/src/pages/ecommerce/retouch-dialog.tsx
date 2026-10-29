@@ -346,13 +346,15 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                                 <img
                                     src={manifest.product_cutout_url}
                                     alt="商品主体草图"
-                                    className="max-h-[62%] max-w-[74%] object-contain drop-shadow-[0_18px_28px_rgba(40,30,60,0.35)]"
+                                    // object-contain 非矩形阴影须跟随形状（box-shadow 只能跟矩形），
+                                    // 返工令 Round 3 收敛模糊半径以降合成成本
+                                    className="max-h-[62%] max-w-[74%] object-contain drop-shadow-[0_10px_16px_rgba(40,30,60,0.3)]"
                                     draggable={false}
                                 />
                             ) : (
                                 <span className="text-xs text-foreground/45">先「一键抠图」得到商品主体，即可在此预览海报草图</span>
                             )}
-                            <span className="absolute bottom-2 right-2 rounded bg-black/35 px-1.5 py-0.5 text-[10px] text-white">海报草图（生成后替换为 AI 场景图）</span>
+                            <span className="absolute bottom-2 right-2 rounded bg-black/35 px-1.5 py-0.5 text-caption text-white">海报草图（生成后替换为 AI 场景图）</span>
                         </div>
                     )}
                     {manifest.text_layers.map((layer, index) => (
@@ -383,7 +385,7 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                                 onClick={() => setSelectedLayer(layer.key)}
                             >
                                 <span>{layer.label}</span>
-                                <span className="text-[10px] text-foreground/40">{layer.has ? "✓" : "未产出"}</span>
+                                <span className="text-caption text-foreground/40">{layer.has ? "✓" : "未产出"}</span>
                             </button>
                         ))}
                     </div>
@@ -400,7 +402,7 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                             重打光
                         </Button>
                     </div>
-                    <p className="text-[10px] leading-4 text-foreground/40">
+                    <p className="text-caption leading-4 text-foreground/40">
                         抠图后点「重打光」完成锁主体合成（商品像素 100% 保真）。消除 = 在图上拖框再点按钮。
                     </p>
 
@@ -411,7 +413,7 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                             <Button size="small" type="text" icon={<Type className="size-3.5" />} onClick={addTextLayer}>加一条</Button>
                         </div>
                         {manifest.text_layers.length === 0 ? (
-                            <p className="text-[11px] text-foreground/40">暂无文字层——比烧图文字更清晰，且随时可改。</p>
+                            <p className="text-caption text-foreground/40">暂无文字层——比烧图文字更清晰，且随时可改。</p>
                         ) : (
                             <div className="flex flex-col gap-2">
                                 {manifest.text_layers.map((layer, index) => (
@@ -435,7 +437,7 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                                                 删
                                             </Button>
                                         </div>
-                                        <div className="flex items-center gap-1 text-[10px] text-foreground/45">
+                                        <div className="flex items-center gap-1 text-caption text-foreground/45">
                                             位置 X
                                             <input type="range" min={0} max={1} step={0.01} value={layer.x} onChange={(event) => patchTextLayer(index, { x: Number(event.target.value) })} className="flex-1" />
                                             Y
@@ -446,7 +448,7 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                             </div>
                         )}
                     </div>
-                    <p className="text-[10px] text-foreground/35">版式参考：{ECOMMERCE_LAYOUT_LABELS[slot.brief?.layout_type ?? ""] ?? slot.sceneType ?? "—"}</p>
+                    <p className="text-caption text-foreground/35">版式参考：{ECOMMERCE_LAYOUT_LABELS[slot.brief?.layout_type ?? ""] ?? slot.sceneType ?? "—"}</p>
                 </div>
             </div>
         </AppModal>

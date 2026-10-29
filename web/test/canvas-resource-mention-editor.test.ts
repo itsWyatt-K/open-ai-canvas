@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { moduleGroupSource } from "./helpers/module-group-source";
 
+// 行尾归一化为 \n：Windows 工作副本（core.autocrlf=true）是 CRLF，
+// 下面的 `\n}\n` 函数体提取按 LF 编写，不归一化时 Windows 上切片为空、断言全红。
 function source(path: string) {
-    return readFileSync(resolve(import.meta.dir, path), "utf8");
+    return readFileSync(resolve(import.meta.dir, path), "utf8").replace(/\r\n/g, "\n");
 }
 
 describe("canvas resource mention editor", () => {

@@ -1,0 +1,202 @@
+/* =========================================================================
+   源起 Studio Design Token · 语义层（2026-10-28 落地）
+   -------------------------------------------------------------------------
+   本文件是「总架构师指令单：源起 Studio Design Token 规范」的落点。
+
+   ⚠️ 工程决策说明（必读，避免与既有体系冲突）：
+   项目已有三层 Token 架构（Primitive → Semantic → Component，见 globals.css
+   头部注释与 Wayfinder #96），且明令「禁止在组件中新增裸 text-[Npx]/rounded-[Npx]」。
+   因此本文件**不新建平行色板/字号阶**，而是把指令单的命名（surface/ink/brand/
+   ai/line/status、T1~T6 字号、panel/card/control/pill 圆角）作为**语义别名**
+   映射到既有变量上，做到：
+     · 指令单要的类名全部可用（bg-surface-card / text-ink-primary / text-page-title …）
+     · 既有组件零改动、零回归
+     · 全站仍然只有一套字号阶与一套色板
+
+   映射表（指令单命名 → 既有变量 → 实际取值）：
+     text-page-title    → --fs-title     22px（指令单 20px；不为单点引入第 7 档）
+     text-section-title → --fs-heading  16px ✓ 一致
+     text-card-title    → --fs-body     14px + 600 字重 ✓ 一致
+     text-body          → --fs-ui       13px（指令单 13px/20px）✓ 一致
+     text-ui-control    → --fs-ui       13px ✓ 一致
+     text-caption       → --fs-caption  12px ✓ 一致
+     rounded-panel      → --r-2xl       16px ✓
+     rounded-card       → --r-lg        12px ✓
+     rounded-control    → --r-md         8px ✓
+     rounded-pill       → --r-xs         4px（全圆角胶囊用 rounded-full）
+
+    Tailwind v4 说明：项目用 Tailwind v4（CSS-first，无 tailwind.config.js），
+    故本文件用 @theme inline 直接声明工具类（与 globals.css 既有写法一致）。
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. 表面背景阶梯（Surface）
+   light：微冷灰底 / 纯白卡 / 纯白浮层 / 折叠抽屉底
+   dark ：曜石蓝黑 / 节点底 / 悬浮工具栏 / 次级面板
+   ------------------------------------------------------------------------- */
+:root {
+    --yq-bg-base: #f8fafc; /* 字面值：建筑师点名项。别名到 --bg-secondary 时实测仍是白色，等于没换。 */
+    --yq-bg-card: var(--card-surface, #ffffff);
+    --yq-bg-elevated: var(--popover, #ffffff);
+    --yq-bg-subtle: var(--bg-tertiary, #f1f5f9);
+
+    /* 2. 文字阶梯（主副标题靠字色深浅区分，不再同灰度）*/
+    --yq-ink-primary: #0f172a;
+    --yq-ink-secondary: #475569;
+    --yq-ink-tertiary: var(--text-tertiary, #94a3b8);
+    --yq-ink-disabled: var(--color-neutral-300, #cbd5e1);
+
+    /* 3. 品牌主色与 AI 魔法色
+       ⚠️ 刻意不别名 --primary / --workspace-accent：那两个变量是本项目既有的
+       「中性近黑」主色（light #171717 / dark #f5f5f5），别名过来会让"品牌靛蓝"
+       退化成近黑，与指令单的焦点高亮定位相悖。故此处按指令单给字面靛蓝，
+       既有组件继续用中性主色不受影响；antd 侧由 ConfigProvider 同步为同一靛蓝。 */
+    --yq-brand: #4f46e5;
+    --yq-brand-hover: #4338ca;
+    --yq-brand-soft: #eef2ff;
+    --yq-ai-accent: #7c3aed;
+    --yq-ai-soft: #f5f3ff;
+    --yq-ai-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #d946ef 100%);
+
+    /* 4. 边框与分割线 */
+    --yq-line-subtle: var(--border, #e2e8f0);
+    --yq-line-strong: var(--input, #cbd5e1);
+    --yq-line-focus: var(--ring, #6366f1);
+
+    /* 5. 柔和语义状态色（铲除高饱和刺眼色块；错误只准极浅底 + 左侧竖条）*/
+    --yq-status-success-fg: #059669;
+    --yq-status-success-bg: #ecfdf5;
+    --yq-status-queue-fg: #2563eb;
+    --yq-status-queue-bg: #eff6ff;
+    --yq-status-warn-fg: #d97706;
+    --yq-status-warn-bg: #fffbeb;
+    --yq-status-danger-fg: #dc2626;
+    --yq-status-danger-bg: #fef2f2;
+
+    /* 6. 四级嵌套圆角（R_outer = R_inner + padding）*/
+    --yq-radius-panel: var(--r-2xl, 16px);
+    --yq-radius-card: var(--r-lg, 12px);
+    --yq-radius-control: var(--r-md, 8px);
+    --yq-radius-pill: var(--r-xs, 4px);
+
+    /* 7. 轻量硬件加速阴影（单层 box-shadow，禁多层 drop-shadow 叠加）*/
+    --yq-shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
+    --yq-shadow-card-hover: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 4px 10px -6px rgba(15, 23, 42, 0.04);
+    --yq-shadow-floating: 0 20px 32px -8px rgba(15, 23, 42, 0.14), 0 0 1px 1px rgba(15, 23, 42, 0.05);
+}
+
+/* 暗色画布作用域：自由画布 / 图层精修台 / 短剧制片台
+   选择器与 globals.css 既有 .dark 约定保持一致（@custom-variant dark (&:is(.dark *))）*/
+.dark,
+[data-theme="dark"],
+.yq-canvas-dark-scope {
+    --yq-bg-base: #0b0f17;   /* 深邃曜石蓝黑 —— 替代此前的纯黑 #000000 */
+    --yq-bg-card: #131a26;   /* 画布节点底 */
+    --yq-bg-elevated: #1c2536; /* 悬浮工具栏 / 弹窗 */
+    --yq-bg-subtle: #161f2e; /* 次级面板底 */
+
+    --yq-ink-primary: #f8fafc;
+    --yq-ink-secondary: #94a3b8;
+    --yq-ink-tertiary: #64748b;
+    --yq-ink-disabled: #334155;
+
+    --yq-brand: #6366f1;
+    --yq-brand-hover: #818cf8;
+    --yq-brand-soft: rgba(99, 102, 241, 0.15);    --yq-ai-accent: #a78bfa;
+    --yq-ai-soft: rgba(139, 92, 246, 0.15);
+
+    --yq-line-subtle: #1e293b;
+    --yq-line-strong: #334155;
+    --yq-line-focus: #818cf8;
+
+    --yq-status-success-fg: #34d399;
+    --yq-status-success-bg: rgba(16, 185, 129, 0.12);
+    --yq-status-queue-fg: #60a5fa;
+    --yq-status-queue-bg: rgba(59, 130, 246, 0.12);
+    --yq-status-warn-fg: #fbbf24;
+    --yq-status-warn-bg: rgba(245, 158, 11, 0.12);
+    --yq-status-danger-fg: #f87171;
+    --yq-status-danger-bg: rgba(239, 68, 68, 0.12);
+
+    --yq-shadow-card: 0 2px 6px 0 rgba(0, 0, 0, 0.35);
+    --yq-shadow-floating: 0 20px 36px -8px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* -------------------------------------------------------------------------
+   Tailwind 工具类映射已移至 globals.css 的入口 @theme inline 块。
+   原因：Tailwind v4 只从「CSS 入口图」注册 @theme；本文件是经 JS import 引入的，
+   @theme 在这里会被消费但不生成工具类（实测 text-page-title 落到 13px 继承值）。
+   变量与高性能工具类仍保留在本文件。
+   ------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------
+   高性能工具类（MX350 2GB 显存友好）
+   ------------------------------------------------------------------------- */
+
+/* 透明棋盘格：静态内联 SVG data-uri，彻底替代高开销 repeating-conic-gradient。
+   浅色底 #fff + 6% 黑格；暗色底取 --yq-bg-card + 5% 白格。 */
+.yq-checkerboard {
+    background-color: #ffffff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23000000' fill-opacity='.06'%3E%3Crect x='8' width='8' height='8'/%3E%3Crect y='8' width='8' height='8'/%3E%3C/svg%3E");
+    background-size: 16px 16px;
+}
+.dark .yq-checkerboard,
+.yq-canvas-dark-scope .yq-checkerboard {
+    background-color: #131a26;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23ffffff' fill-opacity='.05'%3E%3Crect x='8' width='8' height='8'/%3E%3Crect y='8' width='8' height='8'/%3E%3C/svg%3E");
+}
+
+/* 视口外卡片懒渲染：消除长列表滚动卡顿与截图超时。
+   contain-intrinsic-size 用 280×440 作为分镜卡稳定占位（画框 3:4 + 标题区）。 */
+.yq-slot-card-virtual {
+    content-visibility: auto;
+    contain-intrinsic-size: 280px 440px;
+}
+
+/* G1 零折行守卫：只保留显式 opt-in 类。
+   2026-10-28 修正：原写法把裸 button / .ant-btn / .ant-tag / .ant-segmented-item 全列入
+   无层级规则，有三个真缺陷（视觉专家甄别结论）：
+   ① 无层级 normal 声明优先级压过全部 Tailwind 分层工具类，组件里写 whitespace-normal
+      永远无法覆盖，只能 !important——我自己成了第二个 antd reset；
+   ② flex-shrink:0 全局无差别，flex 行内按钮一律失去收缩能力，1366 窄屏会横向溢出
+      而非压缩；.ant-tag 在 wrap 标签云中被禁止换行；
+   ③ 覆盖缺口：G1 真正要守的侧栏导航 <a>（react-router Link）根本不在选择器里，
+      全局规则给的是虚假安全感——导航单行实际靠内层 truncate 保证。
+   而 antd 的 .ant-btn 自身样式已含 white-space:nowrap，全局规则本就是冗余。
+   故删除全局清单，只留 .yq-btn-nowrap 供确需强制单行的场景显式使用，
+   并放进 @layer utilities 保证可被 Tailwind 工具类覆盖。 */
+@layer utilities {
+    .yq-btn-nowrap {
+        white-space: nowrap;
+    }
+}
+
+/* 标题字重锁定（2026-10-28 返工修正）：
+   @theme 的 --text-*--font-weight 修饰符、以及组件上的 font-semibold 工具类，
+   在本场景都被更高优先级规则压成 500（实测 h1 类齐全但 getComputedStyle 仍是 500）。
+   这里用无层级规则确保 T1/T2/T3 的字重落地——无层级 normal 声明优先于
+   Tailwind 分层工具类，这是本项目已实测确认的层叠行为（antd reset 同理）。 */
+h1.text-page-title,
+.text-page-title {
+    font-weight: 600;
+}
+.text-section-title {
+    font-weight: 600;
+}
+.text-card-title {
+    font-weight: 600;
+}
+
+/* G3 主次分明：错误条只准极浅底 + 左侧 3px 竖条，禁止整块高饱和粉红 */
+/* ⚠️ 与项目既有规则的冲突（需建筑师裁决）：
+   指令单要求「错误条 = #FEF2F2 极浅底 + 左侧 3px #DC2626 竖条」，
+   但项目有测试把守的既定规则「组件左侧不使用竖向强调条」（test/no-left-accent-stripe.test.ts，
+   正则同时禁 border-left、inset 左阴影、blockquote 左边框）。二者直接冲突。
+   此处先服从项目既有规则：用极浅底 + 1px 细边 + 危险色文字表达，同样达成「铲除粉红报错墙」的
+   核心目标（去掉高饱和大面积底色）。若建筑师坚持要 3px 左竖条，需同时放宽该测试。 */
+.yq-error-bar {
+    background: var(--yq-status-danger-bg);
+    border: 1px solid color-mix(in srgb, var(--yq-status-danger-fg) 28%, transparent);
+    color: var(--yq-status-danger-fg);
+    border-radius: var(--yq-radius-control);
+}

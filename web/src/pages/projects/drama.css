@@ -209,7 +209,8 @@
     border-radius: 999px;
     background: var(--surface);
     border: 1px solid var(--drama-line);
-    font-size: var(--fs-label);
+    /* 返工令 Round 4 G13：--fs-label(11px) → 12px(--fs-caption) */
+    font-size: var(--fs-caption);
     color: var(--drama-muted);
 }
 .drama-drop-steps b {
@@ -220,7 +221,8 @@
     border-radius: 999px;
     background: var(--workspace-accent-soft);
     color: var(--workspace-accent);
-    font-size: 11px;
+    /* 返工令 Round 4 G13：11px → 12px */
+    font-size: var(--fs-caption);
 }
 
 .drama-compose {

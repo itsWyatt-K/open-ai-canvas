@@ -42,7 +42,9 @@ describe("canvas visual contrast", () => {
     test("keeps the original transparent edge for standard canvas nodes", async () => {
         const source = await Bun.file(new URL("../src/components/canvas/canvas-node.tsx", import.meta.url)).text();
 
-        expect(source).toContain('border: isComposerNode ? "0" : "1px solid transparent"');
+        // seamlessImage（满铺图片节点）同样不描边：契约是「标准节点保留 1px 透明占位、
+        // 不用主题色可见描边」，composer 与满铺图都是既定的无边款式。
+        expect(source).toContain('border: isComposerNode || seamlessImage ? "0" : "1px solid transparent"');
         expect(source).not.toContain('border: isComposerNode ? "0" : `1px solid ${theme.node.edge}`');
     });
 });

@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
 
-const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+// 行尾归一化 \n：Windows 工作副本（core.autocrlf=true）是 CRLF，而下方 import 剥离与
+// useEffect 捕获都按 LF 编写，不归一化时 Windows 上剥离不掉 import 行。
+const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("welcome entry loads configured appearance", async () => {
     let calls = 0;

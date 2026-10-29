@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Go 后端分片测试门禁：解决 internal/app 全量单跑超时（1200+ 例 >10 分钟）问题。
+"""Go 后端分片测试门禁 + 前端 bun test 分片：解决 internal/app 全量单跑超时（1200+ 例 >10 分钟）问题。
 
 用法（仓库根或任意目录）：
-    python scripts/run_backend_tests_sharded.py            # 全量（非 app 包 + app 五批）
-    python scripts/run_backend_tests_sharded.py --app-only # 只跑 app 包分片
+    python scripts/run_backend_tests_sharded.py                # 全量（非 app 包 + app 五批 + 前端）
+    python scripts/run_backend_tests_sharded.py --app-only     # 只跑 app 包分片（含前端）
+    python scripts/run_backend_tests_sharded.py --skip-frontend # 跳过前端分片（仅 Go）
+    python scripts/run_backend_tests_sharded.py --frontend-only # 只跑前端 bun test
     python scripts/run_backend_tests_sharded.py --timeout 900
 
 流程：
@@ -16,7 +18,9 @@
        S4 渠道下载   ^(TestChannel|TestProvider|TestModel|...)
        S5 画布核心   其余全部：-run ".*" -skip "S1|S2|S3|S4 正则"（go1.21+）
   3) 逐批执行（-count=1），超时按批隔离。
-  4) 汇总表：任何一批 FAIL 或超时 → 退出码 1（门禁不通过）。
+  4) 前端独立分片 F1：`cd web && bun test`（bun 未安装 = 门禁失败并明确报出，
+     不静默跳过——前端用例缺席本身就是门禁不通过）。
+  5) 汇总表：任何一批 FAIL / 超时 / bun 缺失 → 退出码 1（门禁不通过）。
 """
 from __future__ import annotations
 
@@ -29,6 +33,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 BACKEND = REPO / "backend"
+WEB = REPO / "web"
 
 SHARDS: list[tuple[str, str]] = [
     ("S1-电商", r"^(TestEcommerce|TestSellingPoints)"),
@@ -37,6 +42,7 @@ SHARDS: list[tuple[str, str]] = [
     ("S4-渠道下载", r"^(TestChannel|TestProvider|TestModel|TestProtocol|TestMaxForAI|TestCheaper|TestNewAPI|TestBilling|TestPayment|TestCredit|TestMedia|TestRetry|TestRedeem|TestPricing|TestApiCall|TestAnnouncement|TestAppearance|TestResolve|TestWorkflow|TestCanvas)"),
 ]
 S5_LABEL = "S5-画布核心"
+FRONTEND_LABEL = "F1-前端(bun test)"
 
 
 def find_go() -> str:
@@ -50,6 +56,27 @@ def find_go() -> str:
     if managed.is_file():
         return str(managed)
     raise SystemExit("找不到 go：请把 go 加入 PATH 或确认 WorkBuddy 托管安装存在")
+
+
+def find_bun() -> str | None:
+    """定位 bun：PATH 优先，回退 WorkBuddy 托管运行时与仓库 node_modules。
+
+    返回 None 表示本机没有 bun——调用方必须按门禁失败处理（前端用例缺席 ≠ 通过）。
+    """
+    from shutil import which
+
+    found = which("bun")
+    if found:
+        return found
+    candidates = [
+        Path(r"C:\Users\khy\.workbuddy\binaries\node\workspace\bun-runtime\bun.exe"),
+        WEB / "node_modules" / ".bin" / "bun.exe",
+        WEB / "node_modules" / ".bin" / "bun",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 def run(cmd: list[str], cwd: Path, timeout: int) -> tuple[int, str]:
@@ -107,18 +134,67 @@ def run_shard(go: str, label: str, run_arg: str, skip_arg: str | None, timeout: 
     return label, status, elapsed
 
 
+def run_frontend_shard(timeout: int) -> tuple[str, str, float]:
+    """前端分片：cd web && bun test。bun 缺失 = FAIL（不静默跳过）。"""
+    bun = find_bun()
+    if not bun:
+        print(f"[FAIL] {FRONTEND_LABEL}: 找不到 bun（PATH / WorkBuddy 托管运行时 / web/node_modules 均无）。", flush=True)
+        print("  前端测试未执行——按门禁纪律记为失败，请安装 bun（https://bun.sh）后重跑。", flush=True)
+        return FRONTEND_LABEL, "FAIL", 0.0
+    started = time.time()
+    try:
+        code, out = run([bun, "test"], WEB, timeout)
+    except subprocess.TimeoutExpired:
+        print(f"[TIMEOUT] {FRONTEND_LABEL} (超过 {timeout}s)", flush=True)
+        return FRONTEND_LABEL, "FAIL", float(timeout)
+    except OSError as error:
+        print(f"[FAIL] {FRONTEND_LABEL}: bun 启动失败（{error}）", flush=True)
+        return FRONTEND_LABEL, "FAIL", time.time() - started
+    elapsed = time.time() - started
+    status = "PASS" if code == 0 else "FAIL"
+    # bun test 汇总行形如 " 1234 pass / 2 fail / 6 skip"。
+    passed = failed = skipped = 0
+    for line in out.splitlines():
+        match = re.match(r"\s*(\d+)\s+(pass|fail|skip)\b", line)
+        if match:
+            count = int(match.group(1))
+            if match.group(2) == "pass":
+                passed += count
+            elif match.group(2) == "fail":
+                failed += count
+            else:
+                skipped += count
+    stats = f"{passed} pass / {skipped} skip / {failed} fail"
+    if code != 0:
+        dump = REPO / "reports" / "shard-fail-frontend-bun-test.log"
+        dump.parent.mkdir(exist_ok=True)
+        dump.write_text(out, encoding="utf-8", errors="replace")
+        fail_lines = [line for line in out.splitlines() if line.startswith("(fail)") or line.lstrip().startswith("(fail)")]
+        print(f"[{status}] {FRONTEND_LABEL} ({elapsed:.0f}s) [{stats}] 完整输出: {dump}", flush=True)
+        for line in fail_lines[:60]:
+            print("  " + line, flush=True)
+        if not fail_lines:
+            print(out[-2000:], flush=True)
+    else:
+        print(f"[{status}] {FRONTEND_LABEL} ({elapsed:.0f}s) [{stats}]", flush=True)
+    return FRONTEND_LABEL, status, elapsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--app-only", action="store_true", help="跳过非 app 包")
-    parser.add_argument("--timeout", type=int, default=900, help="每批超时秒数（透传 go test -timeout）")
+    parser.add_argument("--skip-frontend", action="store_true", help="跳过前端 bun test 分片")
+    parser.add_argument("--frontend-only", action="store_true", help="只跑前端 bun test 分片")
+    parser.add_argument("--timeout", type=int, default=900, help="每批超时秒数（透传 go test -timeout / bun test）")
     parser.add_argument("--shard", default="", help="只跑指定批（如 S5-画布核心），调试用")
     args = parser.parse_args()
 
-    go = find_go()
+    # --frontend-only 时不要求本机有 go（纯前端分片调试用）。
+    go = None if args.frontend_only else find_go()
     results: list[tuple[str, str, float]] = []
     failed = False
 
-    if not args.app_only:
+    if not args.app_only and not args.frontend_only:
         code, out = run([go, "list", "./..."], BACKEND, 120)
         if code != 0:
             raise SystemExit("go list 失败:\n" + out[-2000:])
@@ -137,28 +213,36 @@ def main() -> int:
                 print(f"[{status}] {pkg} ({elapsed:.0f}s)", flush=True)
             results.append((pkg, status, elapsed))
 
-    all_names = list_app_tests(go)
-    print(f"internal/app 共 {len(all_names)} 个测试", flush=True)
-    combined = re.compile("|".join("(?:" + pattern[1:] + ")" for _, pattern in SHARDS))
-    for label, pattern in SHARDS:
-        if args.shard and label != args.shard:
-            continue
-        matched = sum(1 for name in all_names if re.match(pattern, name))
-        if matched == 0:
-            continue
-        shard_label, status, elapsed = run_shard(go, label, pattern, None, args.timeout, matched)
-        results.append((shard_label, status, elapsed))
-        if status == "FAIL":
-            failed = True
-    # S5 兜底批：-skip 掉前四批前缀，-run 全量——覆盖保证由构造保证。
-    if not args.shard or args.shard == S5_LABEL:
-        rest = [name for name in all_names if not combined.match(name)]
-        if rest:
-            shard_label, status, elapsed = run_shard(
-                go, S5_LABEL, ".*", combined.pattern, args.timeout, len(rest))
+    if not args.frontend_only:
+        all_names = list_app_tests(go)
+        print(f"internal/app 共 {len(all_names)} 个测试", flush=True)
+        combined = re.compile("|".join("(?:" + pattern[1:] + ")" for _, pattern in SHARDS))
+        for label, pattern in SHARDS:
+            if args.shard and label != args.shard:
+                continue
+            matched = sum(1 for name in all_names if re.match(pattern, name))
+            if matched == 0:
+                continue
+            shard_label, status, elapsed = run_shard(go, label, pattern, None, args.timeout, matched)
             results.append((shard_label, status, elapsed))
             if status == "FAIL":
                 failed = True
+        # S5 兜底批：-skip 掉前四批前缀，-run 全量——覆盖保证由构造保证。
+        if not args.shard or args.shard == S5_LABEL:
+            rest = [name for name in all_names if not combined.match(name)]
+            if rest:
+                shard_label, status, elapsed = run_shard(
+                    go, S5_LABEL, ".*", combined.pattern, args.timeout, len(rest))
+                results.append((shard_label, status, elapsed))
+                if status == "FAIL":
+                    failed = True
+
+    # 前端独立分片：cd web && bun test（bun 缺失按 FAIL 处理，不静默跳过）。
+    if not args.skip_frontend and (not args.shard or args.shard == FRONTEND_LABEL):
+        shard_label, status, elapsed = run_frontend_shard(args.timeout)
+        results.append((shard_label, status, elapsed))
+        if status == "FAIL":
+            failed = True
 
     print("\n===== 分片测试汇总 =====", flush=True)
     for label, status, elapsed in results:

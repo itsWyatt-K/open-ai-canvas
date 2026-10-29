@@ -11,10 +11,13 @@ export function getIsolatedAdminAntTheme(dark: boolean, skinID: unknown = "class
     const surface = dark ? "#191c21" : "#ffffff";
     const surfaceMuted = dark ? "#23272e" : "#f2f4f7";
     const border = dark ? "rgba(245, 245, 245, 0.12)" : "rgba(17, 17, 17, 0.12)";
-    const primary = skin.primary || (dark ? "#f5f5f5" : "#171717");
-    const primaryFg = skin.primaryForeground || (dark ? "#171717" : "#ffffff");
-    const hover = skin.primaryHover || (dark ? "#ffffff" : "#303030");
-    const active = skin.primaryActive || (dark ? "#e5e5e5" : "#404040");
+    // 2026-10-28：后台默认主色由「中性近黑」同步为「源起靛蓝」，与 getAntThemeConfig 的
+    // BRAND_RAMP 同源——指令单要求彻底消除 antd 默认蓝与品牌靛蓝的割裂，后台不应自成一档。
+    // 皮肤（skin.primary）仍可覆盖，优先级不变。
+    const primary = skin.primary || (dark ? "#6366f1" : "#4f46e5");
+    const primaryFg = skin.primaryForeground || "#ffffff";
+    const hover = skin.primaryHover || (dark ? "#818cf8" : "#4338ca");
+    const active = skin.primaryActive || (dark ? "#4f46e5" : "#3730a3");
     const danger = dark ? "#f87171" : "#dc2626";
     const success = dark ? "#4ade80" : "#15803d";
     const warning = dark ? "#fbbf24" : "#b45309";

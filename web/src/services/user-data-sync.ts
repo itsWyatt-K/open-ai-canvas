@@ -832,17 +832,27 @@ const SYNC_MIN_INTERVAL_MS = 250;
 
 let syncTimer: number | undefined;
 let syncMaxWaitTimer: number | undefined;
+// 失败重试独占定时器槽：租约冲突/网络退避的重试一旦排定，期间到达的新编辑
+// 应随那次重试一起保存，不能被防抖/最小间隔逻辑顶掉（否则既丢掉既定退避，
+// 又可能短时间内双重保存）。
+let syncRetryTimer: number | undefined;
 let lastSyncScheduledAt = 0;
 
 function clearSyncTimers() {
     if (syncTimer) window.clearTimeout(syncTimer);
     if (syncMaxWaitTimer) window.clearTimeout(syncMaxWaitTimer);
+    if (syncRetryTimer) window.clearTimeout(syncRetryTimer);
     syncTimer = undefined;
     syncMaxWaitTimer = undefined;
+    syncRetryTimer = undefined;
 }
 
 export function scheduleRemoteUserDataSync() {
     if (!activeRemoteUserId || remoteUserDataPhase !== "ready") return;
+    // 已排定重试时直接返回：那次重试会保存当前全部内容（含刚才的新编辑）。
+    // 不顶掉它——租约冲突的 1200ms 交接等待与网络退避都是有意的节流；
+    // 也不另起防抖——避免两个定时器先后触发造成重复保存。
+    if (syncRetryTimer) return;
     if (syncPromise) {
         autoSyncQueued = true;
         return;
@@ -895,9 +905,12 @@ function scheduleRemoteUserDataRetry(error: unknown) {
     if (!isRetryableRemoteSyncError(error) || !activeRemoteUserId || remoteUserDataPhase !== "ready") return false;
     const delayMs = error instanceof ApiError && error.reason === "canvas_edit_lease_conflict" ? 1200 : remoteUserDataRetryDelay(syncRetryAttempt, error instanceof ApiError ? error.retryAfterMs || 0 : 0);
     syncRetryAttempt = Math.min(syncRetryAttempt + 1, REMOTE_SYNC_RETRY_DELAYS_MS.length - 1);
+    // 重试与防抖互斥：清掉未触发的防抖（保存已失败，它没有存在意义），独占重试槽。
     if (syncTimer) window.clearTimeout(syncTimer);
-    syncTimer = window.setTimeout(() => {
-        syncTimer = undefined;
+    syncTimer = undefined;
+    if (syncRetryTimer) window.clearTimeout(syncRetryTimer);
+    syncRetryTimer = window.setTimeout(() => {
+        syncRetryTimer = undefined;
         void saveRemoteUserDataNow().catch((retryError) => console.warn("云端自动重试失败", retryError));
     }, delayMs);
     return true;
@@ -908,8 +921,10 @@ function scheduleRemoteUserDataHydrationRetry(error: unknown) {
     const delayMs = remoteUserDataRetryDelay(syncRetryAttempt, error instanceof ApiError ? error.retryAfterMs || 0 : 0);
     syncRetryAttempt = Math.min(syncRetryAttempt + 1, REMOTE_SYNC_RETRY_DELAYS_MS.length - 1);
     if (syncTimer) window.clearTimeout(syncTimer);
-    syncTimer = window.setTimeout(() => {
-        syncTimer = undefined;
+    syncTimer = undefined;
+    if (syncRetryTimer) window.clearTimeout(syncRetryTimer);
+    syncRetryTimer = window.setTimeout(() => {
+        syncRetryTimer = undefined;
         void syncRemoteUserData(activeRemoteUserId).catch((retryError) => console.warn("云端数据基线自动恢复失败", retryError));
     }, delayMs);
     return true;
@@ -1124,7 +1139,14 @@ async function performRemoteUserDataSave(input?: string | readonly string[]) {
     } finally {
         if (syncPromise === operation) {
             syncPromise = null;
-            if (epoch === sessionEpoch && (autoSyncQueued || syncQueued)) scheduleRemoteUserDataSync();
+            if (epoch === sessionEpoch && (autoSyncQueued || syncQueued)) {
+                // 保存刚结束：期间积累的编辑开启一个全新的防抖周期。最小间隔节流
+                // 针对的是「防抖定时器刚 armed 之后到达的编辑」（合并高频写入），
+                // 不针对刚完成的保存——否则一次定向保存后，排队的新编辑只会得到
+                // 一个几百毫秒的补保存窗口，而不是完整的 1200ms 防抖合并期。
+                lastSyncScheduledAt = 0;
+                scheduleRemoteUserDataSync();
+            }
         }
     }
     if (syncFailed) {

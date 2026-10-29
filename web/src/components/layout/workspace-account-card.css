@@ -7,7 +7,8 @@
 .workspace-account-card-identity strong, .workspace-account-card-identity span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-account-card-identity strong { font-size: 14px; line-height: 24px; }
 .workspace-account-card-identity span { color: var(--user-ink-muted); font-size: 12px; }
-.workspace-account-card-identity em { font-style: normal; font-size: 11px; padding: 4px 8px; border-radius: 999px; background: var(--user-surface-muted); color: var(--user-ink-muted); }
+/* 返工令 Round 4 G13：11px 硬编码 → 12px(--fs-caption)，清蚊子字 */
+.workspace-account-card-identity em { font-style: normal; font-size: var(--fs-caption); padding: 4px 8px; border-radius: 999px; background: var(--user-surface-muted); color: var(--user-ink-muted); }
 .workspace-account-card-wallet { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 16px; margin-bottom: 12px; border-radius: var(--user-radius-card); background: var(--user-surface-muted); }
 .workspace-account-card-balance > span { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--user-ink-muted); }
 .workspace-account-card-balance strong { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }

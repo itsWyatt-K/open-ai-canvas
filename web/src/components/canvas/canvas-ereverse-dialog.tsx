@@ -325,7 +325,7 @@ export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles, as
                                         {scene.keyframeUrl && (
                                             <img src={scene.keyframeUrl} alt={`场景 ${scene.index}`} className="h-full w-full object-cover" />
                                         )}
-                                        <span className="absolute bottom-0 left-0 bg-black/60 px-1 text-[10px] text-white">
+                                        <span className="absolute bottom-0 left-0 bg-black/60 px-1 text-caption text-white">
                                             #{scene.index} · {scene.tags.slice(0, 2).join(" / ") || "—"}
                                         </span>
                                     </button>
@@ -358,7 +358,7 @@ export function CanvasEreverseDialog({ node, open, onClose, onApplySubtitles, as
                                         onClick={() => seekTo(chunk.startMs)}
                                         className="rounded-md border border-border bg-surface-hover px-2 py-1 text-xs transition-colors hover:border-primary hover:text-primary"
                                     >
-                                        <span className="mr-1 font-mono text-[10px] text-foreground/40">
+                                        <span className="mr-1 font-mono text-caption text-foreground/40">
                                             {formatMs(chunk.startMs)}
                                         </span>
                                         {chunk.text}

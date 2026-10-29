@@ -124,7 +124,19 @@ func (s *Service) advanceCloudAgentByID(userID, id string) error {
 	if lookupErr != nil {
 		return lookupErr
 	}
-	return s.advanceCloudAgent(run)
+	err = s.advanceCloudAgent(run)
+	// 同一轮推进里，前一次 MutateCloudAgent 已把 revision +1，后续写仍带着本轮
+	// 开始时读到的旧 revision，于是撞上乐观锁冲突。这不是并发篡改，而是本进程内
+	// 的陈旧基线：重读最新行重试一次，让「草稿→提交→终态」的补丁链在同一轮连续落库。
+	// 重试仍冲突则原样上抛（调度器按良性冲突处理，见 advanceCloudAgents）。
+	if errors.Is(err, repository.ErrCreationConflict) {
+		if fresh, readErr := s.repo.CloudAgent(userID, id); readErr == nil {
+			if retryErr := s.advanceCloudAgent(fresh); retryErr == nil {
+				return nil
+			}
+		}
+	}
+	return err
 }
 
 func (s *Service) advanceCloudAgents() {

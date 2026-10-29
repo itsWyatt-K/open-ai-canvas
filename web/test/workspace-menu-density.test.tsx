@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+// 行尾归一化 \n：Windows 工作副本（core.autocrlf=true）是 CRLF，多行 CSS needle 按 LF 编写。
 import { renderToStaticMarkup } from "react-dom/server";
 import { ConfigProvider, Select } from "antd";
 import { useContext } from "react";
@@ -49,8 +50,8 @@ test("real collection toolbar supplies filled selects without changing their lab
 });
 
 test("collection select focus uses a thin keyboard ring, not a persistent pointer outline", () => {
-    const css = readFileSync(new URL("../src/styles/workspace-product.css", import.meta.url), "utf8");
-    const toolbar = readFileSync(new URL("../src/components/layout/collection-toolbar.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../src/styles/workspace-product.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const toolbar = readFileSync(new URL("../src/components/layout/collection-toolbar.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     expect(css).toContain(".collection-toolbar .ant-select {\n        outline: none !important;");
     expect(css).toContain('[data-input-modality="keyboard"] .ant-select:not(.ant-select-disabled):focus-within');
     expect(css).toContain("outline: 1px solid var(--control-focus-ring) !important;");
@@ -70,9 +71,9 @@ test("workspace menu tokens are shadow-free and use theme-aware surfaces", () =>
 });
 
 test("real grid consumes density rather than the old fixed column calculation", () => {
-    const page = readFileSync(new URL("../src/pages/assets/index.tsx", import.meta.url), "utf8");
-    const css = readFileSync(new URL("../src/styles/workspace-product.css", import.meta.url), "utf8");
-    const globals = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8");
+    const page = readFileSync(new URL("../src/pages/assets/index.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const css = readFileSync(new URL("../src/styles/workspace-product.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const globals = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     expect(page).toContain('"--collection-grid-min-width": `${assetGridCardMinWidth[gridDensity]}px`');
     expect(css).toContain("minmax(min(100%, var(--collection-grid-min-width, 224px)), 1fr)");
     expect(globals).not.toContain("--assets-grid-columns");
@@ -80,8 +81,8 @@ test("real grid consumes density rather than the old fixed column calculation", 
 });
 
 test("menu surfaces are explicitly scoped and old account inner overrides are removed", () => {
-    const css = readFileSync(new URL("../src/styles/workspace-menus.css", import.meta.url), "utf8");
-    const globals = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../src/styles/workspace-menus.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const globals = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     expect(css).toContain("@layer utilities");
     expect(css).toContain(".workspace-account-popover .ant-popover-container");
     expect(css).toContain("border: 0 !important");
@@ -94,7 +95,7 @@ test("menu surfaces are explicitly scoped and old account inner overrides are re
 });
 
 test("shared single-select popup uses a borderless surface instead of a bright focus frame", () => {
-    const select = readFileSync(new URL("../src/components/ui/base/select/select.tsx", import.meta.url), "utf8");
+    const select = readFileSync(new URL("../src/components/ui/base/select/select.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     expect(select).toContain("<AntSelect");
     expect(select).toContain('variant={variant ?? "filled"}');
     expect(select).toContain("data-input-modality={inputModality}");

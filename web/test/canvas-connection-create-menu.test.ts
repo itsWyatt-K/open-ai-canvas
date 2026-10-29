@@ -10,7 +10,9 @@ test("connection menu omits the header and provides descriptions for every optio
     expect(component).not.toContain("ChevronRight");
     expect(component).not.toContain("absolute inset-x-8 top-0 h-px");
     const options = component.match(/<ConnectionCreateOption\b[\s\S]*?\n\s*\/>/g) || [];
-    expect(options).toHaveLength(9);
+    // 菜单随节点类型增长（文本/分镜/批量表/一键详情/一键复刻/图片/配置/绘图/视频/音频/转换），
+    // 数量本身不是契约——真正的契约是下面每条都有 description。
+    expect(options).toHaveLength(11);
     for (const option of options) expect(option).toMatch(/description="[^"]+"/);
     expect(component).toContain('title="批量创作表"');
     expect(component).toContain("onCreate(CanvasNodeType.BatchTable)");

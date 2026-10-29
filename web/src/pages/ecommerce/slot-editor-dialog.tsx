@@ -178,7 +178,7 @@ export function EcommerceSlotEditorDialog({ slot, index, total, onClose, onNavig
                 <label className="flex flex-col gap-1">
                     <span className="flex items-center justify-between text-xs text-foreground/55">
                         <span>卖点绑定（仅填写已确认事实）</span>
-                        <span className={"text-[10px] " + (sellingPoints.length > 450 ? "text-amber-500" : "text-foreground/40")}>
+                        <span className={"text-caption " + (sellingPoints.length > 450 ? "text-amber-500" : "text-foreground/40")}>
                             {sellingPoints.length}/500
                         </span>
                     </span>

@@ -657,7 +657,12 @@
     max-height: calc(100vh - 260px);
     border: 1px solid var(--user-border);
     border-radius: var(--r-md);
-    background: repeating-conic-gradient(var(--user-surface-muted) 0 25%, var(--user-surface) 0 50%) 0 0 / 16px 16px;
+    /* 2026-10-28：repeating-conic-gradient → 静态 SVG data-uri。
+       原写法每帧都要重算锥形渐变，MX350 上滚动/缩放时掉帧明显；
+       SVG 图案由合成器一次性光栅化，零 GPU 重绘开销。取值与原视觉一致（两色 16px 棋盘）。 */
+    background-color: var(--user-surface);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%230f172a' fill-opacity='.07'%3E%3Crect x='8' width='8' height='8'/%3E%3Crect y='8' width='8' height='8'/%3E%3C/svg%3E");
+    background-size: 16px 16px;
     object-fit: contain;
 }
 .skill-wb-link {

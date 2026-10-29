@@ -42,7 +42,10 @@ describe("workspace route loading", () => {
         expect(router).toMatch(/path: "\/canvas\/:id",\s+element: \(\s+<RequireAuth>\s+<CanvasProjectPage \/>\s+<\/RequireAuth>\s+\),/);
         expect(router).not.toContain('path: "/home"');
         expect(router).not.toContain("HomePage");
-        expect(navigation).toContain('{ ...toolItem("create", "/"), id: "home", title: "创作" }');
+        // 侧边栏：拍板令阶段二「双入口精简」后创作入口从「创作(home)」收敛为
+        // 「自由画布 + 固定模块」；根路由 / 与兼容路由 /create 仍指向 CreatePage。
+        expect(navigation).toContain('{ id: "canvas", title: "自由画布", icon: InfinityIcon, to: "/canvas" }');
+        expect(navigation).toContain('{ id: "modules", title: "固定模块", icon: LayoutGridIcon, to: "/modules" }');
         expect(navigation).not.toContain('to: "/create"');
         expect(navigation).not.toContain('to: "/home"');
     });

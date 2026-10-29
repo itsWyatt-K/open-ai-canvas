@@ -206,7 +206,7 @@ export function CanvasNodeStyleForgeDialog({ productNode, imageNodes, config, op
                                             }}
                                         >
                                             <div className="text-sm font-medium">{item.label}</div>
-                                            <div className="mt-0.5 text-[11px] leading-snug opacity-55">{item.description}</div>
+                                            <div className="mt-0.5 text-caption leading-snug opacity-55">{item.description}</div>
                                         </button>
                                     ))}
                                 </div>
@@ -346,11 +346,11 @@ export function CanvasNodeStyleForgeDialog({ productNode, imageNodes, config, op
                             onConfigChange={(key, value) => setGenerationConfig((current) => ({ ...current, [key]: value }))}
                         />
                         {dna ? (
-                            <div className="rounded-lg bg-surface-active p-2 text-[11px] leading-relaxed opacity-70">
+                            <div className="rounded-lg bg-surface-active p-2 text-caption leading-relaxed opacity-70">
                                 DNA 来源：{dna.channel || "未知通道"}；锚点卡将在生成时作为公共锚点复用。
                             </div>
                         ) : (
-                            <div className="flex items-center gap-2 rounded-lg bg-surface-active p-2 text-[11px] opacity-60">
+                            <div className="flex items-center gap-2 rounded-lg bg-surface-active p-2 text-caption opacity-60">
                                 <Spin size="small" /> 完成分析后此处显示 DNA 摘要
                             </div>
                         )}

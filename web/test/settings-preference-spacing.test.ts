@@ -2,8 +2,12 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+// 行尾归一化 \n：Windows 工作副本（core.autocrlf=true）是 CRLF，多行 CSS needle 与
+// `\n${selector} {` 规则切分都按 LF 编写，不归一化时 Windows 上取不到规则体。
+const readSource = (path: string) => readFileSync(resolve(import.meta.dir, path), "utf8").replace(/\r\n/g, "\n");
+
 test("settings page drops the page header copy and audio preference blocks", () => {
-    const source = readFileSync(resolve(import.meta.dir, "../src/pages/settings/index.tsx"), "utf8");
+    const source = readSource("../src/pages/settings/index.tsx");
     expect(source).not.toContain("创作偏好");
     expect(source).not.toContain("配置默认模型、生成参数和素材存储。");
     expect(source).not.toContain("音频默认值");
@@ -14,7 +18,7 @@ test("settings page drops the page header copy and audio preference blocks", () 
 });
 
 test("wallet tabs and preference blocks keep a visible gap from neighboring surfaces", () => {
-    const css = readFileSync(resolve(import.meta.dir, "../src/styles/globals.css"), "utf8");
+    const css = readSource("../src/styles/globals.css");
     // 标签栏自身不留上下外边距：上方间距来自页头底部 12px 内边距，下方来自内容区 12px 外边距。
     const rule = (selector: string) => css.split(`\n${selector} {`)[1]?.split("}")[0] ?? "";
     expect(rule(".workspace-wallet-header")).toContain("padding: 20px 56px 12px 24px;");

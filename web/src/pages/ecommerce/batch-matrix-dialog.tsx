@@ -18,6 +18,8 @@ import {
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
 import { useConfigStore } from "@/stores/use-config-store";
 import { AppModal } from "@/components/ui/product/app-modal";
+// 模块私有样式（含 .ecommerce-matrix-row：content-visibility 行级跳渲，见文件尾注释）。
+import "./ecommerce.css";
 
 const CELL_TONE: Record<string, string> = {
     completed: "bg-emerald-500/10 text-emerald-600",
@@ -98,11 +100,11 @@ export function EcommerceBatchMatrixDialog({
                 width: 130,
                 render: (_: unknown, record: EcommerceProductSummary) => {
                     const slot = details[record.id]?.slots[i];
-                    if (!slot) return <span className="text-[10px] text-foreground/30">—</span>;
+                    if (!slot) return <span className="text-caption text-foreground/30">—</span>;
                     const abnormal = slot.status === "failed" || (!slot.brief && slot.status !== "completed");
                     return (
                         <div
-                            className={`rounded px-1.5 py-1 text-[10px] leading-4 ${CELL_TONE[slot.status] ?? "bg-foreground/5"} ${abnormal ? "ring-1 ring-destructive/40" : ""}`}
+                            className={`rounded px-1.5 py-1 text-caption leading-4 ${CELL_TONE[slot.status] ?? "bg-foreground/5"} ${abnormal ? "ring-1 ring-destructive/40" : ""}`}
                             title={`${slot.kind === "hero" ? "主图" : "详情"} ${slot.slotNo} · ${slot.brief?.screen_title ?? slot.title ?? ""}${slot.errorMessage ? ` · ${slot.errorMessage}` : ""}`}
                         >
                             <div className="truncate font-medium">{slot.brief?.screen_title ?? slot.title ?? slot.slotKey}</div>
@@ -197,6 +199,9 @@ export function EcommerceBatchMatrixDialog({
                 columns={columns}
                 pagination={false}
                 scroll={{ y: 520 }}
+                // 渲染提速：25 商品 × 8 屏的矩阵在低端机滚动逐格重排会掉帧、整页截图超时。
+                // 行级 content-visibility: auto 让视口外行只占位不渲染（类定义在 ecommerce.css）。
+                rowClassName={() => "ecommerce-matrix-row"}
             />
         </AppModal>
     );

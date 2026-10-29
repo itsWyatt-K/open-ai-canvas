@@ -94,7 +94,7 @@ export function VisualDnaPanel({ dna, onDnaChange }: { dna: VisualDna; onDnaChan
                         <Tooltip key={`${entry.hex}-${index}`} title={`${entry.role || "色"} ${entry.hex}${entry.ratio ? ` · 约${Math.round((entry.ratio || 0) * 100)}%` : ""}（点击复制）`}>
                             <button
                                 type="button"
-                                className="flex h-8 w-14 items-end rounded-md border border-black/10 p-1 text-[10px] font-medium text-white transition-transform hover:scale-105"
+                                className="flex h-8 w-14 items-end rounded-md border border-black/10 p-1 text-caption font-medium text-white transition-transform hover:scale-105"
                                 style={{ backgroundColor: entry.hex, textShadow: "0 1px 2px rgba(0,0,0,.55)" }}
                                 onClick={() => {
                                     void navigator.clipboard.writeText(entry.hex);
@@ -119,7 +119,7 @@ export function VisualDnaPanel({ dna, onDnaChange }: { dna: VisualDna; onDnaChan
                         <div key={String(key)} className="rounded-lg border border-border/50 px-2.5 py-2">
                             <div className="flex items-baseline justify-between gap-2">
                                 <span className="text-xs font-semibold">{label}</span>
-                                <span className="truncate text-[10px] opacity-40">{hint}</span>
+                                <span className="truncate text-caption opacity-40">{hint}</span>
                             </div>
                             <Input.TextArea
                                 autoSize
@@ -132,7 +132,7 @@ export function VisualDnaPanel({ dna, onDnaChange }: { dna: VisualDna; onDnaChan
                             {keywords.length ? (
                                 <div className="mt-1 flex flex-wrap gap-1">
                                     {keywords.map((keyword) => (
-                                        <Tag key={keyword} className="mr-0! text-[10px]!">
+                                        <Tag key={keyword} className="mr-0! text-caption!">
                                             {keyword}
                                         </Tag>
                                     ))}

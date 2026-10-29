@@ -6,10 +6,13 @@ import { getIsolatedAdminAntTheme } from "../src/pages/admin/theme/admin-ant-the
 
 describe("shared action colors and focus feedback", () => {
     for (const dark of [false, true]) {
-        test(`classic solid tokens remain monochrome beneath the button fill adapter in ${dark ? "dark" : "light"} mode`, () => {
+        // 2026-10-28 契约变更：总架构师指令单要求主色由「中性近黑」改为「源起靛蓝 #4F46E5」，
+        // 消除 antd 默认蓝与品牌靛蓝的割裂。原断言锁的是旧设计意图（monochrome #171717/#f5f5f5），
+        // 契约已变，故更新为品牌靛蓝；同时保留「product 与 admin 主题一致」这条真正的不变式。
+        test(`classic solid tokens use brand indigo and stay consistent across product/admin in ${dark ? "dark" : "light"} mode`, () => {
             const product = getAntThemeConfig(dark, DEFAULT_CLASSIC_SKIN);
             const admin = getIsolatedAdminAntTheme(dark, DEFAULT_CLASSIC_SKIN);
-            expect(product.components?.Button?.colorPrimary).toBe(dark ? "#f5f5f5" : "#171717");
+            expect(product.components?.Button?.colorPrimary).toBe(dark ? "#6366f1" : "#4f46e5");
             expect(admin.components?.Button?.colorPrimary).toBe(product.components?.Button?.colorPrimary);
             expect(admin.components?.Button?.primaryColor).toBe(product.components?.Button?.primaryColor);
         });

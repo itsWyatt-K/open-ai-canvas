@@ -104,7 +104,7 @@ export function CanvasAssetTree({ groups, nodeById, selectedKey, expandedKeys, o
                             {row.label}
                         </span>
                         {row.primary ? <Star className="size-3 shrink-0 fill-current text-foreground" aria-label="主版本" /> : null}
-                        {row.count !== undefined ? <span className={`shrink-0 text-[11px] tabular-nums ${selected ? "text-foreground/70" : "text-muted-foreground/80"}`}>{row.count}</span> : null}
+                        {row.count !== undefined ? <span className={`shrink-0 text-caption tabular-nums ${selected ? "text-foreground/70" : "text-muted-foreground/80"}`}>{row.count}</span> : null}
                     </div>
                 );
             })}

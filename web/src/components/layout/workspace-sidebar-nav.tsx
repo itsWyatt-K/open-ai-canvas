@@ -150,7 +150,8 @@ function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNa
                     />
                     <span className="flex min-w-0 flex-col">
                         <span className="app-workspace-brand-wordmark truncate text-[var(--fs-body)] leading-none font-semibold">{appearance.brandName}</span>
-                        <span className="mt-1 truncate text-[var(--fs-label)] leading-none text-foreground/60">创作工作台</span>
+                        {/* 返工令 Round 4 G13：11px(--fs-label) → 12px(--fs-caption) */}
+                        <span className="mt-1 truncate text-[var(--fs-caption)] leading-none text-foreground/60">创作工作台</span>
                     </span>
                 </span>
             </Link>
@@ -204,7 +205,10 @@ function NavItem({
             </span>
             <span className="app-workspace-nav-meta flex shrink-0 items-center gap-2">
                 {item.shortcut ? <Kbd className="hidden group-hover:inline-flex">{item.shortcut}</Kbd> : null}
-                {item.badge !== undefined ? <span className="flex min-w-5 items-center justify-center rounded-full bg-primary/10 px-2 py-0.5 text-[var(--fs-tiny)] font-medium tabular-nums text-primary">{item.badge}</span> : null}
+                {/* 返工令 Round 4 G13：徽标 --fs-tiny(--fs-label 别名,11px) → 12px */}
+                {item.badge !== undefined ? (
+                    <span className="flex min-w-5 items-center justify-center rounded-full bg-primary/10 px-2 py-0.5 text-[var(--fs-caption)] font-medium tabular-nums text-primary">{item.badge}</span>
+                ) : null}
                 {hasChildren ? <ChevronRight className={cn("size-3.5 shrink-0 text-foreground/40 transition-transform duration-200", isOpen && "rotate-90")} strokeWidth={2} /> : null}
             </span>
         </>

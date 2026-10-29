@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { createCanvasEditLeaseClient } from "../src/services/canvas-edit-leases";
@@ -28,10 +28,10 @@ const paths: Record<string, string> = {
     "./canvas-edit-leases": stubPath,
     "@/lib/canvas/agent-canvas-patch": fileURLToPath(new URL("lib/canvas/agent-canvas-patch.ts", root)),
 };
-function copySource(source: string, name: string) {
+function copySource(source: string, name: string, target: { dir: string; paths: Record<string, string>; stub: string } = { dir, paths, stub: stubPath }) {
     const code = readFileSync(new URL(source, root), "utf8");
-    const imports = code.replace(/"(@\/[^\"]+|\.\/user-data-sync-media|\.\/canvas-edit-leases|\.\/canvas-mutation-batches|json-canonicalize|zustand)"/g, (_, specifier: string) => JSON.stringify(paths[specifier] ?? stubPath));
-    writeFileSync(join(dir, name), `import { fixtureWindow as window } from ${JSON.stringify(stubPath)};\n` + imports);
+    const imports = code.replace(/"(@\/[^\"]+|\.\/user-data-sync-media|\.\/canvas-edit-leases|\.\/canvas-mutation-batches|json-canonicalize|zustand)"/g, (_, specifier: string) => JSON.stringify(target.paths[specifier] ?? target.stub));
+    writeFileSync(join(target.dir, name), `import { fixtureWindow as window } from ${JSON.stringify(target.stub)};\n` + imports);
 }
 writeFileSync(
     stubPath,
@@ -143,7 +143,24 @@ sync.installRemoteUserDataAutoSync();
 // Independent module state/storage/session, sharing only the server fixture.
 const peerDir = join(dir, "peer");
 mkdirSync(peerDir);
-for (const name of ["dependencies.ts", "resources.ts", "media.ts", "content.ts", "rebase.ts", "progress.ts", "sync.ts"]) writeFileSync(join(peerDir, name), readFileSync(join(dir, name), "utf8").replaceAll(dir, peerDir));
+// Windows 兼容：拷贝文件里嵌入的是 JSON.stringify 后的路径（反斜杠被翻倍），
+// 事后 replaceAll(dir, peerDir) 匹配不到，peer 模块会静默回落到主 fixture——
+// 租约客户端、本地存储、进度 store 全部串台（device-b 的保存会戴上 device-a 的租约）。
+// 因此按 peer 目录重新生成各模块的导入路径，而不是对已重写过的文件做二次替换。
+const peerStub = join(peerDir, "dependencies.ts");
+const peerPaths = Object.fromEntries(Object.entries(paths).map(([specifier, value]) => {
+    if (value === stubPath) return [specifier, peerStub];
+    if (value.startsWith(dir + sep)) return [specifier, join(peerDir, relative(dir, value))];
+    return [specifier, value];
+}));
+const peerTarget = { dir: peerDir, paths: peerPaths, stub: peerStub };
+writeFileSync(peerStub, readFileSync(stubPath, "utf8"));
+copySource("services/api/resources.ts", "resources.ts", peerTarget);
+copySource("services/user-data-sync-media.ts", "media.ts", peerTarget);
+copySource("lib/canvas/canvas-content.ts", "content.ts", peerTarget);
+copySource("lib/canvas/canvas-sync-rebase.ts", "rebase.ts", peerTarget);
+copySource("stores/use-sync-progress-store.ts", "progress.ts", peerTarget);
+copySource("services/user-data-sync.ts", "sync.ts", peerTarget);
 const peerSync: typeof sync = await import(join(peerDir, "sync.ts"));
 const peer = await import(join(peerDir, "dependencies.ts"));
 const peerProgress: typeof import("@/stores/use-sync-progress-store") = await import(join(peerDir, "progress.ts"));
@@ -887,8 +904,11 @@ describe("定向保存与旧 journal 的真实同步集成", () => {
         await saving;
         expect(fixture.writesById.has("canvas")).toBe(false);
         expect(fixture.writesById.get(b.id)).toHaveLength(1);
-        expect(fixture.timers.size).toBe(1);
-        const [timerId, timer] = [...fixture.timers][0];
+        // 重排的全局自动保存 = 1200ms 防抖 + 3000ms 兜底（SYNC_MAX_WAIT_MS：
+        // 防抖期内持续有变更也保证必发一次，见 scheduleRemoteUserDataSync）。
+        // 兜底与防抖是同一次保存的两个定时器，取 1200ms 那个触发即可。
+        expect(fixture.timers.size).toBe(2);
+        const [timerId, timer] = [...fixture.timers].find(([, item]: any) => item.delay === 1200)!;
         expect(timer.delay).toBe(1200);
         fixture.timers.delete(timerId);
         const autoPosted = deferred();

@@ -1,8 +1,11 @@
-// 任务列表栏：顶部工具栏（计数/全选/搜索/筛选/删除/导入/批量矩阵）+ 任务卡。
+// 任务列表栏：标题行（商品列表 N + 导入）+ 搜索 + 勾选浮现的批量工具条 + 状态筛选 + 任务卡。
 // 交互原则：状态徽章一眼懂、进度摘要一行明、危险操作必确认、空态有引导。
+// 返工令三：左栏固定 240px（w-60）+ overflow-hidden；顶部第一行只放标题与「+ 导入」，
+// 「批量矩阵 / 批量删除」移到搜索框下方、仅在勾选商品时浮现——根治 320px 时代
+// 五个控件横排溢出、撞击右栏「电商工坊」标题的病灶。
 import { useMemo, useState } from "react";
 import { App, Button, Checkbox, Input, Select } from "antd";
-import { Grid3x3, Plus, Trash2 } from "lucide-react";
+import { Grid3x3, ImageIcon, Plus, Trash2 } from "lucide-react";
 
 import { ECOMMERCE_STATUS_LABELS, summarizeProgress, type EcommerceProductSummary } from "@/services/api/ecommerce";
 import { useEcommerceWorkspaceStore } from "@/stores/use-ecommerce-store";
@@ -74,44 +77,67 @@ export function EcommerceTaskList({ activeId, onOpen }: { activeId: string | nul
     };
 
     return (
-        <aside className="flex h-full w-[320px] shrink-0 flex-col border-r border-border/60 bg-surface">
-            {/* 顶部工具栏：标题禁止换行，按钮紧凑排布，避免 300px 下被压成竖排 */}
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 p-4">
-                <div className="flex shrink-0 items-center gap-2">
+        <aside className="flex h-full w-60 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-surface">
+            {/* 第一行（唯一常驻控件行）：标题 + 右对齐「+ 导入」。
+                240px 下绝不换行、绝不溢出：标题 truncate，按钮 w-auto 紧凑排布。 */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+                <span className="min-w-0 truncate text-sm font-semibold">商品列表 {products.length > 0 ? `(${products.length})` : ""}</span>
+                <Button
+                    size="small"
+                    type="primary"
+                    className="!w-auto"
+                    onClick={() => setImportOpen(true)}
+                    icon={<Plus className="size-3.5" />}
+                >
+                    导入商品
+                </Button>
+            </div>
+            {/* 搜索框 */}
+            <div className="shrink-0 px-3 pt-2">
+                <Input.Search
+                    allowClear
+                    placeholder="搜索商品名称"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onSearch={() => void useEcommerceWorkspaceStore.getState().refreshProducts()}
+                />
+            </div>
+            {/* 批量工具条：仅勾选商品时浮现（不占常驻高度，未勾选时左栏更聚焦列表） */}
+            {selectedIds.length > 0 ? (
+                <div className="flex shrink-0 items-center gap-1.5 px-3 py-1.5">
                     <Checkbox
                         checked={allChecked}
                         indeterminate={selectedIds.length > 0 && !allChecked}
                         onChange={(event) => (event.target.checked ? selectAll(products.map((item) => item.id)) : clearSelected())}
                         aria-label="全选商品任务"
                     />
-                    <span className="whitespace-nowrap text-sm font-medium">商品任务 {products.length > 0 ? `(${products.length})` : ""}</span>
+                    <span className="shrink-0 text-caption text-foreground/55">已选 {selectedIds.length}</span>
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                        <Button
+                            size="small"
+                            type="text"
+                            className="!w-auto"
+                            disabled={products.length === 0}
+                            onClick={() => setMatrixOpen(true)}
+                            icon={<Grid3x3 className="size-3.5" />}
+                            aria-label="批量企划矩阵"
+                        >
+                            矩阵
+                        </Button>
+                        <Button
+                            size="small"
+                            type="text"
+                            danger
+                            className="!w-auto"
+                            onClick={handleDeleteSelected}
+                            icon={<Trash2 className="size-3.5" />}
+                            aria-label="删除勾选商品"
+                        >
+                            删除({selectedIds.length})
+                        </Button>
+                    </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                        size="small"
-                        type="text"
-                        disabled={products.length === 0}
-                        onClick={() => setMatrixOpen(true)}
-                        icon={<Grid3x3 className="size-3.5" />}
-                        aria-label="批量企划矩阵"
-                    >
-                        矩阵
-                    </Button>
-                    <Button size="small" type="text" danger disabled={selectedIds.length === 0} onClick={handleDeleteSelected} icon={<Trash2 className="size-3.5" />} aria-label="删除勾选商品">
-                        删除{selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
-                    </Button>
-                    <Button size="small" type="primary" onClick={() => setImportOpen(true)} icon={<Plus className="size-3.5" />}>
-                        导入商品
-                    </Button>
-                </div>
-            </div>
-            <Input.Search
-                allowClear
-                placeholder="搜索商品名称"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onSearch={() => void useEcommerceWorkspaceStore.getState().refreshProducts()}
-            />
+            ) : null}
             {/* 状态筛选：改为全宽 Select，彻底消除 7 项状态在 Segmented 中的文字截断 */}
             <div className="shrink-0 border-b border-border/60 px-3 py-2">
                 <Select
@@ -126,8 +152,8 @@ export function EcommerceTaskList({ activeId, onOpen }: { activeId: string | nul
                 />
             </div>
 
-            {/* 任务卡列表 */}
-            <div className="flex-1 overflow-y-auto p-3">
+            {/* 任务卡列表（返工令四-3：p-2 收紧左右留白，把宽度让给商品名首行） */}
+            <div className="flex-1 overflow-y-auto p-2">
                 {products.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
                         <p className="text-base font-semibold">从一张商品图，到一套完整成品</p>
@@ -165,14 +191,17 @@ export function EcommerceTaskList({ activeId, onOpen }: { activeId: string | nul
 }
 
 function TaskCard({ product, active, selected, onToggle, onOpen }: { product: EcommerceProductSummary; active: boolean; selected: boolean; onToggle: () => void; onOpen: () => void }) {
+    // 返工令三：缩略图加载失败绝不露浏览器裂图图标——回落干净占位（虚线相框，非灰方块）。
+    const [thumbFailed, setThumbFailed] = useState(false);
+    const hasThumb = Boolean(product.thumbnailUrl) && !thumbFailed;
     return (
         <li
-            className={`flex cursor-pointer gap-3 rounded-lg border p-2.5 transition-colors ${
+            className={`flex cursor-pointer gap-2 rounded-lg border p-2 transition-colors ${
                 active ? "border-primary/60 bg-primary/5" : "border-border/50 hover:border-border"
             }`}
             onClick={onOpen}
         >
-            <div className="flex items-start pt-1">
+            <div className="flex items-start pt-0.5">
                 {/* 阶段 0 修复：勾选商品时同步在中间栏打开该商品详情，消除勾选与预览割裂 */}
                 <Checkbox
                     checked={selected}
@@ -183,19 +212,30 @@ function TaskCard({ product, active, selected, onToggle, onOpen }: { product: Ec
                     aria-label={`选择 ${product.name}`}
                 />
             </div>
-            {product.thumbnailUrl ? (
-                <img src={product.thumbnailUrl} alt="" className="size-12 shrink-0 rounded-md object-cover" />
+            {hasThumb ? (
+                <img
+                    src={product.thumbnailUrl}
+                    alt=""
+                    className="size-9 shrink-0 rounded-md object-cover"
+                    onError={() => setThumbFailed(true)}
+                />
             ) : (
-                <div className="size-12 shrink-0 rounded-md bg-surface-active" />
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-dashed border-border/70 bg-surface-active/40 text-foreground/30" aria-hidden>
+                    <ImageIcon className="size-4" />
+                </div>
             )}
+            {/* 返工令四-3：第一行只放商品名（min-w-0 flex-1 拿满剩余宽度，240px 栏宽下
+                约可完整显示 10 个汉字）；状态徽标移到第二行与进度信息并排，不再抢首行宽度。 */}
             <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                    <strong className="truncate text-sm">{product.name}</strong>
+                <strong className="block truncate text-[13px] font-medium leading-5" title={product.name}>
+                    {product.name}
+                </strong>
+                <div className="mt-1 flex items-center gap-1.5">
                     <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${STATUS_TONE[product.status] || STATUS_TONE.draft}`}>
                         {ECOMMERCE_STATUS_LABELS[product.status] || product.status}
                     </span>
+                    <span className="min-w-0 truncate text-xs text-foreground/55">{summarizeProgress(product)}</span>
                 </div>
-                <p className="mt-1 truncate text-xs text-foreground/55">{summarizeProgress(product)}</p>
             </div>
         </li>
     );

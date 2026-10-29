@@ -42,11 +42,13 @@ test("三栏骨架与主流程接线", async () => {
     expect(list).toContain("Input.Search");
     expect(list).toContain("modal.confirm");
     expect(list).toContain("删除勾选");
-    // 详情：面包屑/槽位/标题/空态
-    expect(detail).toContain("SlotGroup");
+    // 详情：三步向导（阶段 5 小白向重构：平台→卖点→分镜，原 SlotGroup 平面列表
+    // 已演进为可折叠向导 + SlotCard 分镜卡）+ 标题面板。
+    expect(detail).toContain("SlotCard");
+    expect(detail).toContain("各屏分镜预览");
     expect(detail).toContain("TitlePanel");
-    // 配置：保存即生效提示 + 预设
-    expect(config).toContain("保存后立即用于所有任务的后续请求");
+    // 配置：保存即生效提示 + 预设（文案随阶段 5 收敛为「配置已保存并生效」）
+    expect(config).toContain("配置已保存并生效");
     expect(config).toContain("savePreset");
 });
 

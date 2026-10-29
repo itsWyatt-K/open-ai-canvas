@@ -281,3 +281,201 @@
         position: static;
     }
 }
+
+/* 战役一：分镜卡减负 + 按钮三级收敛 —— 场景企划抽屉 / 更多菜单。
+   全部沿用全局设计变量（--surface / --border / --foreground / --r-md / --fs-*），不另建体系；
+   明暗双主题由 .dark 覆盖区自动推导（color-mix 跟随 --foreground / --surface）。
+   注意：antd reset.css 的 button{font-size/color:inherit} 为无层规则，会压过 Tailwind 分层工具类，
+   因此卡片内 <button> 的字体/颜色一律走下面的无层类（与 app-workspace-* 系列同思路）。 */
+.ecommerce-slot-card-title {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 500;
+    /* 返工令四-6：行内快改触发钮的热区门禁（≥24×22）——16px 行高只有 16px 高，不达门禁。 */
+    min-height: 22px;
+    line-height: 22px;
+    color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.ecommerce-slot-card-subtitle {
+    display: -webkit-box;
+    width: 100%;
+    min-height: 22px;
+    overflow: hidden;
+    text-align: left;
+    white-space: pre-wrap;
+    /* 返工令四 G13 蚊子字门禁：11px → 12px（--fs-caption 档）。 */
+    font-size: var(--fs-caption);
+    line-height: 16px;
+    color: color-mix(in srgb, var(--foreground) 65%, transparent);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+/* 返工令四-6：顶栏商品名（点击即改）按钮。antd reset 的无层 button{line-height} 会压过
+   Tailwind 分层工具类，把 leading-6 的 24px 行高压成 21px（实测热区 107×21，低于 22px 门禁），
+   因此用无层类显式锁定 24px 高度与行高。 */
+.ecommerce-product-name-button {
+    height: 24px;
+    line-height: 24px;
+}
+
+.ecommerce-slot-card-subtitle.is-empty {
+    color: color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+
+.ecommerce-slot-brief-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 60%, transparent);
+    color: color-mix(in srgb, var(--foreground) 65%, transparent);
+    /* 返工令四 G13 蚊子字门禁：--fs-label(11px) → --fs-caption(12px)。 */
+    font-size: var(--fs-caption);
+    line-height: 1.4;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.ecommerce-slot-brief-trigger:hover {
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+    color: var(--foreground);
+}
+
+.ecommerce-slot-brief-trigger svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
+
+.ecommerce-slot-brief-panel {
+    display: flex;
+    width: min(300px, calc(100vw - 48px));
+    max-height: min(440px, calc(100dvh - 160px));
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    overscroll: contain;
+    padding: 12px;
+}
+
+.ecommerce-slot-brief-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.ecommerce-slot-brief-panel-header strong {
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.ecommerce-slot-brief-panel-header span {
+    /* 返工令四 G13 蚊子字门禁：11px → 12px（--fs-caption）。 */
+    font-size: var(--fs-caption);
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.ecommerce-slot-brief-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ecommerce-slot-brief-field > span {
+    /* 返工令四 G13 蚊子字门禁：11px → 12px（--fs-caption）。 */
+    font-size: var(--fs-caption);
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.ecommerce-slot-brief-hint {
+    margin: 0;
+    /* 返工令四 G13 蚊子字门禁：11px → 12px（--fs-caption）。 */
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.ecommerce-slot-more-menu {
+    display: flex;
+    width: min(264px, calc(100vw - 48px));
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ecommerce-slot-more-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 7px 9px;
+    border: none;
+    border-radius: var(--r-md);
+    background: transparent;
+    text-align: left;
+    transition: background 0.15s;
+}
+
+.ecommerce-slot-more-item:hover {
+    background: var(--surface-hover);
+}
+
+.ecommerce-slot-more-item strong {
+    font-size: var(--fs-ui);
+    font-weight: 500;
+}
+
+.ecommerce-slot-more-item span {
+    /* 返工令四 G13 蚊子字门禁：11px → 12px（--fs-caption）。 */
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+/* =========================================================================
+   分镜卡列表渲染提速（阶段三战役三）
+   -------------------------------------------------------------------------
+   问题：商品 × 屏序矩阵/长列表在滚动时逐格重排昂贵样式（棋盘格 conic-gradient、
+   多重 filter drop-shadow），低端机上掉帧、整页截图还会触发渲染超时。
+   两条手段：
+   1) content-visibility: auto + contain-intrinsic-size——视口外的列表项跳过
+       渲染与样式计算，只占位；auto 关键字会在首次真实渲染后记住实际高度，
+       滚动回来时占位稳定不抖动（Chromium 85+，项目 e2e 基准即 Chrome）。
+   2) 轻量 SVG data-uri 图案替代 repeating-conic-gradient 棋盘格；
+      box-shadow 替代 filter: drop-shadow（drop-shadow 每次合成都要对
+      元素重新栅格化滤镜，box-shadow 走廉价阴影绘制路径）。
+   ========================================================================= */
+
+/* 通用：长列表/网格容器内的单个条目（卡片、单元格）挂它，按条跳过视口外渲染。 */
+.ecommerce-cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+}
+
+/* 批量企划矩阵表行：行高约 40px，auto 记住真实高度。 */
+.ecommerce-matrix-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 40px;
+}
+
+/* 透明底棋盘格（16px 一格、8px 双象限）：一次解码重复平铺，
+   替代 bg-[conic-gradient(...)] 的多停止点解析。 */
+.ecommerce-checker {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect width='8' height='8' fill='%23000000' fill-opacity='0.07'/%3E%3Crect x='8' y='8' width='8' height='8' fill='%23000000' fill-opacity='0.07'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 16px 16px;
+}
+
+/* 商品主体轻投影：box-shadow 走阴影绘制路径，不触发滤镜重栅格化。 */
+.ecommerce-soft-shadow {
+    box-shadow: 0 8px 16px rgba(40, 30, 60, 0.22);
+}

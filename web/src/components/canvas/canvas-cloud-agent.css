@@ -1801,7 +1801,7 @@
     border-radius: 999px;
     background: color-mix(in srgb, var(--background) 92%, transparent);
     color: color-mix(in srgb, var(--foreground) 72%, transparent);
-    font-size: 11px;
+    font-size: var(--fs-caption); /* 返工令 Round 4 G13：11px → 12px */
     font-weight: 600;
     line-height: 1;
     transform: translateX(-50%);

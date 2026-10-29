@@ -795,6 +795,61 @@
     --text-4xl: 32px;
     --text-4xl--line-height: 1.25;
 
+    /* === 源起 Studio Design Token（2026-10-28，对应总架构师指令单）===
+       语义别名映射到既有变量，全站仍只有一套字号阶与一套色板。 */
+    --color-surface-base: var(--yq-bg-base);
+    --color-surface-card: var(--yq-bg-card);
+    --color-surface-elevated: var(--yq-bg-elevated);
+    --color-surface-subtle: var(--yq-bg-subtle);
+    --color-ink-primary: var(--yq-ink-primary);
+    --color-ink-secondary: var(--yq-ink-secondary);
+    --color-ink-tertiary: var(--yq-ink-tertiary);
+    --color-ink-disabled: var(--yq-ink-disabled);
+    --color-brand: var(--yq-brand);
+    --color-brand-hover: var(--yq-brand-hover);
+    --color-brand-soft: var(--yq-brand-soft);
+    --color-ai-accent: var(--yq-ai-accent);
+    --color-ai-soft: var(--yq-ai-soft);
+    --color-line-subtle: var(--yq-line-subtle);
+    --color-line-strong: var(--yq-line-strong);
+    --color-line-focus: var(--yq-line-focus);
+    --color-status-success-fg: var(--yq-status-success-fg);
+    --color-status-success-bg: var(--yq-status-success-bg);
+    --color-status-queue-fg: var(--yq-status-queue-fg);
+    --color-status-queue-bg: var(--yq-status-queue-bg);
+    --color-status-warn-fg: var(--yq-status-warn-fg);
+    --color-status-warn-bg: var(--yq-status-warn-bg);
+    --color-status-danger-fg: var(--yq-status-danger-fg);
+    --color-status-danger-bg: var(--yq-status-danger-bg);
+    /* 字号 T1~T6 → 既有 6 档（不为单点引入第 7 档）*/
+    --text-page-title: var(--fs-title);
+    --text-page-title--line-height: var(--lh-heading);
+    --text-page-title--letter-spacing: var(--ls-title);
+    --text-page-title--font-weight: 600;
+    --text-section-title: var(--fs-heading);
+    --text-section-title--line-height: var(--lh-heading);
+    --text-section-title--font-weight: 600;
+    --text-card-title: var(--fs-body);
+    --text-card-title--line-height: 1.45;
+    --text-card-title--font-weight: 600;
+    --text-body: var(--fs-ui);
+    --text-body--line-height: 1.55;
+    --text-body--font-weight: 400;
+    --text-ui-control: var(--fs-ui);
+    --text-ui-control--line-height: 1.4;
+    --text-ui-control--font-weight: 500;
+    --text-caption: var(--fs-caption);
+    --text-caption--line-height: 1.35;
+    --text-caption--font-weight: 500;
+    --radius-panel: var(--yq-radius-panel);
+    --radius-card: var(--yq-radius-card);
+    --radius-control: var(--yq-radius-control);
+    --radius-pill: var(--yq-radius-pill);
+    --shadow-card: var(--yq-shadow-card);
+    --shadow-card-hover: var(--yq-shadow-card-hover);
+    --shadow-floating: var(--yq-shadow-floating);
+    --background-image-ai-magic: var(--yq-ai-gradient);
+
     /* === Design Token System 映射（对应 #96 三层架构）=== */
     /* 色彩 — 节点类型色（可用 text-node-image / bg-node-video 等）*/
     --color-node-image: var(--cn-type-image);
@@ -1094,7 +1149,9 @@
     --workspace-text-body: var(--text-secondary);  /* body（tokens.json text/body）*/
     --workspace-text-muted: var(--text-secondary); /* muted（tokens.json text/muted）*/
     --workspace-text-faint: var(--text-tertiary);  /* muted-soft（tokens.json text/muted-soft）*/
-    --workspace-canvas-deep: #000000; /* canvas-deep（tokens.json color/canvas-deep）*/
+    --workspace-canvas-deep: #0b0f17; /* canvas-deep：曜石蓝黑。2026-10-28 由纯黑 #000000 调整，
+                                         纯黑与工坊浅底割裂且无色彩层次；取值与 design-tokens.css
+                                         暗色 --yq-bg-base 一致，画布与面板同族。 */
 
     --cn-text: var(--color-neutral-50);
     --cn-muted: var(--color-neutral-400);
@@ -1654,7 +1711,8 @@
     /* 分组标题：小号大写标签，弱化但可读；有标题的分组支持折叠，padding/间距由折叠按钮接管 */
     .app-workspace-nav-group-label {
         display: block;
-        font-size: var(--fs-label);
+        /* 返工令 Round 4 G13：11px(--fs-label) → 12px(--fs-caption)，清蚊子字 */
+        font-size: var(--fs-caption);
         font-weight: 600;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -16261,17 +16319,25 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap { box-shadow: 0 
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
+    /* 2026-10-28 返工修正（总架构师审计）：原布局下两个子项都可收缩（flex-shrink 默认 1），
+       250px 侧栏里「已用 432 MB」被压到 46px 触发明省略号。改为子项不收缩 + 允许换行——
+       空间不足时「总 20 GB」换到下一行，而不是把已用容量截断。 */
+    flex-wrap: wrap;
+}
+.app-user-workspace .app-workspace-sidebar-storage-used,
+.app-user-workspace .app-workspace-sidebar-storage-total {
+    flex: 0 0 auto;
+    min-width: 0;
 }
 
 .app-user-workspace .app-workspace-sidebar-storage-used {
     min-width: 0;
-    overflow: hidden;
     color: var(--user-ink, var(--foreground));
-    font-size: var(--fs-label);
+    /* 返工令 Round 4 G13：11px → 12px */
+    font-size: var(--fs-caption);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     letter-spacing: .01em;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -16280,7 +16346,8 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap { box-shadow: 0 
     flex: none;
     overflow: hidden;
     color: color-mix(in srgb, var(--user-ink, var(--foreground)) 46%, transparent);
-    font-size: var(--fs-tiny);
+    /* 返工令 Round 4 G13：--fs-tiny 是 --fs-label(11px) 的别名 → 12px */
+    font-size: var(--fs-caption);
     font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -16493,7 +16560,8 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap { box-shadow: 0 
 
 .app-user-workspace .app-workspace-sidebar-profile-copy span {
     color: rgba(0, 0, 0, .42);
-    font-size: 11px;
+    /* 返工令 Round 4 G13：11px 硬编码 → 12px(--fs-caption) */
+    font-size: var(--fs-caption);
 }
 
 .app-user-workspace .app-workspace-sidebar-notification,

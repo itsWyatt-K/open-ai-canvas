@@ -87,7 +87,7 @@ async function setup(replica = false, readOnly = false) {
     function Harness() {
         const setNodes = (update: Parameters<React.Dispatch<React.SetStateAction<CanvasNodeData[]>>>[0]) => { nodesRef.current = typeof update === "function" ? update(nodesRef.current) : update; };
         const setConnections = (update: Parameters<React.Dispatch<React.SetStateAction<CanvasConnection[]>>>[0]) => { connectionsRef.current = typeof update === "function" ? update(connectionsRef.current) : update; };
-        batch = useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setConnections, readOnly, setSelectedNodeIds: () => {},
+        batch = useCanvasBatchTable({ assets: [], nodesRef, connectionsRef, setNodes, setConnections, readOnly, setSelectedNodeIds: () => {},
             enqueueGenerationBatch: (_source, _mode, targets) => { queued.push(targets.map((target) => target.nodeId)); return `batch-${queued.length}`; } });
         execution = useCommerceWorkflow({ projectId, readOnly, nodesRef, connectionsRef, setNodes, setConnections,
             generateConfirmedRows: batch.generateConfirmedCommerceRows, createFileNode,
