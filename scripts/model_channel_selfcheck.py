@@ -28,9 +28,14 @@ ZHIPU_ENV_CANDIDATES = ("ZHIPU_API_KEY", "GLM_API_KEY", "EREVERSE_ZHIPU_API_KEY"
 def open_readonly(db_path: Path) -> sqlite3.Connection:
     if not db_path.exists():
         sys.exit(f"[缺库] 找不到 {db_path}——先用控制台拉起一次后端让它建库，或用 --db 指定路径")
-    uri = "file:" + db_path.as_posix().replace(":", "%3A", 1) + "?mode=ro"
+    # Windows 标准 sqlite URI：file:///D:/path?mode=ro（三斜杠 + 盘符冒号保留）
+    uri = "file:///" + db_path.resolve().as_posix() + "?mode=ro"
     try:
-        return sqlite3.connect(uri, uri=True)
+        conn = sqlite3.connect(uri, uri=True)
+        probe = conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0]
+        if probe == 0:
+            sys.exit(f"[缺库] {db_path} 是空库（0 张表）——请确认指向真实数据目录")
+        return conn
     except sqlite3.Error as error:
         sys.exit(f"[缺库] 无法只读打开 {db_path}：{error}")
 
@@ -42,10 +47,10 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
 
 def check_seedance_channel(conn: sqlite3.Connection) -> None:
     print("\n== CHANNEL_000011（火山方舟 Seedance 2.5）==")
-    if not table_exists(conn, "channels"):
-        print("[跳过] channels 表不存在（库还没跑过迁移）")
+    if not table_exists(conn, "model_channels"):
+        print("[跳过] model_channels 表不存在（库还没跑过迁移）")
         return
-    row = conn.execute("SELECT id, name, enabled FROM channels WHERE id LIKE 'CHANNEL_000011%'").fetchone()
+    row = conn.execute("SELECT id, name, enabled FROM model_channels WHERE id LIKE 'CHANNEL_000011%'").fetchone()
     if not row:
         print("[缺] 没有找到 CHANNEL_000011 渠道：请在管理后台新增火山方舟渠道（爆款视频第三层生成依赖它）")
         return
@@ -57,20 +62,20 @@ def check_seedance_channel(conn: sqlite3.Connection) -> None:
         print("[跳过] channel_models 表不存在")
         return
     models = conn.execute(
-        "SELECT model_key, enabled, price_type, price_amount FROM channel_models WHERE channel_id = ?",
+        "SELECT model_key, enabled, price_configured, unit_price_microcredits FROM channel_models WHERE channel_id = ?",
         (channel_id,),
     ).fetchall()
     if not models:
-        print("[缺] 该渠道下没有配置任何模型：需添加 Seedance 2.5（如 doubao-seedance-2-5）等视频模型")
+        print("[缺] 该渠道下没有配置任何模型：需添加 Seedance 2.5（如 doubao-seedance-2-5-260628）等视频模型")
         return
-    priced = 0
-    for model_key, model_enabled, price_type, price_amount in models:
-        has_price = price_type not in (None, "", "none") or (price_amount or 0) > 0
-        priced += 1 if has_price else 0
-        flag = "OK" if (model_enabled and has_price) else ("无价" if model_enabled else "停用")
-        print(f"  [{flag}] {model_key} enabled={model_enabled} price={price_type}/{price_amount}")
-    if priced < len(models):
-        print("     → 有模型未配价：Agent/制片台计费预检会拦截，请在渠道-模型编辑里补价格")
+    ready = 0
+    for model_key, model_enabled, price_configured, unit_price in models:
+        ok = bool(model_enabled) and (price_configured or (unit_price or 0) > 0)
+        ready += 1 if ok else 0
+        flag = "OK" if ok else ("无价" if model_enabled else "停用")
+        print(f"  [{flag}] {model_key} enabled={model_enabled} price_configured={price_configured} unit={unit_price}")
+    if ready == 0:
+        print("     → 全部模型停用/无价：管理后台启用 seedance-2-5 并补价格（price_configured=1）后即可出片")
 
 
 def check_zhipu_key() -> None:
@@ -86,9 +91,9 @@ def check_zhipu_key() -> None:
 
 def check_channels_overview(conn: sqlite3.Connection) -> None:
     print("\n== 渠道速览 ==")
-    if not table_exists(conn, "channels"):
+    if not table_exists(conn, "model_channels"):
         return
-    rows = conn.execute("SELECT id, name, enabled FROM channels ORDER BY id").fetchall()
+    rows = conn.execute("SELECT id, name, enabled FROM model_channels ORDER BY id").fetchall()
     enabled = [r for r in rows if r[2]]
     print(f"共 {len(rows)} 个渠道，启用 {len(enabled)} 个：")
     for channel_id, name, _ in enabled[:20]:
@@ -97,7 +102,7 @@ def check_channels_overview(conn: sqlite3.Connection) -> None:
         placeholders = ",".join("?" for _ in enabled)
         missing = conn.execute(
             f"SELECT channel_id, model_key FROM channel_models WHERE channel_id IN ({placeholders}) "
-            "AND enabled = 1 AND (price_type IS NULL OR price_type = '' OR price_type = 'none') AND (price_amount IS NULL OR price_amount = 0)",
+            "AND enabled = 1 AND price_configured = 0 AND (unit_price_microcredits IS NULL OR unit_price_microcredits = 0)",
             tuple(r[0] for r in enabled),
         ).fetchall()
         if missing:

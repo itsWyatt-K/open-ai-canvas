@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,9 +14,15 @@ import (
 	"gorm.io/gorm"
 )
 
+var assetLibraryTestRepoSeq atomic.Int64
+
 func newAssetLibraryTestRepository(t *testing.T) (*Repository, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:asset-library-test-%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
+	// 上游 v1.7.3.2 引入 t.Parallel 后，Windows 计时器粒度（~0.5ms）下纯 UnixNano
+	// 会撞名：cache=shared 内存库按名字共享，撞名 = 两测试写同一库（UNIQUE 崩）。
+	// 加原子序号保证每次调用唯一。
+	name := fmt.Sprintf("file:asset-library-test-%d-%d?mode=memory&cache=shared", time.Now().UnixNano(), assetLibraryTestRepoSeq.Add(1))
+	db, err := gorm.Open(sqlite.Open(name), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}

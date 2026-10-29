@@ -19,12 +19,11 @@ test("电商工坊路由带 RequireFeature 且入口经模块大厅可达", asyn
     expect(router).toContain('path: "/ecommerce"');
     expect(router).toContain('feature="ecommerceEnabled"');
 
-    // sidebar：拍板令阶段二「双入口精简」后侧边栏只留 自由画布 + 固定模块，
-    // 电商/短剧/E-Reverse 统一收进 /modules 模块大厅（buildNav 注释即设计声明），
-    // 侧边栏不再有独立电商入口——这是有意收敛，不是回归。
-    expect(sidebar).toContain('{ id: "canvas", title: "自由画布", icon: InfinityIcon, to: "/canvas" }');
-    expect(sidebar).toContain('{ id: "modules", title: "固定模块", icon: LayoutGridIcon, to: "/modules" }');
-    expect(sidebar).not.toContain('to: "/ecommerce"');
+    // sidebar：夜间施工令阶段二——恢复上游原生导航布局 + 新增「定制模块」入口组，
+    // 电商详情工坊作为定制工作台直达项回到侧边栏（独立高亮，不再只藏大厅）。
+    expect(sidebar).toContain('heading: "定制模块"');
+    expect(sidebar).toContain('{ id: "custom-modules", title: "✨ 定制模块", icon: LayoutGridIcon, to: "/modules" }');
+    expect(sidebar).toContain('{ id: "custom-ecommerce", title: "🛍️ 电商详情工坊", icon: ShoppingBagIcon, to: "/ecommerce" }');
 
     // 入口可达性：模块大厅第一排置顶「电商详情工坊」并链到 /ecommerce。
     // 2026-10-29 Round 3 返工令：卡片标题前的系统 Emoji 已全部删除（与封面图标双图标叠加是廉价感来源）

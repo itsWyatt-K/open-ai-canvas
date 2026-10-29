@@ -42,10 +42,12 @@ describe("workspace route loading", () => {
         expect(router).toMatch(/path: "\/canvas\/:id",\s+element: \(\s+<RequireAuth>\s+<CanvasProjectPage \/>\s+<\/RequireAuth>\s+\),/);
         expect(router).not.toContain('path: "/home"');
         expect(router).not.toContain("HomePage");
-        // 侧边栏：拍板令阶段二「双入口精简」后创作入口从「创作(home)」收敛为
-        // 「自由画布 + 固定模块」；根路由 / 与兼容路由 /create 仍指向 CreatePage。
-        expect(navigation).toContain('{ id: "canvas", title: "自由画布", icon: InfinityIcon, to: "/canvas" }');
-        expect(navigation).toContain('{ id: "modules", title: "固定模块", icon: LayoutGridIcon, to: "/modules" }');
+        // 侧边栏：夜间施工令阶段二——恢复上游原生导航（创作/短剧制作/自由画布 + 资源与工具 +
+        // 资产与历史），并新增「定制模块」入口组；根路由 / 与兼容路由 /create 仍指向 CreatePage。
+        expect(navigation).toContain('{ ...toolItem("create", "/"), id: "home", title: "创作" }');
+        expect(navigation).toContain('heading: "定制模块"');
+        expect(navigation).toContain('{ id: "custom-modules", title: "✨ 定制模块", icon: LayoutGridIcon, to: "/modules" }');
+        expect(navigation).toContain('{ id: "custom-live-studio", title: "🎬 直播间装修台", icon: MonitorPlayIcon, to: "/modules/live-studio" }');
         expect(navigation).not.toContain('to: "/create"');
         expect(navigation).not.toContain('to: "/home"');
     });

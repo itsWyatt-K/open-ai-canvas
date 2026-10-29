@@ -68,6 +68,9 @@ metadata:
 - `cards/sd25-mode-select.md` — 主模式单选（七选一）+ 专家能力附加 + 交付物锁定（full-direction/prompt-only/script-only/diag
 - `cards/sd25-timing-audit.md` — 时序审计六律（时段连续不重叠且等于总时长/每段给足动作时间/台词容量核算/因果时序/运镜物理兼容/参考只借该借的）
 - `cards/sd25-video-edit-formula.md` — 定向编辑公式（标注位置+精确目标+增删改换+有效时间）+ 不变清单显式列明 + 无标注版省略规则
+- `cards/sd25-novel-shotlist-one-pass.md` — 小说/网文单遍直出 SD2.5 分镜描述词（台词零增删改 + 单镜 25 字拆分 + 屏幕空间坐标 + 站位移交链 + 景别禁硬切 + 负向约束）；**仅限无资产兜底场景**，多集连续剧须转 chaoge-film-director-flex 路线 A
+
+> 来源提示：`sd25-novel-shotlist-one-pass` 为匿名外部征集文本重铸（consult_tier D，许可未确认），**仅限本地内部使用，不得随包外传**。
 
 ## 证据等级说明
 
