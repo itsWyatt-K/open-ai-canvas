@@ -697,6 +697,18 @@ const collectFn = async (page, ctx) => {
                         stepsPresent: Boolean(document.querySelector("[data-yq='ereverse-steps']")),
                     };
 
+                    // ⑰ G17 侧栏「上游原生 + 定制模块」门禁（夜间施工令阶段二）
+                    const sidebarEl = document.querySelector("aside");
+                    const sidebarLinks = sidebarEl ? Array.from(sidebarEl.querySelectorAll("a")).map((a) => a.getAttribute("href") || "") : [];
+                    const sidebarText = sidebarEl ? sidebarEl.innerText || "" : "";
+                    const sidebarG17 = {
+                        present: Boolean(sidebarEl && sidebarLinks.length > 0),
+                        nativeItems: ["/", "/projects", "/canvas", "/skills", "/assets"].every((to) => sidebarLinks.includes(to)),
+                        customGroup: /定制模块/.test(sidebarText),
+                        customEntries: ["/modules", "/ecommerce", "/modules/live-studio", "/ereverse"].every((to) => sidebarLinks.includes(to)),
+                        legacyTextGone: !/固定模块/.test(document.body.innerText || ""),
+                    };
+
                     return {
                         url: location.pathname,
                         title: document.title,
@@ -711,7 +723,7 @@ const collectFn = async (page, ctx) => {
                         perf,
                         buttons, brokenImages, overlaps, liveStage, slotCards,
                         tinyFonts, tinyFontTotal, modal, ereverseNav, emptyStateText,
-                        referenceSlot, canvasBubbleRemoved, ereverseStatus,
+                        referenceSlot, canvasBubbleRemoved, ereverseStatus, sidebarG17,
                         area: {
                             visualPct: Math.round((visual / area) * 1000) / 10,
                             controlPct: Math.round((controls / area) * 1000) / 10,
@@ -1073,6 +1085,24 @@ function run() {
         } else {
             gate("G0", "采集有效性（至少 1 页可测）", true, `已认证页面 ${authPages.length}/${scanned.length}`);
         }
+        // G17 侧栏布局与定制模块门禁（夜间施工令阶段二）：上游原生导航项齐全 + 「定制模块」
+        // 分组与三大定制工作台直达入口在位 + 全站不再出现旧词「固定模块」。
+        // /ereverse 免登录页不套工作台外壳，无侧栏，不计入本门禁分母。
+        const g17pages = scanned.filter((p) => p.route !== "/ereverse" && p.sidebarG17 && p.sidebarG17.present);
+        const g17items = g17pages.map((p) => {
+            const s = p.sidebarG17;
+            const missing = [];
+            if (!s.nativeItems) missing.push("上游原生导航项缺失（创作/短剧制作/自由画布/技能/资产）");
+            if (!s.customGroup) missing.push("「定制模块」分组缺失");
+            if (!s.customEntries) missing.push("定制入口组缺失（/modules、/ecommerce、/modules/live-studio、/ereverse）");
+            if (!s.legacyTextGone) missing.push("页面仍残留旧词「固定模块」");
+            return { p, ok: missing.length === 0, missing, s };
+        });
+        gate("G17", "侧栏布局与定制模块门禁（原生项齐全+定制模块组+全站无旧词）",
+            g17pages.length > 0 && g17items.every((i) => i.ok),
+            g17pages.length === 0
+                ? "未采集到带侧栏的已认证页面"
+                : g17items.map((i) => `${i.p.route}@${i.p.viewport} 原生项${i.s.nativeItems ? "✓" : "✗"} · 定制分组${i.s.customGroup ? "✓" : "✗"} · 定制入口${i.s.customEntries ? "✓" : "✗"} · 旧词清除${i.s.legacyTextGone ? "✓" : "✗"}${i.missing.length ? `｜缺失：${i.missing.join("；")}` : ""}`).join("；"));
     }
 
     // 5) 报告
@@ -1206,6 +1236,11 @@ function run() {
     for (const p of scanned.filter((p) => p.route === "/ereverse")) {
         const s = p.ereverseStatus || {};
         lines.push(`- \`${p.route}\`@${p.viewport}：状态点「${s.statusDotText || "未采到"}」 · 状态区直接铺开的技术 Tag ${s.statusTagsInZone ?? 0} 个 · 实心主 CTA ${p.solidCtas ?? 0} 个 · 复刻出口按钮 ${s.exitButtons ?? 0} 个 · 3 步引导条 ${s.stepsPresent ? "有" : "无"}`);
+    }
+    lines.push("", "### G17 侧栏布局与定制模块（夜间施工令阶段二）", "");
+    for (const p of scanned.filter((p) => p.route !== "/ereverse" && p.sidebarG17 && p.sidebarG17.present)) {
+        const s = p.sidebarG17;
+        lines.push(`- \`${p.route}\`@${p.viewport}：原生项 ${s.nativeItems ? "✓" : "✗"} · 定制分组 ${s.customGroup ? "✓" : "✗"} · 定制入口 ${s.customEntries ? "✓" : "✗"} · 旧词「固定模块」已清 ${s.legacyTextGone ? "✓" : "✗"}`);
     }
     lines.push("");
 

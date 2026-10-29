@@ -89,7 +89,7 @@ export default function EcommercePage() {
                 {configCollapsed && !activeId ? (
                     <button
                         type="button"
-                        className="absolute right-4 top-3 z-10 max-w-[calc(100%-2rem)] truncate rounded-md border border-border/50 bg-surface px-3 py-1.5 text-xs text-foreground/70 shadow-sm hover:text-foreground"
+                        className="absolute right-4 top-3 z-10 max-w-[300px] truncate rounded-md border border-border/50 bg-surface px-3 py-1.5 text-xs text-foreground/70 shadow-sm hover:text-foreground"
                         onClick={() => setConfigCollapsed(false)}
                         title="展开模型与高级设置"
                     >

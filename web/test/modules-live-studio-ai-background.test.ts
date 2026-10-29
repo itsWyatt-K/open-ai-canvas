@@ -103,7 +103,7 @@ test("分片门禁脚本包含前端 bun test 独立分片", async () => {
     const script = await readScript("scripts/run_backend_tests_sharded.py");
 
     expect(script).toContain('FRONTEND_LABEL = "F1-前端(bun test)"');
-    expect(script).toContain('run([bun, "test"], WEB, timeout)');
+    expect(script).toContain('run_with_env([bun, "test"], WEB, timeout, frontend_env())');
     // bun 缺失按 FAIL 处理，不静默跳过。
     expect(script).toContain("不静默跳过");
     expect(script).toContain("--skip-frontend");

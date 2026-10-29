@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -79,9 +80,28 @@ def find_bun() -> str | None:
     return None
 
 
+def frontend_env() -> dict[str, str] | None:
+    """F1 子进程环境：补齐 git 所在目录。
+
+    web 套件里的「changed-file formatting gate」等测试会 shell-out 到 git；
+    门禁自身可能只继承了 bun 的 PATH（find_bun 回退路径不含 git），缺 git 时
+    这批用例必挂——把 PortableGit 的 cmd 目录前置进子进程 PATH。"""
+    env = os.environ.copy()
+    git_dir = Path(r"C:\Users\khy\.workbuddy\binaries\PortableGit\versions\1.3.0\cmd")
+    if git_dir.is_dir() and str(git_dir) not in env.get("PATH", ""):
+        env["PATH"] = str(git_dir) + os.pathsep + env.get("PATH", "")
+    return env
+
+
 def run(cmd: list[str], cwd: Path, timeout: int) -> tuple[int, str]:
     proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True,
                           encoding="utf-8", errors="replace", timeout=timeout)
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def run_with_env(cmd: list[str], cwd: Path, timeout: int, env: dict[str, str] | None) -> tuple[int, str]:
+    proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=timeout, env=env)
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
@@ -143,7 +163,7 @@ def run_frontend_shard(timeout: int) -> tuple[str, str, float]:
         return FRONTEND_LABEL, "FAIL", 0.0
     started = time.time()
     try:
-        code, out = run([bun, "test"], WEB, timeout)
+        code, out = run_with_env([bun, "test"], WEB, timeout, frontend_env())
     except subprocess.TimeoutExpired:
         print(f"[TIMEOUT] {FRONTEND_LABEL} (超过 {timeout}s)", flush=True)
         return FRONTEND_LABEL, "FAIL", float(timeout)
