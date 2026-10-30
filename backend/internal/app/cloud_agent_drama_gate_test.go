@@ -35,8 +35,9 @@ func TestDramaConsolidationRetrievalGate(t *testing.T) {
 	t.Cleanup(func() { _ = gsql.Close() })
 	svc := &Service{repo: repository.New(gdb), dataDir: dataDir}
 
-	// 前置：真库 builtin 75 / drama 27（收敛终态；2026-10-30 v1.7.3.2 合流补齐 19 个
-	// 上游短剧系内置技能——影策短剧制作工作流/剧本撰写/剪辑节奏等，此前 v1.7.2 合并漏带）
+	// 前置：真库 builtin 56 / drama 8（收敛终态；2026-10-30 退役治理——
+	// v1.7.3.2 合流补带的 19 个上游短剧系内置技能（影策短剧制作工作流/
+	// 剧本撰写/剪辑节奏等）已按 f9055ec89 删除记录物理移除并清库）
 	var builtin, drama int64
 	if err := gdb.Raw("SELECT COUNT(*) FROM skills WHERE source_type='builtin'").Scan(&builtin).Error; err != nil {
 		t.Fatal(err)
@@ -44,8 +45,8 @@ func TestDramaConsolidationRetrievalGate(t *testing.T) {
 	if err := gdb.Raw("SELECT COUNT(*) FROM skills WHERE source_type='builtin' AND tag='drama'").Scan(&drama).Error; err != nil {
 		t.Fatal(err)
 	}
-	if builtin != 75 || drama != 27 {
-		t.Fatalf("真库未达收敛终态：builtin=%d drama=%d，want 75/27", builtin, drama)
+	if builtin != 56 || drama != 8 {
+		t.Fatalf("真库未达收敛终态：builtin=%d drama=%d，want 56/8", builtin, drama)
 	}
 
 	// 取全部 drama 保留包的 ID（不硬编码，按库取）

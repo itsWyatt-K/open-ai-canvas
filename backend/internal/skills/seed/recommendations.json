@@ -8,14 +8,14 @@
       "description": "从故事、剧本到分镜、表演和剪辑，覆盖短剧与影视短片的主要环节。",
       "icon": "film",
       "skills": [
-        {"skillId": "yingce-short-drama-workflow", "reason": "把小说或剧本整理成短剧剧本、分镜和资产，再按能力生成视频"},
+        {"skillId": "yingshi-drama-workshop", "reason": "把小说或剧本整理成短剧剧本、分镜和资产，再按能力生成视频"},
+        {"skillId": "chaoge-film-director-flex", "reason": "Chaoge AI导演接定稿剧本：选路线、十项解析、即梦/Seedance 出片"},
         {"skillId": "16000000000081", "reason": "一句话选题编成可拍的分集方案，开篇钩子和反转结尾"},
         {"skillId": "16000000000084", "reason": "搭故事结构：幕、节拍、高潮与结尾"},
         {"skillId": "16000000000073", "reason": "把扁平人物写成有欲望、有矛盾的角色"},
         {"skillId": "16000000000075", "reason": "改对白：带动作和潜台词"},
         {"skillId": "16000000000094", "reason": "把剧本拆成可拍的分镜和机位"},
-        {"skillId": "16000000000086", "reason": "调 AI 演员的微表情、眼神和表演"},
-        {"skillId": "16000000000088", "reason": "剪辑节奏、连续性与转场"}
+        {"skillId": "14811816982540", "reason": "搭世界观与场景：三图层结构、四轴评审与场景提示词"}
       ]
     },
     {
