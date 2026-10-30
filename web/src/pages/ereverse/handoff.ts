@@ -10,13 +10,7 @@
  * 严禁造假「已自动填入」。
  */
 
-import {
-    LIVE_REFERENCE_DEFAULT_STRENGTH,
-    LIVE_REFERENCE_HANDOFF_KEY,
-    LIVE_REFERENCE_HANDOFF_MAX_CHARS,
-    type LiveReferenceHandoff,
-    type LiveReferenceStrength,
-} from "@/pages/modules/platforms-live";
+import { LIVE_REFERENCE_DEFAULT_STRENGTH, LIVE_REFERENCE_HANDOFF_KEY, LIVE_REFERENCE_HANDOFF_MAX_CHARS, type LiveReferenceHandoff, type LiveReferenceStrength } from "@/pages/modules/platforms-live";
 import type { EreverseStoryboardShot, EreverseView } from "@/lib/canvas/ereverse-view";
 
 /** 画布 / 制片台出口共用的快照键（直播台有自己的键，见 platforms-live）。 */
@@ -43,6 +37,8 @@ export type EreverseHandoffShot = {
     tags?: string[];
     /** 前 3 秒钩子标注（黄金三镜与 narrativeIntent 用）。 */
     hook?: string;
+    /** 仿拍成片地址（片段仿拍台「送入画布」用；dataUrl/blob 源，消费端可选建视频节点）。 */
+    videoUrl?: string;
 };
 
 export type EreverseHandoff = {
@@ -164,9 +160,7 @@ export function writeEreverseHandoff(input: { target: EreverseHandoffTarget; sou
 
 /** 复制分镜文本到剪贴板（画布 / 制片台「粘贴」动线的真实载体）；失败返回 false。 */
 export async function copyStoryboardText(shots: EreverseStoryboardShot[]): Promise<boolean> {
-    const text = shots
-        .map((shot) => [`镜头${shot.index + 1} ${shot.shotType || ""} ${shot.cameraMovement || ""}`.trim(), `画面：${shot.prompt}`, shot.dialogue ? `台词：${shot.dialogue}` : ""].filter(Boolean).join("\n"))
-        .join("\n\n");
+    const text = shots.map((shot) => [`镜头${shot.index + 1} ${shot.shotType || ""} ${shot.cameraMovement || ""}`.trim(), `画面：${shot.prompt}`, shot.dialogue ? `台词：${shot.dialogue}` : ""].filter(Boolean).join("\n")).join("\n\n");
     if (!text.trim()) return false;
     try {
         await navigator.clipboard.writeText(text);
@@ -218,12 +212,7 @@ export function ereverseHandoffMarkdownTable(payload: EreverseHandoff): string {
  * 组装直播台参考图模块载荷并落盘（同属本轮交付，直播台会真实消费）。
  * 参考帧超体积护栏时丢帧留文，frameDropped 供 toast 如实说明。
  */
-export function writeLiveReferenceHandoff(input: {
-    sourceName: string;
-    referenceFrame?: string;
-    dnaText: string;
-    strength?: LiveReferenceStrength;
-}): { frameDropped: boolean } {
+export function writeLiveReferenceHandoff(input: { sourceName: string; referenceFrame?: string; dnaText: string; strength?: LiveReferenceStrength }): { frameDropped: boolean } {
     const strength = input.strength ?? LIVE_REFERENCE_DEFAULT_STRENGTH;
     const base: LiveReferenceHandoff = {
         source: "ereverse",

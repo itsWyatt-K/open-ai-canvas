@@ -1,21 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-    LIVE_REFERENCE_DEFAULT_MODE,
-    LIVE_REFERENCE_DEFAULT_STRENGTH,
-    LIVE_REFERENCE_HANDOFF_KEY,
-    consumeLiveReferenceHandoff,
-    describeLiveReferenceDna,
-    parseLiveReferenceHandoff,
-} from "@/pages/modules/platforms-live";
-import {
-    EREVERSE_HANDOFF_KEY,
-    buildVisualDnaText,
-    toHandoffShots,
-    writeEreverseHandoff,
-    writeLiveReferenceHandoff,
-} from "./handoff";
+import { LIVE_REFERENCE_DEFAULT_MODE, LIVE_REFERENCE_DEFAULT_STRENGTH, LIVE_REFERENCE_HANDOFF_KEY, consumeLiveReferenceHandoff, describeLiveReferenceDna, parseLiveReferenceHandoff } from "@/pages/modules/platforms-live";
+import { EREVERSE_HANDOFF_KEY, buildVisualDnaText, toHandoffShots, writeEreverseHandoff, writeLiveReferenceHandoff } from "./handoff";
 import type { EreverseView } from "@/lib/canvas/ereverse-view";
 
 /** 最小可用视图模型：两镜头，字段口径与 presentEreversePft 输出一致。 */
@@ -44,6 +31,13 @@ function makeView(): EreverseView {
                 negativePrompt: "模糊",
                 dialogue: "家人们谁懂啊",
                 hasSpeech: true,
+                promptSlots: {
+                    主体: { 身份: "愤怒男子", 外观: "黑色西装", 动作: "伸手指向屏幕" },
+                    产品: { 名称与外观: "红光坐灸仪", 展示方式: "手持" },
+                    场景背景: { 环境: "直播间", 光影色调: "暖黄侧光" },
+                    镜头运镜: { 景别: "中景", 运镜: "固定机位" },
+                    口播台词: "家人们谁懂啊",
+                },
             },
             {
                 index: 1,
@@ -62,6 +56,13 @@ function makeView(): EreverseView {
                 negativePrompt: "",
                 dialogue: "",
                 hasSpeech: false,
+                promptSlots: {
+                    主体: { 身份: "", 外观: "", 动作: "" },
+                    产品: { 名称与外观: "", 展示方式: "" },
+                    场景背景: { 环境: "", 光影色调: "" },
+                    镜头运镜: { 景别: "", 运镜: "" },
+                    口播台词: "",
+                },
             },
         ],
         chunks: [],
@@ -71,7 +72,10 @@ function makeView(): EreverseView {
         timelineSource: "none",
         degraded: [],
         generatedAt: "2026-10-29T00:00:00Z",
-    } as EreverseView;
+        tracks: [{ kind: "audio", codec: "aac", extractedPath: "", note: "" }],
+        speechSpans: [{ startMs: 0, endMs: 4000, isSilence: false }],
+        fragment: null,
+    };
 }
 
 /** 给 window.localStorage 装一个内存假身（bun 测试环境无 DOM）。 */
@@ -115,9 +119,7 @@ test("直播台外来载荷解析：坏 JSON / 非 ereverse 来源一律拒绝",
 });
 
 test("直播台外来载荷解析：模式恒为 style；强度异常值回落 0.6；非 data: 帧丢弃", () => {
-    const parsed = parseLiveReferenceHandoff(
-        JSON.stringify({ source: "ereverse", sourceName: "x", mode: "layout", strength: 9, dataUrl: "https://example.com/a.png", dnaText: "配方" }),
-    );
+    const parsed = parseLiveReferenceHandoff(JSON.stringify({ source: "ereverse", sourceName: "x", mode: "layout", strength: 9, dataUrl: "https://example.com/a.png", dnaText: "配方" }));
     assert.equal(parsed?.mode, "style");
     assert.equal(parsed?.strength, 0.6);
     assert.equal(parsed?.dataUrl, undefined);

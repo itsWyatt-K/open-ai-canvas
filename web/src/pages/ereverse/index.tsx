@@ -1,29 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, App, Button, Checkbox, Input, Progress, Select, Tag, Tooltip } from "antd";
+import { Alert, App, Button, Checkbox, Input, Progress, Select, Tooltip } from "antd";
 import { ArrowLeft, FileVideo, PlayCircle, Sparkles, Upload } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
-import {
-    ereverseAssetUrl,
-    getEreverseHealth,
-    getEreverseJobStatus,
-    startEreverseJob,
-    uploadEreverseVideo,
-    type EreverseHealth,
-    type EreverseJobStatus,
-    type EreverseStage,
-    type EreverseVlmBackend,
-} from "@/services/api/ereverse";
-import { buildStoryboardShots, presentEreversePft, type EreverseView } from "@/lib/canvas/ereverse-view";
-import {
-    buildVisualDnaText,
-    copyStoryboardText,
-    fetchKeyframeDataUrl,
-    toHandoffShots,
-    goldenThreeShotIndexes,
-    writeEreverseHandoff,
-    writeLiveReferenceHandoff,
-} from "./handoff";
+import { ereverseAssetUrl, getEreverseHealth, getEreverseJobStatus, startEreverseJob, uploadEreverseVideo, type EreverseHealth, type EreverseJobStatus, type EreverseStage, type EreverseVlmBackend } from "@/services/api/ereverse";
+import { buildStoryboardShots, presentEreversePft, type EreversePromptSlots, type EreverseView } from "@/lib/canvas/ereverse-view";
+import { buildVisualDnaText, copyStoryboardText, fetchKeyframeDataUrl, goldenThreeShotIndexes, toHandoffShots, writeEreverseHandoff, writeLiveReferenceHandoff } from "./handoff";
+import { FragmentBar, type FragmentWindow } from "./fragment-bar";
+import { AnalysisPanel } from "./analysis-panel";
+import { CopyStudio } from "./copy-studio";
 
 const STAGE_ORDER: EreverseStage[] = ["queued", "probe", "tracks", "scenes", "keyframes", "asr", "vlm", "write"];
 const STAGE_LABEL: Record<EreverseStage, string> = {
@@ -39,7 +24,15 @@ const STAGE_LABEL: Record<EreverseStage, string> = {
     error: "失败",
 };
 const STAGE_PCT: Partial<Record<EreverseStage, number>> = {
-    queued: 3, probe: 10, tracks: 25, scenes: 40, keyframes: 55, asr: 72, vlm: 88, write: 96, done: 100,
+    queued: 3,
+    probe: 10,
+    tracks: 25,
+    scenes: 40,
+    keyframes: 55,
+    asr: 72,
+    vlm: 88,
+    write: 96,
+    done: 100,
 };
 // 返工令 Round 4：下拉框去黑话——原来默认项是「自动（智谱 → 反重力Gemini → Ollama → 本地Qwen）」，
 // 一长串引擎名对小白就是天书；现在默认项只说人话，具体引擎链留在各选项里给进阶用户。
@@ -79,17 +72,17 @@ const OUTPUT_PREVIEW: Array<{ num: string; title: string; desc: string; lines: s
     },
 ];
 
-// antd Tag 在本应用主题下无色 prop 会渲染成黑底，语义标签统一用可读的中性配色
-const NEUTRAL_TAG_STYLE: React.CSSProperties = {
-    color: "rgba(0,0,0,0.68)",
-    backgroundColor: "rgba(0,0,0,0.04)",
-    borderColor: "rgba(0,0,0,0.14)",
-};
-
-function formatMs(ms: number): string {
-    const total = Math.max(0, ms);
-    const s = Math.floor(total / 1000);
-    return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}.${String(total % 1000).padStart(3, "0")}`;
+/**
+ * 返工令 Round 6：AbortController 超时的原生文案「signal is aborted without reason」
+ * 对用户是黑话（侧车明明在跑却报此错 = 假死）。统一翻译成人话，页面严禁露出原文
+ * （探针 G19 门禁断言页面上不存在该文本）。
+ */
+function describeEreverseError(e: unknown): string {
+    const raw = e instanceof Error ? e.message : String(e);
+    if (/signal\s*is\s*aborted|AbortError|aborted\s+without\s+reason/i.test(raw)) {
+        return "连接超时：拆片引擎响应超过 15 秒（首次检查可能仍在加载模型），请点「重新检测连接」重试";
+    }
+    return raw;
 }
 
 export default function EReversePage() {
@@ -111,10 +104,17 @@ export default function EReversePage() {
     const [view, setView] = useState<EreverseView | null>(null);
     // 镜头筛选与成本闸门（夜间施工令阶段三）：null=全选；防 8×N 盲目扣费，投送只带走勾选镜。
     const [selectedSceneIndexes, setSelectedSceneIndexes] = useState<Set<number> | null>(null);
-    // 🛡️ 敏感品类防封改写：开启时分镜行 plotDescription 用 compliancePrompt 双轨稿。
+    // 🛡️ 敏感品类防封改写：开启时分镜行画面描述用 compliancePrompt 双轨稿。
     const [preferCompliance, setPreferCompliance] = useState(false);
+    // 返工令 Round 6：侧车告警框右侧的补救动作态（重新检测 / 一键启动）
+    const [sidecarAction, setSidecarAction] = useState<"idle" | "checking" | "starting">("idle");
+    // 片段仿拍双模面板：analysis=五维解析（默认） / studio=AI 仿拍创作台
+    const [mode, setMode] = useState<"analysis" | "studio">("analysis");
+    const [studioSlots, setStudioSlots] = useState<EreversePromptSlots | null>(null);
+    const [studioSourceLabel, setStudioSourceLabel] = useState("");
+    // 已提交拆解的时间窗（回执对齐；null=整条）
+    const [committedWindow, setCommittedWindow] = useState<FragmentWindow | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const running = Boolean(jobId) && (!status || !TERMINAL.includes(status.stage));
 
@@ -124,8 +124,54 @@ export default function EReversePage() {
                 setHealth(h);
                 setHealthError(null);
             })
-            .catch((e: unknown) => setHealthError(e instanceof Error ? e.message : String(e)));
+            .catch((e: unknown) => setHealthError(describeEreverseError(e)));
     }, []);
+
+    /** 重新检测连接：手动重跑一次健康检查，不等页面刷新。 */
+    const recheckHealth = useCallback(async () => {
+        setSidecarAction("checking");
+        try {
+            const h = await getEreverseHealth();
+            setHealth(h);
+            setHealthError(null);
+        } catch (e: unknown) {
+            setHealthError(describeEreverseError(e));
+        } finally {
+            setSidecarAction("idle");
+        }
+    }, []);
+
+    /**
+     * 一键启动拆片服务：经 vite 代理 `/yuanqi-console` 调本地控制台 (:17580) 的
+     * start/ereverse 接口——控制台负责拉起 E-Reverse 侧车（最长等 30s），
+     * 这里轮询健康检查直到就绪。控制台没开时如实告知走 启动源起.vbs。
+     */
+    const startSidecar = useCallback(async () => {
+        setSidecarAction("starting");
+        try {
+            const res = await fetch("/yuanqi-console/api/start/ereverse", { method: "POST" });
+            if (!res.ok) throw new Error(`控制台返回 HTTP ${res.status}`);
+            const deadline = Date.now() + 50_000;
+            let lastErr = "";
+            while (Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 2_500));
+                try {
+                    const h = await getEreverseHealth();
+                    setHealth(h);
+                    setHealthError(null);
+                    message.success("拆片服务已启动，引擎自检完成");
+                    return;
+                } catch (e: unknown) {
+                    lastErr = describeEreverseError(e);
+                }
+            }
+            setHealthError(lastErr || "拆片服务启动超时：请打开控制台 (127.0.0.1:17580) 在 E-Reverse 卡片查看日志");
+        } catch (e: unknown) {
+            setHealthError(`无法连接本地控制台（127.0.0.1:17580）：${e instanceof Error ? e.message : String(e)}。请双击「启动源起.vbs」打开控制台，在 E-Reverse 卡片点「▶ 启动」`);
+        } finally {
+            setSidecarAction("idle");
+        }
+    }, [message]);
 
     useEffect(() => {
         if (!jobId || !running) return;
@@ -165,30 +211,37 @@ export default function EReversePage() {
             setVideoPath(path);
             setUploadedName(file.name);
         } catch (e) {
-            setHealthError(e instanceof Error ? e.message : String(e));
+            setHealthError(describeEreverseError(e));
         } finally {
             setUploading(false);
         }
     }, []);
 
-    const handleRun = useCallback(async () => {
-        setStarting(true);
-        setView(null);
-        setStatus(null);
-        try {
-            const { id } = await startEreverseJob({
-                video: videoPath.trim(),
-                enable_vlm: enableVlm,
-                vlm_backend: vlmBackend,
-                context: context.trim(),
-            });
-            setJobId(id);
-        } catch (e) {
-            setHealthError(e instanceof Error ? e.message : String(e));
-        } finally {
-            setStarting(false);
-        }
-    }, [videoPath, enableVlm, vlmBackend, context]);
+    /** 启动反推：window 缺省=整条；传入=片段仿拍时间窗（毫秒，侧车裁剪后时间戳回正总轴）。 */
+    const handleRun = useCallback(
+        async (window?: FragmentWindow) => {
+            setStarting(true);
+            setView(null);
+            setStatus(null);
+            setMode("analysis");
+            try {
+                const { id } = await startEreverseJob({
+                    video: videoPath.trim(),
+                    enable_vlm: enableVlm,
+                    vlm_backend: vlmBackend,
+                    context: context.trim(),
+                    ...(window ? { start_ms: window.startMs, end_ms: window.endMs } : {}),
+                });
+                setCommittedWindow(window ?? null);
+                setJobId(id);
+            } catch (e) {
+                setHealthError(describeEreverseError(e));
+            } finally {
+                setStarting(false);
+            }
+        },
+        [videoPath, enableVlm, vlmBackend, context],
+    );
 
     /** 视觉配方提示词（结果区摘要 + 直播台出口共用一份口径）。 */
     const visualDnaText = useMemo(() => (view ? buildVisualDnaText(view) : ""), [view]);
@@ -196,6 +249,8 @@ export default function EReversePage() {
     const handoffShots = useMemo(() => (view ? toHandoffShots(view, { selectedIndexes: selectedSceneIndexes ?? undefined }) : []), [view, selectedSceneIndexes]);
     /** 画布分镜 builder 产物（复制到剪贴板供「粘贴」动线）。 */
     const storyboardShots = useMemo(() => (view ? buildStoryboardShots(view) : []), [view]);
+    /** 侧车原视频绝对地址（参考视频必须是 http(s)，相对 URL 会被资源上传层拒绝）。 */
+    const sourceVideoUrl = useMemo(() => (jobId && typeof window !== "undefined" ? `${window.location.origin}${ereverseAssetUrl(jobId, "video")}` : null), [jobId]);
 
     /**
      * 主按钮点击：没上传不装死——按钮保持实心主色（G16 口径：主 CTA 必须可见可点），
@@ -248,12 +303,48 @@ export default function EReversePage() {
             dnaText: visualDnaText,
         });
         navigate("/modules/live-studio?from=ereverse");
-        message.success(
-            referenceFrame && !frameDropped
-                ? "已带入参考帧与视觉配方，直播台「🎯 对标参考图」模块已自动预填"
-                : "参考帧过大或缺失，已带入视觉配方提示词，直播台参考图模块已自动预填",
-        );
+        message.success(referenceFrame && !frameDropped ? "已带入参考帧与视觉配方，直播台「🎯 对标参考图」模块已自动预填" : "参考帧过大或缺失，已带入视觉配方提示词，直播台参考图模块已自动预填");
     }, [view, visualDnaText, navigate, message]);
+
+    /** 进入仿拍创作台：携带当前镜头（或整段合并）的槽位树。 */
+    const handleEnterStudio = useCallback((slots: EreversePromptSlots, label: string) => {
+        setStudioSlots(slots);
+        setStudioSourceLabel(label);
+        setMode("studio");
+    }, []);
+
+    /** 仿拍成片送入画布：在勾选镜快照后追加一条带 videoUrl 的合成镜头。 */
+    const handleSendVideoToCanvas = useCallback(
+        (videoUrl: string, prompt: string) => {
+            if (!view) return;
+            const videoShot = {
+                index: handoffShots.length,
+                title: `仿拍成片（${studioSourceLabel || "片段仿拍"}）`,
+                startMs: 0,
+                endMs: 0,
+                durationMs: 0,
+                shotType: "",
+                cameraMovement: "",
+                prompt,
+                visualPrompt: prompt,
+                compliancePrompt: "",
+                negativePrompt: "",
+                dialogue: "",
+                keyframeUrl: null,
+                videoUrl,
+            };
+            writeEreverseHandoff({
+                target: "canvas",
+                sourceName: view.sourceName,
+                shots: [...handoffShots, videoShot],
+                visualDnaText,
+                preferCompliance,
+            });
+            navigate("/canvas?handoff=ereverse");
+            message.success("已带入仿拍成片与提示词：画布将落出参考，请在节点里粘贴/选择（不自动生成、不扣费）");
+        },
+        [view, handoffShots, visualDnaText, preferCompliance, studioSourceLabel, navigate, message],
+    );
 
     const stage = status?.stage;
     const progressPct = useMemo(() => {
@@ -270,20 +361,21 @@ export default function EReversePage() {
 
     /** 状态点口径：ffmpeg + 词级 ASR + 全部 VLM 引擎都就绪才算「就绪」，否则「部分引擎降级」。 */
     const engineReady = Boolean(health && health.ffmpeg && health.wordLevelAsr && vlmChips.length > 0 && vlmChips.every((chip) => chip.available));
+    // 施工包一：侧车 /health 透出 warmingUp（首个任务加载模型中），状态点如实标注
+    const warmingUp = Boolean(health && (health as { warmingUp?: boolean }).warmingUp);
 
     return (
-        <main className="min-h-screen bg-background text-foreground">
+        <main className="app-user-content app-workspace-scroll h-full overflow-y-auto bg-background text-foreground">
             <div className="mx-auto flex max-w-5xl flex-col gap-5 px-6 py-8">
                 <header className="relative flex flex-col gap-2">
-                    {/* 返工令 Round 4 · 去孤岛：本页在路由上不套工作台外壳（侧车页面历史原因），
-                        左上角放醒目返回入口，用户不会一进来就困在黑话里。 */}
+                    {/* 侧栏已提供全局导航，这里保留一个返回「定制模块」的快捷入口（二级便利，非唯一出路）。 */}
                     <Link
                         to="/modules"
                         className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-border/60 bg-surface px-3 py-1.5 text-xs font-medium text-foreground/70 shadow-sm transition-colors hover:border-primary/50 hover:text-primary"
                     >
                         <ArrowLeft className="size-3.5" /> 返回定制模块
                     </Link>
-                    {/* 返工令 Round 5 · 状态收敛：原来这里一排 6 个技术 Tag（ffmpeg / ASR / 四个引擎名）
+                    {/* 返工令 Round 6 · 状态收敛：原来这里一排 6 个技术 Tag（ffmpeg / ASR / 四个引擎名）
                         全铺在页面中央，小白一进来就被黑话劝退。现在收成右上角一个极简状态点，
                         具体模型列表进 antd Tooltip（hover/focus 才显示）。
                         三态常驻：就绪 🟢 / 部分降级 🟡 / 侧车不可用 🔴——不因健康检查失败而消失。 */}
@@ -311,6 +403,7 @@ export default function EReversePage() {
                             >
                                 <span aria-hidden>{healthError ? "🔴" : engineReady ? "🟢" : "🟡"}</span>
                                 {healthError ? "拆片引擎未就绪" : engineReady ? "多模态拆片引擎就绪" : "部分引擎降级"}
+                                {warmingUp && !healthError && <span className="text-foreground/40">（模型加载中）</span>}
                             </button>
                         </Tooltip>
                     </div>
@@ -318,9 +411,7 @@ export default function EReversePage() {
                         <Sparkles className="size-5 text-primary" />
                         爆款视觉反推
                     </h1>
-                    <p className="max-w-2xl text-sm text-foreground/60">
-                        上传爆款对标视频或图片，AI 自动拆解分镜脚本、台词时间戳与视觉 DNA 配方，一键复刻同款。
-                    </p>
+                    <p className="max-w-2xl text-sm text-foreground/60">上传爆款对标视频或图片，AI 自动拆解分镜脚本、台词时间戳与视觉 DNA 配方，一键复刻同款。</p>
                 </header>
 
                 {healthError && (
@@ -328,7 +419,17 @@ export default function EReversePage() {
                         type="warning"
                         showIcon
                         message="侧车服务不可用"
-                        description={healthError + " —— 请先启动：工具\\e-reverse\\.venv\\Scripts\\python.exe 工具\\e-reverse\\server.py"}
+                        description={
+                            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span>{healthError} —— 请先启动：工具\e-reverse\.venv\Scripts\python.exe 工具\e-reverse\server.py</span>
+                                <Button size="small" loading={sidecarAction === "checking"} onClick={() => void recheckHealth()}>
+                                    重新检测连接
+                                </Button>
+                                <Button size="small" type="primary" loading={sidecarAction === "starting"} onClick={() => void startSidecar()}>
+                                    ⚡ 一键启动拆片服务
+                                </Button>
+                            </span>
+                        }
                     />
                 )}
 
@@ -341,7 +442,11 @@ export default function EReversePage() {
                         { step: "Step 3", text: "替换自家商品，一键复刻同款" },
                     ].map((item, index) => (
                         <li key={item.step} className="flex items-center gap-2">
-                            {index > 0 ? <span aria-hidden className="text-foreground/30">➔</span> : null}
+                            {index > 0 ? (
+                                <span aria-hidden className="text-foreground/30">
+                                    ➔
+                                </span>
+                            ) : null}
                             <span className="flex items-center gap-1.5 rounded-full border border-line-subtle bg-surface px-2.5 py-1 text-caption">
                                 <strong className="font-semibold text-primary">{item.step}</strong>
                                 <span className="text-foreground/70">{item.text}</span>
@@ -369,12 +474,9 @@ export default function EReversePage() {
                         }}
                     >
                         <Upload className="size-8 text-primary" />
-                        <span className="text-sm font-medium text-foreground/80">
-                            {uploading ? "上传中…" : dragOver ? "松手即上传" : "拖拽对标视频到这里，或点击选择文件"}
-                        </span>
+                        <span className="text-sm font-medium text-foreground/80">{uploading ? "上传中…" : dragOver ? "松手即上传" : "拖拽对标视频到这里，或点击选择文件"}</span>
                         <span className="text-caption text-foreground/50">支持 MP4 / MOV / WEBM / MKV 等常见格式，单个视频即可反推</span>
                         <input
-                            ref={fileInputRef}
                             type="file"
                             accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.mkv,.avi,.flv,.m4v"
                             className="sr-only"
@@ -399,29 +501,9 @@ export default function EReversePage() {
                         <Checkbox checked={enableVlm} onChange={(e) => setEnableVlm(e.target.checked)}>
                             VLM 语义打标
                         </Checkbox>
-                        <Select
-                            className="min-w-64"
-                            size="small"
-                            value={vlmBackend}
-                            disabled={!enableVlm}
-                            options={VLM_OPTIONS}
-                            onChange={(v) => setVlmBackend(v as EreverseVlmBackend)}
-                        />
-                        <Input
-                            className="max-w-64"
-                            size="small"
-                            placeholder="打标上下文（如：短剧第1集）"
-                            value={context}
-                            onChange={(e) => setContext(e.target.value)}
-                            disabled={!enableVlm}
-                        />
-                        <Button
-                            type="primary"
-                            icon={<PlayCircle className="size-4" />}
-                            disabled={running}
-                            loading={starting}
-                            onClick={handleRunClick}
-                        >
+                        <Select className="min-w-64" size="small" value={vlmBackend} disabled={!enableVlm} options={VLM_OPTIONS} onChange={(v) => setVlmBackend(v as EreverseVlmBackend)} />
+                        <Input className="max-w-64" size="small" placeholder="打标上下文（如：短剧第1集）" value={context} onChange={(e) => setContext(e.target.value)} disabled={!enableVlm} />
+                        <Button type="primary" icon={<PlayCircle className="size-4" />} disabled={running} loading={starting} onClick={handleRunClick}>
                             {running ? "分析中…" : "🔍 开始拆解爆款配方"}
                         </Button>
                     </div>
@@ -429,57 +511,46 @@ export default function EReversePage() {
                     {/* 高级：服务端本地路径（默认收起）——带双反斜杠的磁盘路径对小白是噪音，
                         只在侧车与本机同盘、需要复用已有素材时才有用。 */}
                     <div className="mt-3 border-t border-border/50 pt-2">
-                        <button
-                            type="button"
-                            aria-expanded={advancedOpen}
-                            className="flex min-h-6 items-center gap-1 text-caption text-foreground/50 transition-colors hover:text-foreground/70"
-                            onClick={() => setAdvancedOpen((open) => !open)}
-                        >
+                        <button type="button" aria-expanded={advancedOpen} className="flex min-h-6 items-center gap-1 text-caption text-foreground/50 transition-colors hover:text-foreground/70" onClick={() => setAdvancedOpen((open) => !open)}>
                             高级：使用服务端本地路径
                             <span aria-hidden>{advancedOpen ? "▴" : "▾"}</span>
                         </button>
                         {advancedOpen ? (
                             <div className="mt-2 flex flex-col gap-1.5">
-                                <Input
-                                    placeholder="视频绝对路径，如 D:\\edge download\\主图\\红光坐灸仪\\主图视频\\主图视频_1.mp4"
-                                    value={videoPath}
-                                    onChange={(e) => setVideoPath(e.target.value)}
-                                    allowClear
-                                />
-                                <p className="text-caption leading-5 text-foreground/45">
-                                    仅在侧车服务与本机同盘时使用；填路径后无需上传，直接点「🔍 开始拆解爆款配方」。
-                                </p>
+                                <Input placeholder="视频绝对路径，如 D:\\edge download\\主图\\红光坐灸仪\\主图视频\\主图视频_1.mp4" value={videoPath} onChange={(e) => setVideoPath(e.target.value)} allowClear />
+                                <p className="text-caption leading-5 text-foreground/45">仅在侧车服务与本机同盘时使用；填路径后无需上传，直接点「🔍 开始拆解爆款配方」。</p>
                             </div>
                         ) : null}
                     </div>
                 </section>
 
                 {/* 反推产出物结构预览：三栏示例卡，消灭下半屏空白 */}
-                <section className="flex flex-col gap-2" aria-label="反推产出物结构预览">
-                    <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground/75">
-                        <Sparkles className="size-3.5 text-primary" />
-                        ✨ 反推产出物结构预览
-                    </h2>
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        {OUTPUT_PREVIEW.map((item) => (
-                            <div key={item.title} className="flex flex-col gap-2 rounded-xl border border-line-subtle bg-surface p-3.5">
-                                <strong className="flex items-center gap-1.5 text-xs font-semibold text-foreground/80">
-                                    <span aria-hidden>{item.num}</span>
-                                    {item.title}
-                                </strong>
-                                <p className="text-caption leading-5 text-foreground/50">{item.desc}</p>
-                                <ul className="flex flex-col gap-1">
-                                    {item.lines.map((line) => (
-                                        <li key={line} className="rounded-md bg-surface-subtle px-2 py-1 font-mono text-caption text-foreground/65">
-                                            {line}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ))}
-                    </div>
-                    <p className="text-caption text-foreground/40">以上为结构示例；上传视频后按实际素材产出对应内容。</p>
-                </section>
+                {!view && (
+                    <section className="flex flex-col gap-2" aria-label="反推产出物结构预览">
+                        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground/75">
+                            <Sparkles className="size-3.5 text-primary" />✨ 反推产出物结构预览
+                        </h2>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                            {OUTPUT_PREVIEW.map((item) => (
+                                <div key={item.title} className="flex flex-col gap-2 rounded-xl border border-line-subtle bg-surface p-3.5">
+                                    <strong className="flex items-center gap-1.5 text-xs font-semibold text-foreground/80">
+                                        <span aria-hidden>{item.num}</span>
+                                        {item.title}
+                                    </strong>
+                                    <p className="text-caption leading-5 text-foreground/50">{item.desc}</p>
+                                    <ul className="flex flex-col gap-1">
+                                        {item.lines.map((line) => (
+                                            <li key={line} className="rounded-md bg-surface-subtle px-2 py-1 font-mono text-caption text-foreground/65">
+                                                {line}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-caption text-foreground/40">以上为结构示例；上传视频后按实际素材产出对应内容。</p>
+                    </section>
+                )}
 
                 {jobId && status && (
                     <section className="rounded-xl border border-border bg-surface p-4">
@@ -490,164 +561,43 @@ export default function EReversePage() {
                             </span>
                             <span className="text-xs text-foreground/50">{progressPct}%</span>
                         </div>
-                        <Progress
-                            percent={progressPct}
-                            status={stage === "error" ? "exception" : stage === "done" ? "success" : "active"}
-                        />
-                        {stage === "error" && status.error && (
-                            <Alert className="mt-3" type="error" showIcon message={status.error} />
-                        )}
+                        <Progress percent={progressPct} status={stage === "error" ? "exception" : stage === "done" ? "success" : "active"} />
+                        {stage === "error" && status.error && <Alert className="mt-3" type="error" showIcon message={status.error} />}
                     </section>
                 )}
 
+                {/* 双模工作台（对标 AppGrowing）：左栏 42% 视频+黄金分段轴 ｜ 右栏 58% 解析/仿拍 */}
                 {view && jobId && (
-                    <section className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-4">
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
-                            <span className="font-medium">{view.sourceName}</span>
-                            <span className="text-xs text-foreground/50">
-                                {view.width}×{view.height} · {formatMs(view.durationMs)} · {view.fps}fps
-                            </span>
-                            <Tag color="blue">词级 {view.wordCount} 词 · {view.asrProvider || "无 ASR"}</Tag>
-                            {view.vlmProvider && <Tag color="purple">VLM {view.vlmProvider}</Tag>}
-                            {view.degraded.map((d) => (
-                                <Tag key={d} color="orange">{d}</Tag>
-                            ))}
-                        </div>
-
-                        <video
-                            ref={videoRef}
-                            className="max-h-[420px] w-full rounded-lg bg-black"
-                            src={ereverseAssetUrl(jobId, "video")}
-                            controls
-                            playsInline
-                            preload="auto"
+                    <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[42%_58%]" data-yq="ereverse-workbench">
+                        <FragmentBar
+                            videoRef={videoRef}
+                            videoUrl={ereverseAssetUrl(jobId, "video")}
+                            durationMs={view.durationMs}
+                            committed={committedWindow}
+                            scenes={view.scenes}
+                            running={running}
+                            onSeek={seekTo}
+                            onCommit={(window) => void handleRun(window)}
                         />
-
-                        <div>
-                            <h3 className="mb-2 text-sm font-medium text-foreground/70">场景与语义标签</h3>
-                            <div className="relative h-24 w-full overflow-hidden rounded-lg border border-border bg-black/20">
-                                {view.scenes.map((scene) => (
-                                    <button
-                                        key={scene.index}
-                                        type="button"
-                                        className="absolute top-0 h-full overflow-hidden border-l border-border/60"
-                                        style={{ left: `${scene.leftPct}%`, width: `${scene.widthPct}%` }}
-                                        onClick={() => seekTo(scene.startMs)}
-                                        title={`场景 ${scene.index} · ${formatMs(scene.startMs)}`}
-                                    >
-                                        {scene.keyframeUrl && (
-                                            <img
-                                                src={scene.keyframeUrl}
-                                                alt={`场景 ${scene.index}`}
-                                                className="h-full w-full object-cover"
-                                            />
-                                        )}
-                                        <span className="absolute bottom-0 left-0 bg-black/60 px-1 text-caption text-white">
-                                            #{scene.index}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="mt-2 flex flex-col gap-1">
-                                {view.scenes.map((scene) => (
-                                    <div key={scene.index} className="flex flex-wrap items-center gap-1 text-xs">
-                                        <span className="font-mono text-foreground/40">
-                                            #{scene.index} {formatMs(scene.startMs)}
-                                        </span>
-                                        {scene.tags.map((tag) => (
-                                            <Tag key={tag} className="mr-0" style={NEUTRAL_TAG_STYLE}>{tag}</Tag>
-                                        ))}
-                                        {scene.tags.length === 0 && <span className="text-foreground/30">（无标签）</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div>
-                            <h3 className="mb-2 text-sm font-medium text-foreground/70">词级时间轴（点击跳转播放）</h3>
-                            {view.chunks.length === 0 && (
-                                <p className="text-xs text-foreground/40">无词级时间戳（素材可能无语音）</p>
+                        <div className="min-h-[560px]">
+                            {mode === "studio" && studioSlots ? (
+                                <CopyStudio slots={studioSlots} sourceLabel={studioSourceLabel} sourceVideoUrl={sourceVideoUrl} onBack={() => setMode("analysis")} onGoCanvas={() => void handleSendToCanvas()} onSendToCanvas={handleSendVideoToCanvas} />
+                            ) : (
+                                <AnalysisPanel
+                                    view={view}
+                                    selectedSceneIndexes={selectedSceneIndexes}
+                                    onSelectedSceneIndexesChange={setSelectedSceneIndexes}
+                                    onGoldenThree={() => view && setSelectedSceneIndexes(goldenThreeShotIndexes(view))}
+                                    preferCompliance={preferCompliance}
+                                    onPreferComplianceChange={setPreferCompliance}
+                                    onReextract={() => void handleRun(committedWindow ?? undefined)}
+                                    reextracting={running}
+                                    onEnterStudio={handleEnterStudio}
+                                    onSeek={seekTo}
+                                />
                             )}
-                            <div className="flex flex-wrap gap-1.5">
-                                {view.chunks.map((chunk, i) => (
-                                    <button
-                                        key={`${chunk.startMs}-${i}`}
-                                        type="button"
-                                        onClick={() => seekTo(chunk.startMs)}
-                                        className="rounded-md border border-border bg-surface-hover px-2 py-1 text-xs transition-colors hover:border-primary hover:text-primary"
-                                    >
-                                        <span className="mr-1 font-mono text-caption text-foreground/40">
-                                            {formatMs(chunk.startMs)}
-                                        </span>
-                                        {chunk.text}
-                                    </button>
-                                ))}
-                            </div>
                         </div>
-
-                        {/* 分镜表（返工令 Round 5）：按镜头列出景别 / 运镜 / 视觉提示词 / 台词，
-                            数据全部来自本轮反推结果（view.scenes），VLM 未产出的字段留空不臆造。
-                            夜间施工令阶段三：每镜前加投送复选框（默认全选）+ 黄金三镜快捷筛——
-                            成本闸门，防 8×N 盲目扣费；投送只带走勾选镜。 */}
-                        <div>
-                            <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <h3 className="text-sm font-medium text-foreground/70">分镜表（按镜头重拍用）</h3>
-                                <Button
-                                    size="small"
-                                    type="text"
-                                    title="只投送前 3 秒钩子镜 + 最长镜（高潮）+ 收尾镜，先小成本试水"
-                                    onClick={() => view && setSelectedSceneIndexes(goldenThreeShotIndexes(view))}
-                                >
-                                    ⚡ 仅选黄金三镜
-                                </Button>
-                                <Button size="small" type="text" onClick={() => setSelectedSceneIndexes(null)}>
-                                    全选
-                                </Button>
-                                <span className="text-caption text-foreground/40">
-                                    已选 {selectedSceneIndexes ? selectedSceneIndexes.size : view.scenes.length} / {view.scenes.length} 镜投送
-                                </span>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                {view.scenes.map((scene) => {
-                                    const checked = !selectedSceneIndexes || selectedSceneIndexes.has(scene.index);
-                                    return (
-                                        <div key={scene.index} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-line-subtle bg-surface-subtle/40 px-2 py-1.5 text-caption">
-                                            <Checkbox
-                                                checked={checked}
-                                                onChange={(event) => {
-                                                    setSelectedSceneIndexes((previous) => {
-                                                        const base = previous ?? new Set(view.scenes.map((item) => item.index));
-                                                        const next = new Set(base);
-                                                        if (event.target.checked) next.add(scene.index);
-                                                        else next.delete(scene.index);
-                                                        return next;
-                                                    });
-                                                }}
-                                                aria-label={`选择镜头 ${scene.index + 1} 投送`}
-                                            />
-                                            <span className="font-mono text-foreground/40">#{scene.index + 1} {formatMs(scene.startMs)}</span>
-                                            <span className="font-medium text-foreground/75">
-                                                {[scene.shotType, scene.cameraMovement].filter(Boolean).join(" · ") || "景别未识别"}
-                                            </span>
-                                            <span className="line-clamp-2 min-w-0 flex-1 text-foreground/55">
-                                                {scene.visualPrompt || scene.tags.join("、") || "无视觉提示词"}
-                                            </span>
-                                            {scene.dialogue ? <span className="line-clamp-1 min-w-0 basis-full text-foreground/45">台词：{scene.dialogue}</span> : null}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* 视觉 DNA 摘要（返工令 Round 5）：配色 / 光线 / 构图打成可读配方，
-                            也是「🎨 装修直播间 / 详情页」出口带走的同一份文本。 */}
-                        <div>
-                            <h3 className="mb-2 text-sm font-medium text-foreground/70">视觉 DNA 摘要（复刻同款画风用）</h3>
-                            <p className="rounded-md border border-line-subtle bg-surface-subtle/40 px-2.5 py-2 text-caption leading-5 text-foreground/65">
-                                {visualDnaText || "本轮素材没有产出可用的视觉描述"}
-                            </p>
-                        </div>
-                    </section>
+                    </div>
                 )}
 
                 {/* 三大实战出口（返工令 Round 5）：反推完成后才亮；没结果时 disabled + title 说明，
@@ -655,40 +605,21 @@ export default function EReversePage() {
                     直播台参考图模块真实自动预填——toast 按目标分别如实说明。 */}
                 <section className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4" data-yq="ereverse-exits" aria-label="一键复刻出口">
                     <strong className="text-xs font-semibold text-foreground/75">🚀 拆解完成，选一条复刻出路</strong>
-                    <Checkbox
-                        checked={preferCompliance}
-                        onChange={(event) => setPreferCompliance(event.target.checked)}
-                        title="开启后分镜行画面描述改用敏感品类防封改写稿（无改写稿的镜头自动回退物理描述）"
-                    >
+                    <Checkbox checked={preferCompliance} onChange={(event) => setPreferCompliance(event.target.checked)} title="开启后分镜行画面描述改用敏感品类防封改写稿（无改写稿的镜头自动回退物理描述）">
                         🛡️ 敏感品类防封改写（投送时分镜画面描述用 compliance 稿）
                     </Checkbox>
                     <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                            type="primary"
-                            disabled={!view}
-                            title={view ? "携带拆解结果跳画布，预填「一键复刻」/分镜节点数据（快照 + 剪贴板）" : exitDisabledReason}
-                            onClick={() => void handleSendToCanvas()}
-                        >
+                        <Button type="primary" disabled={!view} title={view ? "携带拆解结果跳画布，预填「一键复刻」/分镜节点数据（快照 + 剪贴板）" : exitDisabledReason} onClick={() => void handleSendToCanvas()}>
                             🎬 一键复刻同款视频
                         </Button>
-                        <Button
-                            disabled={!view}
-                            title={view ? "携分镜脚本跳短剧 / 视频制片台，按镜头重拍" : exitDisabledReason}
-                            onClick={() => void handleSendToProjects()}
-                        >
+                        <Button disabled={!view} title={view ? "携分镜脚本跳短剧 / 视频制片台，按镜头重拍" : exitDisabledReason} onClick={() => void handleSendToProjects()}>
                             📽️ 导入短剧 / 视频制片台
                         </Button>
-                        <Button
-                            disabled={!view}
-                            title={view ? "携视觉 DNA 提示词与参考帧跳直播台，参考图模块自动预填" : exitDisabledReason}
-                            onClick={() => void handleSendToLiveStudio()}
-                        >
+                        <Button disabled={!view} title={view ? "携视觉 DNA 提示词与参考帧跳直播台，参考图模块自动预填" : exitDisabledReason} onClick={() => void handleSendToLiveStudio()}>
                             🎨 装修直播间 / 详情页
                         </Button>
                     </div>
-                    <p className="text-caption leading-5 text-foreground/45">
-                        直播台参考图模块会自动预填参考帧与视觉配方；画布与制片台会带入反推快照并复制分镜文本，请在目标节点的输入框里粘贴 / 选择。
-                    </p>
+                    <p className="text-caption leading-5 text-foreground/45">直播台参考图模块会自动预填参考帧与视觉配方；画布与制片台会带入反推快照并复制分镜文本，请在目标节点的输入框里粘贴 / 选择。</p>
                 </section>
             </div>
         </main>
