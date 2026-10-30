@@ -132,6 +132,49 @@ export default function OmnireplicaPage() {
     const videoSeq = useRef(0);
     const productSeq = useRef(0);
 
+    // ---- R2 联动：/ereverse 「送入全能复刻」带入参考视频路径 + 时间窗（consume-once）----
+    const [fromEreverseNotice, setFromEreverseNotice] = useState<string | null>(null);
+    useEffect(() => {
+        if (!new URLSearchParams(window.location.search).has("from")) return;
+        try {
+            const raw = window.localStorage.getItem("ereverse-to-omnireplica");
+            if (raw) {
+                const payload = JSON.parse(raw) as { sourceName?: string; videoPath?: string; startMs?: number; endMs?: number; visualDnaText?: string };
+                if (payload.videoPath) {
+                    videoSeq.current += 1;
+                    const item: ReferenceVideo = {
+                        id: `v${videoSeq.current}`,
+                        name: payload.sourceName || "反推台参考视频",
+                        path: payload.videoPath,
+                        previewUrl: "",
+                        durationMs: 0,
+                        width: 0,
+                        height: 0,
+                        fragment: payload.startMs !== undefined && payload.endMs !== undefined ? { startMs: payload.startMs, endMs: payload.endMs } : null,
+                    };
+                    setVideos((prev) => (prev.some((existing) => existing.path === item.path) ? prev : [...prev, item]));
+                    setMainVideoId((prev) => prev || item.id);
+                    const windowText = item.fragment ? `，时间窗 ${Math.round(item.fragment.startMs / 1000)}s-${Math.round(item.fragment.endMs / 1000)}s` : "";
+                    setFromEreverseNotice(`已从爆款反推台带入《${item.name}》${windowText}：直接点「开始拆解动效蓝图」即可（0 积分本地引擎）`);
+                }
+            }
+        } catch {
+            /* 载荷损坏：静默跳过，用户仍可手动上传 */
+        } finally {
+            try {
+                window.localStorage.removeItem("ereverse-to-omnireplica");
+            } catch {
+                /* 忽略 */
+            }
+            const params = new URLSearchParams(window.location.search);
+            if (params.has("from")) {
+                params.delete("from");
+                const rest = params.toString();
+                window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
+            }
+        }
+    }, []);
+
     const mainVideo = useMemo(() => videos.find((item) => item.id === mainVideoId) || null, [videos, mainVideoId]);
     const extracting = Boolean(extractJobId) && (!extractStatus || !["done", "error"].includes(extractStatus.stage));
 
@@ -374,6 +417,9 @@ export default function OmnireplicaPage() {
                                 <strong className="flex items-center gap-1.5 text-sm font-semibold text-foreground/80">
                                     <FileVideo2 className="size-4 text-primary" /> 参考视频（1~5，主参考驱动拆解）
                                 </strong>
+                                {fromEreverseNotice ? (
+                                    <Alert type="success" showIcon message="已从爆款反推台带入" description={fromEreverseNotice} data-yq="omni-from-ereverse" />
+                                ) : null}
                                 {videos.length === 0 ? (
                                     <label
                                         className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${uploadingVideo ? "pointer-events-none opacity-60" : "border-border/60 hover:border-primary/50"}`}
@@ -404,7 +450,11 @@ export default function OmnireplicaPage() {
                                             <div key={video.id} className={`flex flex-col gap-2 rounded-lg border p-2.5 ${video.id === mainVideoId ? "border-primary/60 bg-primary/5" : "border-border/60"}`}>
                                                 <div className="flex items-center gap-2.5">
                                                     <Radio checked={video.id === mainVideoId} onChange={() => setMainVideoId(video.id)} aria-label={`设为主参考：${video.name}`} />
-                                                    <video className="h-16 w-12 shrink-0 rounded bg-black object-cover" src={video.previewUrl} muted playsInline preload="metadata" />
+                                                    {video.previewUrl ? (
+                                                        <video className="h-16 w-12 shrink-0 rounded bg-black object-cover" src={video.previewUrl} muted playsInline preload="metadata" />
+                                                    ) : (
+                                                        <div className="flex h-16 w-12 shrink-0 items-center justify-center rounded bg-black/80 text-[10px] text-white/70">路径</div>
+                                                    )}
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-caption font-medium text-foreground/80" title={video.name}>
                                                             {video.name}

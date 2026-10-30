@@ -147,7 +147,13 @@ SERVICES = [
         "cwd": r"D:\AlcheMvision\nxf\_engine\yingce_bridge",
         "cmd": [r"D:\AlcheMvision\nxf\runtimes\venv\Scripts\python.exe", "-m", "uvicorn", "service:app",
                 "--host", "127.0.0.1", "--port", "8823"],
-        "env": {"PYTHONUTF8": "1", "PYTHONPATH": ""},
+        "env": {
+            "PYTHONUTF8": "1",
+            "PYTHONPATH": "",
+            # 全能复刻 code-render 依赖：CDP 截帧走 playwright-cli（Node 24 运行时），
+            # 合成走 ffmpeg——两者都不在系统 PATH，必须随服务注入，否则渲染必挂 CAPTURE/ENCODE。
+            "PATH": r"C:\Users\khy\bin;C:\Users\khy\.workbuddy\binaries\node\versions\24.14.0;" + os.environ.get("PATH", ""),
+        },
         "log": "nxf_service.log",
         # 冷缓存首启要 import onnxruntime/psd 等重依赖，20s 不够——与 frontend 同级。
         "wait": 45,

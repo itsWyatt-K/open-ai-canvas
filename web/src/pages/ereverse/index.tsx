@@ -293,6 +293,37 @@ export default function EReversePage() {
         message.success(copied ? `已带入 ${handoffShots.length} 镜：制片台分镜导入处提供「从爆款反推导入」一键按钮` : "已带入反推配方：制片台分镜导入处提供「从爆款反推导入」一键按钮");
     }, [view, handoffShots, storyboardShots, visualDnaText, preferCompliance, navigate, message]);
 
+    // R2 联动（OiiOii 全能复刻）：把参考视频路径 + 勾选时间窗 + 分镜语义带入 /omnireplica，
+    // 那边 consumes 后可直接「开始拆解」（0 积分本地引擎）；不伪造「已自动出片」。
+    const handleSendToOmniReplica = useCallback(() => {
+        if (!view) return;
+        const selected = handoffShots;
+        if (!selected.length) {
+            message.warning("当前勾选镜头为 0：至少勾选一镜再送入全能复刻");
+            return;
+        }
+        const startMs = Math.min(...selected.map((shot) => shot.startMs));
+        const endMs = Math.max(...selected.map((shot) => shot.endMs));
+        const payload = {
+            sourceName: view.sourceName,
+            // 服务端本地路径（e-reverse 同源；omnireplica 拆解管线直接可吃，免二次上传）
+            videoPath: videoPath.trim(),
+            startMs,
+            endMs,
+            visualDnaText,
+            shots: selected.map((shot) => ({ index: shot.index, title: shot.title, startMs: shot.startMs, endMs: shot.endMs, shotType: shot.shotType, cameraMovement: shot.cameraMovement, visualPrompt: shot.visualPrompt, compliancePrompt: shot.compliancePrompt, dialogue: shot.dialogue })),
+            at: new Date().toISOString(),
+        };
+        try {
+            window.localStorage.setItem("ereverse-to-omnireplica", JSON.stringify(payload));
+        } catch {
+            message.error("本地快照写入失败，无法带入全能复刻");
+            return;
+        }
+        navigate("/omnireplica?from=ereverse");
+        message.success(`已带入《${view.sourceName}》与 ${selected.length} 镜时间窗：全能复刻台可直接开始拆解（0 积分本地引擎）`);
+    }, [view, handoffShots, videoPath, visualDnaText, navigate, message]);
+
     const handleSendToLiveStudio = useCallback(async () => {
         if (!view) return;
         const firstKeyframe = view.scenes.find((scene) => scene.keyframeUrl)?.keyframeUrl || null;
@@ -302,8 +333,7 @@ export default function EReversePage() {
             referenceFrame: referenceFrame || undefined,
             dnaText: visualDnaText,
         });
-        navigate("/modules/live-studio?from=ereverse");
-        message.success(referenceFrame && !frameDropped ? "已带入参考帧与视觉配方，直播台「🎯 对标参考图」模块已自动预填" : "参考帧过大或缺失，已带入视觉配方提示词，直播台参考图模块已自动预填");
+        navigate("/modules/live-studio?from=ereverse");        message.success(referenceFrame && !frameDropped ? "已带入参考帧与视觉配方，直播台「🎯 对标参考图」模块已自动预填" : "参考帧过大或缺失，已带入视觉配方提示词，直播台参考图模块已自动预填");
     }, [view, visualDnaText, navigate, message]);
 
     /** 进入仿拍创作台：携带当前镜头（或整段合并）的槽位树。 */
@@ -617,6 +647,9 @@ export default function EReversePage() {
                         </Button>
                         <Button disabled={!view} title={view ? "携视觉 DNA 提示词与参考帧跳直播台，参考图模块自动预填" : exitDisabledReason} onClick={() => void handleSendToLiveStudio()}>
                             🎨 装修直播间 / 详情页
+                        </Button>
+                        <Button disabled={!view} title={view ? "携参考视频路径与勾选时间窗跳全能复刻台：动效蓝图 + 精灵图 + 代码渲染成片（0 积分）" : exitDisabledReason} onClick={handleSendToOmniReplica}>
+                            🌛 送入全能复刻（代码+精灵图）
                         </Button>
                     </div>
                     <p className="text-caption leading-5 text-foreground/45">直播台参考图模块会自动预填参考帧与视觉配方；画布与制片台会带入反推快照并复制分镜文本，请在目标节点的输入框里粘贴 / 选择。</p>
