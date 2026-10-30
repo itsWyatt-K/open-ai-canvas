@@ -1,0 +1,211 @@
+{
+    "id": "product-closeup",
+    "name": "产品特写",
+    "tagline": "居中大图推近 + 卖点逐条飞出 + CTA 收尾",
+    "description": "产品大图 zoom-in 推近抓眼，卖点文字按等差延迟逐条飞出，结尾大字 CTA + 产品回归。适合单品卖点讲解与商品主体聚焦。",
+    "shots": [
+        {
+            "shot_id": "shot_1",
+            "start_ms": 0,
+            "end_ms": 2600,
+            "layer": "code",
+            "enter": {
+                "type": "zoom-in",
+                "duration_ms": 900,
+                "easing": "ease-out"
+            },
+            "exit": {
+                "type": "fade",
+                "duration_ms": 260
+            },
+            "elements": [
+                {
+                    "element_id": "product_1",
+                    "type": "image",
+                    "slot": "product_main",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.52
+                    },
+                    "size_ratio": 0.62,
+                    "enter": {
+                        "type": "zoom-in",
+                        "duration_ms": 900
+                    }
+                },
+                {
+                    "element_id": "selling_1",
+                    "type": "text",
+                    "text": "3秒读懂它",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.13
+                    },
+                    "size_ratio": 0.062,
+                    "color": "@theme.colors.text",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.006
+                    },
+                    "enter": {
+                        "type": "fade-down",
+                        "duration_ms": 400,
+                        "delay_ms": 500
+                    }
+                }
+            ]
+        },
+        {
+            "shot_id": "shot_2",
+            "start_ms": 2600,
+            "end_ms": 5400,
+            "layer": "code",
+            "enter": {
+                "type": "fade",
+                "duration_ms": 300,
+                "easing": "ease-out"
+            },
+            "exit": {
+                "type": "fade",
+                "duration_ms": 300
+            },
+            "elements": [
+                {
+                    "element_id": "selling_2",
+                    "type": "text",
+                    "text": "卖点一 · 颜值即正义",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.3
+                    },
+                    "size_ratio": 0.048,
+                    "color": "@theme.colors.text",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.005
+                    },
+                    "enter": {
+                        "type": "slide-left",
+                        "duration_ms": 420,
+                        "delay_ms": 0
+                    }
+                },
+                {
+                    "element_id": "selling_3",
+                    "type": "text",
+                    "text": "卖点二 · 实力能打",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.42
+                    },
+                    "size_ratio": 0.048,
+                    "color": "@theme.colors.text",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.005
+                    },
+                    "enter": {
+                        "type": "slide-left",
+                        "duration_ms": 420,
+                        "delay_ms": 320
+                    }
+                },
+                {
+                    "element_id": "selling_4",
+                    "type": "text",
+                    "text": "卖点三 · 价格真香",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.54
+                    },
+                    "size_ratio": 0.048,
+                    "color": "@theme.colors.text",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.005
+                    },
+                    "enter": {
+                        "type": "slide-left",
+                        "duration_ms": 420,
+                        "delay_ms": 640
+                    }
+                }
+            ]
+        },
+        {
+            "shot_id": "shot_3",
+            "start_ms": 5400,
+            "end_ms": 8000,
+            "layer": "code",
+            "enter": {
+                "type": "fade",
+                "duration_ms": 300,
+                "easing": "ease-out"
+            },
+            "exit": {
+                "type": "fade",
+                "duration_ms": 300
+            },
+            "elements": [
+                {
+                    "element_id": "cta_1",
+                    "type": "text",
+                    "text": "立即抢购",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.4
+                    },
+                    "size_ratio": 0.095,
+                    "color": "@theme.colors.primary",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.008
+                    },
+                    "enter": {
+                        "type": "pop",
+                        "duration_ms": 380,
+                        "delay_ms": 200
+                    },
+                    "exit": {
+                        "type": "scale-down",
+                        "duration_ms": 300
+                    }
+                },
+                {
+                    "element_id": "product_2",
+                    "type": "image",
+                    "slot": "product_main",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.64
+                    },
+                    "size_ratio": 0.46,
+                    "enter": {
+                        "type": "zoom-in",
+                        "duration_ms": 600,
+                        "delay_ms": 300
+                    }
+                }
+            ]
+        }
+    ],
+    "transitions": [
+        {
+            "after_shot": "shot_1",
+            "type": "cross-fade",
+            "duration_ms": 180
+        },
+        {
+            "after_shot": "shot_2",
+            "type": "dip-to-black",
+            "duration_ms": 240
+        }
+    ],
+    "cssKeyframes": "/* 产品特写模板关键帧（与 nxf code-render 生成物同构；enter/exit/transition 命名空间隔离） */\n@keyframes omni-enter-zoom-in { from { opacity: 0; transform: scale(0.72); } to { opacity: 1; transform: scale(1); } }\n@keyframes omni-enter-fade { from { opacity: 0; } to { opacity: 1; } }\n@keyframes omni-enter-fade-down { from { opacity: 0; transform: translateY(-12%); } to { opacity: 1; transform: translateY(0); } }\n@keyframes omni-enter-slide-left { from { opacity: 0; transform: translateX(24%); } to { opacity: 1; transform: translateX(0); } }\n@keyframes omni-enter-pop {\n    0% { opacity: 0; transform: scale(0.6); }\n    60% { opacity: 1; transform: scale(1.08); }\n    100% { opacity: 1; transform: scale(1); }\n}\n@keyframes omni-exit-fade { from { opacity: 1; } to { opacity: 0; } }\n@keyframes omni-exit-scale-down { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.72); } }\n@keyframes omni-transition-cross-fade { from { opacity: 0; } to { opacity: 1; } }\n@keyframes omni-transition-dip-to-black {\n    0% { opacity: 0; }\n    50% { opacity: 1; background: #000; }\n    100% { opacity: 0; }\n}",
+    "refineNotes": [
+        "卖点逐条飞出节奏：delay 等差 320ms；单镜卖点 ≤4 条，超出拆镜（每条 0.8~1.2s）；",
+        "product_main 槽由物料层抠图提供（matting 透明底）；size_ratio 语义以 nxf 渲染器实作为准【待程不宕确认】；",
+        "zoom-in 推近 900ms 配 ease-out；产品图预留 12% 安全边距，防推近末端裁切边缘；",
+        "CTA 前 dip-to-black 240ms 制造停顿；快节奏带货可改 cut（0ms）提节奏；换肤只改 theme.colors.primary 即变 CTA 色（零成本改稿）。"
+    ]
+}

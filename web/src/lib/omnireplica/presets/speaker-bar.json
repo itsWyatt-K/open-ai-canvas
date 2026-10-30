@@ -1,0 +1,120 @@
+{
+    "id": "speaker-bar",
+    "name": "口播条",
+    "tagline": "底部字幕条 + 关键词弹跳放大，口播带货黄金版式",
+    "description": "钩子大标题抓眼 → 底部字幕条跟随口播（建议与词级 ASR 台词对齐）→ 关键词弹跳放大制造记忆点。适合真人口播带货与功能解说，3s 一个爆点。",
+    "shots": [
+        {
+            "shot_id": "shot_1",
+            "start_ms": 0,
+            "end_ms": 3000,
+            "layer": "code",
+            "enter": {
+                "type": "fade",
+                "duration_ms": 300,
+                "easing": "ease-out"
+            },
+            "exit": {
+                "type": "fade",
+                "duration_ms": 300
+            },
+            "elements": [
+                {
+                    "element_id": "title_1",
+                    "type": "text",
+                    "text": "家人们谁懂啊",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.16
+                    },
+                    "size_ratio": 0.072,
+                    "color": "@theme.colors.text",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.006
+                    },
+                    "enter": {
+                        "type": "pop",
+                        "duration_ms": 320,
+                        "delay_ms": 180
+                    }
+                },
+                {
+                    "element_id": "subtitle_1",
+                    "type": "text",
+                    "text": "今天这条真的绝",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.84
+                    },
+                    "size_ratio": 0.042,
+                    "color": "@theme.colors.text",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.005
+                    },
+                    "enter": {
+                        "type": "fade-up",
+                        "duration_ms": 400,
+                        "delay_ms": 520
+                    }
+                }
+            ]
+        },
+        {
+            "shot_id": "shot_2",
+            "start_ms": 3000,
+            "end_ms": 6000,
+            "layer": "code",
+            "enter": {
+                "type": "fade",
+                "duration_ms": 250,
+                "easing": "ease-out"
+            },
+            "exit": {
+                "type": "fade",
+                "duration_ms": 300
+            },
+            "elements": [
+                {
+                    "element_id": "keyword_1",
+                    "type": "text",
+                    "text": "闭眼入",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.44
+                    },
+                    "size_ratio": 0.115,
+                    "color": "@theme.colors.primary",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.008
+                    },
+                    "enter": {
+                        "type": "pop",
+                        "duration_ms": 360,
+                        "delay_ms": 140
+                    },
+                    "exit": {
+                        "type": "scale-down",
+                        "duration_ms": 280
+                    }
+                }
+            ]
+        }
+    ],
+    "transitions": [
+        {
+            "after_shot": "shot_1",
+            "type": "cross-fade",
+            "duration_ms": 200
+        }
+    ],
+    "cssKeyframes": "/* 口播条模板关键帧（与 nxf code-render 生成物同构；enter/exit 命名空间隔离） */\n@keyframes omni-enter-fade { from { opacity: 0; } to { opacity: 1; } }\n@keyframes omni-enter-fade-up { from { opacity: 0; transform: translateY(12%); } to { opacity: 1; transform: translateY(0); } }\n@keyframes omni-enter-pop {\n    0% { opacity: 0; transform: scale(0.6); }\n    60% { opacity: 1; transform: scale(1.08); }\n    100% { opacity: 1; transform: scale(1); }\n}\n@keyframes omni-exit-fade { from { opacity: 1; } to { opacity: 0; } }\n@keyframes omni-exit-scale-down { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.72); } }\n@keyframes omni-transition-cross-fade { from { opacity: 0; } to { opacity: 1; } }",
+    "refineNotes": [
+        "字幕文本建议与词级 ASR 窗内台词对齐（e-reverse PFT.words 双源注入），subtitle 的 delay_ms ≈ 该镜台词起始偏移；",
+        "关键词弹跳每镜只保留 1 个（超过 2 个显乱），text 建议 ≤6 字，size_ratio 0.115 ≈ 124px @1080 宽；",
+        "长标题（>10 字）把 title size_ratio 降到 0.055 防出屏；字幕条底色当前用 text+stroke 描边表达（契约内），若渲染器支持元素底色可换实体条【待 nxf 确认】；",
+        "整段时长按口播实际时长伸缩：shot_2 起点 = 关键词台词出现点，避免声画错位。"
+    ]
+}

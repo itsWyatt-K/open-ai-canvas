@@ -1,0 +1,125 @@
+{
+    "id": "mood-transition",
+    "name": "氛围过场",
+    "tagline": "全屏色块切换 + 精灵图飞入 + 标题淡入",
+    "description": "全屏色块定调，转场切白/切黑过场，精灵图序列帧飞入活跃气氛，标题淡入收束。适合章节分隔、情绪铺垫与片头片尾包装。",
+    "shots": [
+        {
+            "shot_id": "shot_1",
+            "start_ms": 0,
+            "end_ms": 2000,
+            "layer": "code",
+            "enter": {
+                "type": "fade",
+                "duration_ms": 300,
+                "easing": "ease-out"
+            },
+            "exit": {
+                "type": "fade",
+                "duration_ms": 260
+            },
+            "elements": [
+                {
+                    "element_id": "mood_block_1",
+                    "type": "image",
+                    "slot": "mood_block",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "size_ratio": 1,
+                    "enter": {
+                        "type": "fade",
+                        "duration_ms": 300
+                    }
+                },
+                {
+                    "element_id": "mood_title_1",
+                    "type": "text",
+                    "text": "氛围标题",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "size_ratio": 0.09,
+                    "color": "@theme.colors.text",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.006
+                    },
+                    "enter": {
+                        "type": "fade",
+                        "duration_ms": 600,
+                        "delay_ms": 300
+                    }
+                }
+            ]
+        },
+        {
+            "shot_id": "shot_2",
+            "start_ms": 2000,
+            "end_ms": 5000,
+            "layer": "code",
+            "enter": {
+                "type": "fade",
+                "duration_ms": 300,
+                "easing": "ease-out"
+            },
+            "exit": {
+                "type": "fade",
+                "duration_ms": 300
+            },
+            "elements": [
+                {
+                    "element_id": "sprite_1",
+                    "type": "sprite",
+                    "slot": "mood_sprite",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.58
+                    },
+                    "size_ratio": 0.34,
+                    "enter": {
+                        "type": "slide-right",
+                        "duration_ms": 500,
+                        "delay_ms": 200
+                    }
+                },
+                {
+                    "element_id": "mood_title_2",
+                    "type": "text",
+                    "text": "第二幕标题",
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.2
+                    },
+                    "size_ratio": 0.075,
+                    "color": "@theme.colors.accent",
+                    "stroke": {
+                        "color": "@theme.colors.stroke",
+                        "width_ratio": 0.005
+                    },
+                    "enter": {
+                        "type": "fade",
+                        "duration_ms": 500,
+                        "delay_ms": 600
+                    }
+                }
+            ]
+        }
+    ],
+    "transitions": [
+        {
+            "after_shot": "shot_1",
+            "type": "dip-to-white",
+            "duration_ms": 260
+        }
+    ],
+    "cssKeyframes": "/* 氛围过场模板关键帧（与 nxf code-render 生成物同构；enter/transition 命名空间隔离） */\n@keyframes omni-enter-fade { from { opacity: 0; } to { opacity: 1; } }\n@keyframes omni-enter-slide-right { from { opacity: 0; transform: translateX(-24%); } to { opacity: 1; transform: translateX(0); } }\n@keyframes omni-exit-fade { from { opacity: 1; } to { opacity: 0; } }\n@keyframes omni-transition-dip-to-white {\n    0% { opacity: 0; }\n    50% { opacity: 1; background: #FFF; }\n    100% { opacity: 0; }\n}",
+    "refineNotes": [
+        "mood_block 为全屏色块占位（物料层生成纯色 PNG 走 image 槽，或渲染器背景通道就位后改背景属性）；size_ratio 1=满幅【语义以 nxf 渲染器实作为准】；",
+        "sprite 走 background-position + steps(N) 序列帧（零 JS）；飞入用 slide-right，需要环绕感可换 flip-x；",
+        "dip-to-white 260ms 用于明快切换；暗调视频改 dip-to-black，时长保持 240~280ms 防拖沓；",
+        "标题淡入 delay 建议 ≥ 色块/精灵入场时长（本模板 600ms），避免元素叠噪；节庆换肤只改 theme.colors.mood/primary。"
+    ]
+}
