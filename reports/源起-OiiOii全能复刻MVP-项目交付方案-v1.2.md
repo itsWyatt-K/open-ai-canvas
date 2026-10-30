@@ -151,7 +151,7 @@ flowchart LR
   "slots": { "product_main": { "kind": "product_image | sprite", "url": "data:…|file://…", "fit": "contain", "sprite": { "slice_index": 0, "frame_count": 12, "fps": 12 } } },
   "shots": [ { "shot_id": "shot_1", "start_ms": 0, "end_ms": 3000,
                "enter": { "type": "fade-up", "duration_ms": 400, "easing": "ease-out" },
-               "exit":  { "type": "fade-out", "duration_ms": 300 },
+               "exit":  { "type": "fade", "duration_ms": 300 },
                "elements": [ { "element_id": "title_1", "type": "text | image | sprite", "slot": "product_main?",
                                "text": "家人们谁懂啊", "position": { "x": 0.5, "y": 0.18 }, "size_ratio": 0.08,
                                "color": "@theme.colors.primary", "stroke": { "color": "@theme.colors.stroke", "width_ratio": 0.006 },
