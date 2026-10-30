@@ -22,19 +22,7 @@
 // 动效枚举词表（冻结契约 —— 与 e-reverse pft_schema.py / nxf 渲染器三方同源）
 // --------------------------------------------------------------------------- #
 
-export const MOTION_ENTER_TYPES = [
-    "none",
-    "fade",
-    "fade-up",
-    "fade-down",
-    "slide-left",
-    "slide-right",
-    "zoom-in",
-    "zoom-out",
-    "pop",
-    "flip-x",
-    "blur-in",
-] as const;
+export const MOTION_ENTER_TYPES = ["none", "fade", "fade-up", "fade-down", "slide-left", "slide-right", "zoom-in", "zoom-out", "pop", "flip-x", "blur-in"] as const;
 
 export const MOTION_EXIT_TYPES = ["none", "fade", "fade-down", "scale-down", "slide-left", "slide-right"] as const;
 
@@ -119,6 +107,15 @@ export interface MotionBlueprintShot {
     enter: MotionAnimation;
     exit: MotionAnimation;
     elements: MotionElement[];
+    /**
+     * 装配层填充（degraded 三机制：预览角标 + 一键推荐补齐 + 补齐率指标）：
+     * 该镜降级登记——VLM 漏返按模板补齐 / 词表外动效映射 none / 槽位缺物料等。
+     * **预置模板本身是干净 canonical 数据，不设值**；由蓝图装配层
+     * （blueprint.ts applyRecommendedPresets / e-reverse 草案合入）写入。
+     */
+    degraded?: string[];
+    /** 装配层填充：VLM 草案置信度 0~1（低置信镜头前端高亮「建议人工确认」）。 */
+    confidence?: number;
 }
 
 export interface MotionBlueprintTransition {
@@ -195,8 +192,7 @@ const SPEAKER_BAR_PRESET: MotionPreset = {
     id: "speaker-bar",
     name: "口播条",
     tagline: "底部字幕条 + 关键词弹跳放大，口播带货黄金版式",
-    description:
-        "钩子大标题抓眼 → 底部字幕条跟随口播（建议与词级 ASR 台词对齐）→ 关键词弹跳放大制造记忆点。适合真人口播带货与功能解说，3s 一个爆点。",
+    description: "钩子大标题抓眼 → 底部字幕条跟随口播（建议与词级 ASR 台词对齐）→ 关键词弹跳放大制造记忆点。适合真人口播带货与功能解说，3s 一个爆点。",
     shots: [
         {
             shot_id: "shot_1",
@@ -281,8 +277,7 @@ const PRODUCT_CLOSEUP_PRESET: MotionPreset = {
     id: "product-closeup",
     name: "产品特写",
     tagline: "居中大图推近 + 卖点逐条飞出 + CTA 收尾",
-    description:
-        "产品大图 zoom-in 推近抓眼，卖点文字按等差延迟逐条飞出，结尾大字 CTA + 产品回归。适合单品卖点讲解与商品主体聚焦。",
+    description: "产品大图 zoom-in 推近抓眼，卖点文字按等差延迟逐条飞出，结尾大字 CTA + 产品回归。适合单品卖点讲解与商品主体聚焦。",
     shots: [
         {
             shot_id: "shot_1",
@@ -423,8 +418,7 @@ const MOOD_TRANSITION_PRESET: MotionPreset = {
     id: "mood-transition",
     name: "氛围过场",
     tagline: "全屏色块切换 + 精灵图飞入 + 标题淡入",
-    description:
-        "全屏色块定调，转场切白/切黑过场，精灵图序列帧飞入活跃气氛，标题淡入收束。适合章节分隔、情绪铺垫与片头片尾包装。",
+    description: "全屏色块定调，转场切白/切黑过场，精灵图序列帧飞入活跃气氛，标题淡入收束。适合章节分隔、情绪铺垫与片头片尾包装。",
     shots: [
         {
             shot_id: "shot_1",

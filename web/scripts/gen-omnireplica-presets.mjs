@@ -7,12 +7,16 @@
  * nxf 仓库不塞前端文件，程不宕的 preset 回归按绝对路径读这 3 份 JSON：
  *   D:/AlcheMvision/open-ai-canvas/web/src/lib/omnireplica/presets/<preset-id>.json
  *
- * 改 TS 后必须重跑（漂移卫士 test/omnireplica-presets-drift.test.ts 会抓双源不一致）：
+ * 落盘前过 prettier（按仓库 .prettierrc.json，tabWidth=4）——保证「一键重跑
+ * 即终态」，不与 changed-file 格式门禁打架。改 TS 后必须重跑
+ * （漂移卫士 test/omnireplica-presets-drift.test.ts 会抓双源不一致）：
  *   bun scripts/gen-omnireplica-presets.mjs
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import prettier from "prettier";
 
 import { MOTION_PRESETS } from "../src/lib/omnireplica/motion-presets.ts";
 
@@ -27,7 +31,11 @@ for (const name of readdirSync(outDir)) {
 
 for (const preset of MOTION_PRESETS) {
     const file = join(outDir, `${preset.id}.json`);
-    writeFileSync(file, `${JSON.stringify(preset, null, 2)}\n`, "utf8");
+    const raw = `${JSON.stringify(preset, null, 2)}\n`;
+    // prettier 按仓库配置格式化（JSON 的 tabWidth 与 .prettierrc.json 对齐=4）
+    const options = (await prettier.resolveConfig(file)) ?? {};
+    const formatted = await prettier.format(raw, { ...options, parser: "json", filepath: file });
+    writeFileSync(file, formatted, "utf8");
     console.log(`[presets] ${preset.id} -> ${file}`);
 }
 console.log(`[presets] done: ${MOTION_PRESETS.length} snapshots`);
