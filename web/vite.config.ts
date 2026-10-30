@@ -39,6 +39,15 @@ export default defineConfig({
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/ereverse-api/, ""),
             },
+            // 返工令 Round 6：本地启动控制台（yuanqi_console.py，127.0.0.1:17580）。
+            // /ereverse 告警框的「⚡ 一键启动拆片服务」经此代理调控制台
+            // POST /api/start/ereverse 真正拉起侧车，而不是只印一行命令行让人自己敲。
+            // 不设 timeout：控制台拉起侧车最长等待 30s，代理侧不能提前掐断。
+            "/yuanqi-console": {
+                target: "http://127.0.0.1:17580",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/yuanqi-console/, ""),
+            },
         },
     },
     resolve: {

@@ -11,8 +11,13 @@
  * 返工令四-4：原图兜底三级回退（URL 缺失 / 加载失败 → 回退展示透明主体；
  * 透明主体也没有 → 隐藏空原图框只留棋盘格主体卡），绝不露裂图灰框；
  * 「✂️ 提取」恢复标准 28px 胶囊（曾被 !h-auto !p-0 压成 14px）。
+ * 返工令 Round 6-1（串台根治）：
+ *   - 商品切换时「同步」按 resourceId 隔离读取并上抛（有缓存→专属资产；无缓存→空串），
+ *     父组件立即清空上一个商品的抠图；在途提取结果回填前核对资源 ID，过期即丢弃；
+ *   - 未提取时右侧框展示「当前商品自己的原图」+「待提取透明底」提示 + 一键提取入口，
+ *     严禁硬编码人物模特兜底图。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { App, Button } from "antd";
 import { ArrowRight, ExternalLink, Scissors, Sparkles } from "lucide-react";
 
@@ -36,42 +41,63 @@ export function ProductCutoutCard({ sourceResourceId, onCutout, onOpenRetouch, o
     const [failed, setFailed] = useState(false);
     // 返工令四-4：原图裂图兜底状态（URL 为空或 onError，绝不露浏览器 Broken Image）。
     const [sourceFailed, setSourceFailed] = useState(false);
+    // 返工令 Round 6-1④：右侧「待提取」态里原图预览自己的裂图兜底。
+    const [previewFailed, setPreviewFailed] = useState(false);
+    // 返工令 Round 6-1：在途提取的目标资源——提取完成回填前必须核对，
+    // 商品已切换则丢弃过期结果，绝不让上一个商品的抠图串到下一个商品头上。
+    const activeResourceIdRef = useRef(sourceResourceId);
+    useEffect(() => {
+        activeResourceIdRef.current = sourceResourceId;
+    }, [sourceResourceId]);
 
     const extract = useCallback(async (silent: boolean) => {
-        if (!sourceResourceId || extracting) return;
+        const targetResourceId = sourceResourceId;
+        if (!targetResourceId || extracting) return;
         setExtracting(true);
         setFailed(false);
         try {
-            const source = await urlToDataUrl(`/api/resources/${sourceResourceId}/file`);
+            const source = await urlToDataUrl(`/api/resources/${targetResourceId}/file`);
             const result = await nxfPost<{ cutout_png: string; degraded: boolean; provider: string }>(
                 "/api/v1/ecommerce/vision/matting",
                 { image: source, feather_px: 2 },
             );
             if (!result.ok || !result.cutout_png) throw new Error(result.error || "抠图失败");
+            // 商品已在提取期间被切换：丢弃本次结果（父组件与画框都只认当前商品）。
+            if (activeResourceIdRef.current !== targetResourceId) return;
             setCutout(result.cutout_png);
-            cacheCutout(sourceResourceId, result.cutout_png);
+            cacheCutout(targetResourceId, result.cutout_png);
             onCutout(result.cutout_png);
             if (!silent) {
                 message.success(result.degraded ? "已用兜底档提取（放置权重后自动升级）" : "透明商品主体已就绪（BiRefNet）");
             }
         } catch (error) {
+            if (activeResourceIdRef.current !== targetResourceId) return;
             setFailed(true);
             if (!silent) message.error(error instanceof Error ? error.message : "提取透明主体失败");
         } finally {
-            setExtracting(false);
+            if (activeResourceIdRef.current === targetResourceId) setExtracting(false);
         }
     }, [sourceResourceId, extracting, message, onCutout]);
 
-    // 打开商品即自动异步提取（静默；已有缓存则直接上抛供海报草图/精修台用）。
+    // 返工令 Round 6-1（串台根治）：商品切换时「同步」按新 resourceId 隔离读取——
+    //   有缓存 → 立即上抛该商品专属透明主体；
+    //   无缓存 → 先上抛空串（父组件同步清空上一个商品的抠图，画框回落当前商品原图），
+    // 再走静默自动提取。旧实现用 [sourceResourceId] 单依赖 + 陈旧闭包，
+    // 会把上一个商品的 cutout 再次 onCutout 上去，且无缓存时永远不触发提取——串台根因。
     useEffect(() => {
-        setCutout(cachedCutout(sourceResourceId));
+        const cached = cachedCutout(sourceResourceId);
+        setCutout(cached);
+        setFailed(false);
         setSourceFailed(false);
-    }, [sourceResourceId]);
-    useEffect(() => {
-        if (cutout) onCutout(cutout);
-        else void extract(true);
+        setPreviewFailed(false);
+        onCutout(cached);
         // eslint-disable-next-line react-hooks/exhaustive-deps -- 只按商品切换触发一次
     }, [sourceResourceId]);
+    // 无缓存才自动静默提取（提取成功后会再次上抛；失败则保持「待提取」态）。
+    useEffect(() => {
+        if (!cutout) void extract(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- cutout 由上一个 effect 按商品重置
+    }, [sourceResourceId, cutout]);
 
     // 返工令四-4：原图兜底三级回退——
     //   ① URL 正常 → 展示原图；
@@ -106,30 +132,47 @@ export function ProductCutoutCard({ sourceResourceId, onCutout, onOpenRetouch, o
                     <ArrowRight className="size-4 shrink-0 text-foreground/35" />
                 </>
             ) : null}
-            {/* 透明主体 64×64：棋盘格 + 提取状态（提取中 / 失败可重试 / 未提取） */}
+            {/* 透明主体 64×64：棋盘格 + 资产 / 提取状态。
+                返工令 Round 6-1④：未提取时展示「当前商品自己的原图」+「待提取透明底」轻提示
+                + 一键提取入口——严禁沿用上一个商品的抠图，也严禁硬编码人物模特兜底图。 */}
             <figure className={`relative !mb-0 size-16 shrink-0 overflow-hidden rounded-control border border-line-subtle ${CHECKER}`}>
                 {cutout ? (
                     // object-contain 非矩形阴影必须跟随形状，box-shadow 只能跟矩形；已收敛模糊半径
                     <img src={cutout} alt="透明商品主体" className="size-full object-contain drop-shadow-[0_4px_7px_rgba(0,0,0,0.22)]" />
-                ) : (
-                    <div className="flex size-full flex-col items-center justify-center gap-1 px-1 text-center">
-                        {extracting ? (
-                            <>
-                                <Scissors className="size-4 animate-pulse text-primary" />
-                                <span className="text-caption leading-none text-foreground/55">提取中</span>
-                            </>
-                        ) : (
-                            <>
-                                <span className="text-caption leading-none text-foreground/50">{failed ? "提取失败" : "未提取"}</span>
-                                {/* 返工令四-4：曾被 !h-auto !p-0 压成 14px 纳米钮；恢复标准 28px 胶囊热区。 */}
-                                <Button size="small" type="link" className="!h-7 !px-2.5 !text-caption !leading-none" onClick={() => void extract(false)}>
-                                    ✂️ 提取
-                                </Button>
-                            </>
-                        )}
+                ) : extracting ? (
+                    <div className="flex size-full flex-col items-center justify-center gap-1">
+                        <Scissors className="size-4 animate-pulse text-primary" />
+                        <span className="text-caption leading-none text-foreground/55">提取中</span>
                     </div>
+                ) : (
+                    <>
+                        {sourceResourceId && !previewFailed ? (
+                            <img
+                                src={`/api/resources/${sourceResourceId}/file`}
+                                alt="当前商品原图（待提取透明底）"
+                                className="size-full object-cover opacity-50"
+                                onError={() => setPreviewFailed(true)}
+                            />
+                        ) : null}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                            <span className="whitespace-pre-line rounded bg-black/55 px-1.5 py-0.5 text-center text-caption leading-none text-white">
+                                {failed ? "提取失败\n点此重试" : "待提取\n透明底"}
+                            </span>
+                            {/* 返工令四-4：标准 28px 胶囊热区（曾被 !h-auto !p-0 压成 14px）。 */}
+                            <Button
+                                size="small"
+                                type="link"
+                                className="!h-7 !w-auto !px-2 !text-caption !leading-none"
+                                onClick={() => void extract(false)}
+                            >
+                                {failed ? "🔄 重试" : "✂️ 提取"}
+                            </Button>
+                        </div>
+                    </>
                 )}
-                <figcaption className="absolute inset-x-0 bottom-0 bg-black/45 py-0.5 text-center text-caption leading-none text-white">透明主体</figcaption>
+                {cutout || extracting ? (
+                    <figcaption className="absolute inset-x-0 bottom-0 bg-black/45 py-0.5 text-center text-caption leading-none text-white">透明主体</figcaption>
+                ) : null}
             </figure>
             {/* 右侧工具组：分层精修台（约 160px）+ 送画布（返工令四-6：由 16px 图标链
                 改为带文案的标准小按钮，热区 ≥32×28） */}

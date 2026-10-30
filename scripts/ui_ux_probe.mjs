@@ -10,11 +10,16 @@
  *
  * 采集 5 模块：① 空间布局 ASCII 透视与占屏比 ② 认知负荷与拥挤度 ③ 视觉层级阶梯
  *             ④ 小白动线摩擦度 ⑤ DOM 与渲染性能
- * 门禁 G1~G16：零折行 / 单卡减负 / 主次分明 / 视觉霸权 / 零脏字符 / 浅层直达 /
+ * 门禁 G0~G19：零折行 / 单卡减负 / 主次分明 / 视觉霸权 / 零脏字符 / 浅层直达 /
  *              拒绝香肠按钮 / 零破图零碰撞 / 直播台真画布 / 电商首屏高度 /
  *              禁止代点绕过(G11) / 精修台弹窗真打开(G12) / 清零蚊子字与纳米按钮(G13) /
  *              爆款反推台不孤岛(G14) / 直播台对标参考图模块(G15) /
- *              反推台状态收敛与实心CTA(G16)
+ *              反推台状态收敛与实心CTA(G16) / 侧栏布局与定制模块(G17) /
+ *              启动控制台体检(G18·Round6) /
+ *              跨商品图片隔离+矩阵防重叠+反推台挂栏(G19·Round6)
+ *
+ * ⚠️ 返工令 Round 6 编号说明：G17 已被上一轮（夜间施工令阶段二）侧栏门禁占用，
+ *    为避免同一报告出现双 G17，本轮新增的两条门禁顺延为 G18 / G19。
  *
  * ⚠️ 返工令 Round 4 反绕过加固（重点）：
  *   - 探针禁止代点：删除全部 `document.querySelector("aside ul li").click()` 式主动点击
@@ -60,6 +65,7 @@ const ROUTES = [
     { path: "/ecommerce", label: "电商工坊" },
     { path: "/ecommerce#retouch-open", label: "电商工坊·精修台开" },
     { path: "/ecommerce#unstarted", label: "电商工坊·未开始商品" },
+    { path: "/ecommerce#matrix-guard", label: "电商工坊·矩阵防重叠与跨商品隔离" },
     { path: "/modules/live-studio", label: "直播装修台" },
     { path: "/ereverse", label: "爆款视觉反推" },
     { path: "/projects", label: "短剧制片台" },
@@ -80,6 +86,27 @@ const collectFn = async (page, ctx) => {
     }
     const out = { base, collectedAt: new Date().toISOString(), pages: [] };
 
+    // 返工令 Round 6：dev 模块图预热——首访路由的按需编译要 10~30s（多智能体并发编辑
+    // 导致 HMR churn 后更慢，实测冷图下 /ecommerce 要 ~20s 才出卡片）。不预热会把
+    // 「编译延迟」误报成「左栏未挂载 / SlotCard 未挂载」（昨晚基线跑 600s 超时、
+    // G10/G11 假阴性的根因之一）。先在页面上下文把重路由 chunk import 一遍，
+    // vite 编译缓存热之后再进正式采集。预热失败不阻断采集（各页等待会兜底）。
+    try {
+        await page.goto(base + "/", { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForSelector(".app-workspace-sidebar-nav, .app-workspace-stage, main", { timeout: 20000 });
+        for (const mod of [
+            "/src/pages/ecommerce/index.tsx",
+            "/src/pages/modules/index.tsx",
+            "/src/pages/modules/live-studio.tsx",
+            "/src/pages/ereverse/index.tsx",
+            "/src/pages/projects/index.tsx",
+        ]) {
+            await page.evaluate((m) => import(m).then(() => undefined, () => undefined), mod);
+        }
+    } catch (e) {
+        out.warmupError = String(e).slice(0, 140);
+    }
+
     for (const vp of viewports) {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         for (const route of routes) {
@@ -91,9 +118,9 @@ const collectFn = async (page, ctx) => {
                 // 水合竞态修正：固定 sleep 会让同一路由在两个视口下采到不同进度
                 // （/modules 在 1366 下曾只采到 26 个节点）。改为等待侧栏骨架挂载后再采集。
                 try {
-                    await page.waitForSelector(".app-workspace-sidebar-nav, .app-workspace-stage, main", { timeout: 12000 });
+                    await page.waitForSelector(".app-workspace-sidebar-nav, .app-workspace-stage, main", { timeout: 20000 });
                 } catch (e) {
-                    probeErrors.push(`等待工作台骨架超时（.app-workspace-sidebar-nav/.app-workspace-stage/main 12s 未出现）：${String(e).slice(0, 80)}`);
+                    probeErrors.push(`等待工作台骨架超时（.app-workspace-sidebar-nav/.app-workspace-stage/main 20s 未出现）：${String(e).slice(0, 80)}`);
                 }
                 await page.waitForTimeout(900);
                 // 直播装修台：常驻 9:16 画布是懒加载 chunk，首次编译可达数秒，
@@ -110,9 +137,9 @@ const collectFn = async (page, ctx) => {
                 // G16 会把「等待延迟」误报成「状态未收敛」——等到状态点或侧车告警再采。
                 if (route.path === "/ereverse") {
                     try {
-                        await page.waitForSelector(".yq-ereverse-status-dot, .ant-alert", { timeout: 15000 });
+                        await page.waitForSelector(".yq-ereverse-status-dot, .ant-alert", { timeout: 20000 });
                     } catch (e) {
-                        probeErrors.push(`等待 /ereverse 状态点超时（.yq-ereverse-status-dot/.ant-alert 15s 未出现，G16 可能假阴性）：${String(e).slice(0, 80)}`);
+                        probeErrors.push(`等待 /ereverse 状态点超时（.yq-ereverse-status-dot/.ant-alert 20s 未出现，G16 可能假阴性）：${String(e).slice(0, 80)}`);
                     }
                     await page.waitForTimeout(400);
                 }
@@ -123,14 +150,14 @@ const collectFn = async (page, ctx) => {
                 // 选中态必须由组件自身提供；采不到就如实记失败原因。
                 if (route.path.startsWith("/ecommerce")) {
                     try {
-                        await page.waitForSelector("aside ul li", { timeout: 12000 });
+                        await page.waitForSelector("aside ul li", { timeout: 20000 });
                     } catch (e) {
-                        probeErrors.push(`左栏商品列表未挂载（aside ul li 12s 等待超时）：${String(e).slice(0, 80)}`);
+                        probeErrors.push(`左栏商品列表未挂载（aside ul li 20s 等待超时）：${String(e).slice(0, 80)}`);
                     }
                     try {
                         await page.waitForFunction(
                             () => document.querySelectorAll(".ecommerce-slot-card-title").length >= 7,
-                            { timeout: 15000 },
+                            { timeout: 25000 },
                         );
                     } catch (e) {
                         // 显式区分两种失败：空态（组件没默认选中）vs 竞态（选中但卡没挂载）
@@ -161,6 +188,210 @@ const collectFn = async (page, ctx) => {
                     }
                     // #unstarted 路由态：不再代点。页面默认选中什么就如实采什么——
                     // 默认选中的不是未开始商品时，G10「覆盖未开始态」会如实判失败。
+                }
+                // 批量企划矩阵防重叠 + 跨商品图片隔离（返工令 Round 6 · G19）。
+                // ⚠️ 与 G11「禁止代点绕过」的区别（重要，避免被误判为代点作弊）：
+                //   G11 禁的是「为了伪造选中态而代点」——选中态必须由组件自身默认选中提供；
+                //   而这里的点击是「跨商品图片隔离 / 矩阵弹窗」这些待测功能本身的用户动线
+                //   （与 G12 点开精修台同理）：依次打开第 1、2 个商品核对透明主体图是否串台，
+                //   勾选商品打开批量矩阵量单元格重叠。采不到就记显式失败，绝不伪造数据。
+                if (route.path === "/ecommerce#matrix-guard") {
+                    const guard = { ok: false, reasons: [] };
+                    rec.matrixGuard = guard; // 先挂记录，后续异常也能在报告里看到原因
+                    let activeIndex = 0; // 页面默认选中的商品下标，收尾还原用
+                    const cutoutSrc = () =>
+                        page.evaluate(() => {
+                            const img = document.querySelector("img[alt='透明商品主体']");
+                            return img && img.getAttribute("src") ? String(img.getAttribute("src")) : "";
+                        });
+                    // 等「透明商品主体」图落定；expectDifferentFrom 非空时还要等它换成新 src
+                    // （切商品后旧图的 dataURL 会残留一帧，必须等到不同才算数）
+                    const waitCutout = async (expectDifferentFrom, timeoutMs) => {
+                        const deadline = Date.now() + timeoutMs;
+                        let last = "";
+                        while (Date.now() < deadline) {
+                            last = await cutoutSrc();
+                            if (last && (!expectDifferentFrom || last !== expectDifferentFrom)) return last;
+                            await page.waitForTimeout(700);
+                        }
+                        return "";
+                    };
+                    const clickProduct = (index) =>
+                        page.evaluate((i) => {
+                            const li = document.querySelectorAll("aside ul li")[i];
+                            if (li) li.click();
+                        }, index);
+                    try {
+                        // 先记录当前默认选中的商品下标（收尾要还原回去，静态采集才干净）
+                        activeIndex = await page.evaluate(() => {
+                            const lis = Array.from(document.querySelectorAll("aside ul li"));
+                            const i = lis.findIndex((li) => /bg-primary/.test(li.className || ""));
+                            return i >= 0 ? i : 0;
+                        });
+                        const names = await page.evaluate(() =>
+                            Array.from(document.querySelectorAll("aside ul li"))
+                                .slice(0, 4)
+                                .map((li) => (li.innerText || "").trim().split("\n")[0].slice(0, 24)),
+                        );
+                        if (names.length < 2) {
+                            guard.reasons.push(`左栏商品不足 2 个（${names.length} 个），无法验证跨商品隔离`);
+                        } else {
+                            // 从第 1 个商品起依次点开，收集两个健康（src 非空且互异）的
+                            // 「透明商品主体」图。某个商品源文件缺失/抠图失败时顺延下一个并
+                            // 如实记 reason——是容错，不是伪造（选中态始终来自真实点击）。
+                            const found = [];
+                            const skipped = [];
+                            for (let i = 0; i < Math.min(4, names.length) && found.length < 2; i += 1) {
+                                await clickProduct(i);
+                                const src = await waitCutout(found[0] ? found[0].src : "", i === 0 ? 30_000 : 25_000);
+                                if (src) found.push({ index: i, src });
+                                else skipped.push(`第 ${i + 1} 个商品「${names[i]}」透明主体图未出（源文件缺失或抠图失败），已顺延`);
+                            }
+                            guard.productIndexes = found.map((f) => f.index);
+                            guard.productNames = found.map((f) => names[f.index]);
+                            guard.src1Len = found[0] ? found[0].src.length : 0;
+                            guard.src2Len = found[1] ? found[1].src.length : 0;
+                            guard.isolated = found.length === 2 && found[0].src !== found[1].src;
+                            guard.skipped = skipped;
+                            if (found.length < 2) guard.reasons.push(...skipped, `只收集到 ${found.length} 个可用商品主体图，无法验证跨商品隔离`);
+                            if (found.length === 2 && found[0].src === found[1].src) guard.reasons.push("两个商品的透明主体 img src 完全相同——跨商品图片串台！");
+                            // 还原默认选中态
+                            await clickProduct(activeIndex);
+                            await page.waitForTimeout(800);
+                        }
+                    } catch (e) {
+                        guard.reasons.push(`跨商品隔离采集异常：${String(e).slice(0, 120)}`);
+                    }
+                    // ③ 勾选商品 → 批量工具条浮现 → 全选 → 打开「批量企划矩阵」→ 量单元格重叠
+                    if (!guard.reasons.length) {
+                        try {
+                            await page.evaluate(() => {
+                                const li = document.querySelectorAll("aside ul li")[0];
+                                const box = li.querySelector("input[type='checkbox']");
+                                if (box && !box.checked) box.click();
+                            });
+                            await page.waitForSelector("button[aria-label='批量企划矩阵']", { timeout: 10_000 });
+                            // 全选：把左栏所有商品都纳入矩阵——长商品名可能在任意一行，
+                            // 只有全部入表才能覆盖到「超长名捅穿屏 1」这个待测场景。
+                            await page.evaluate(() => {
+                                const all = document.querySelector("input[aria-label='全选商品任务']");
+                                if (all && !all.checked) all.click();
+                            });
+                            await page.waitForTimeout(600);
+                            await page.evaluate(() => {
+                                const btn = document.querySelector("button[aria-label='批量企划矩阵']");
+                                if (btn) btn.click();
+                            });
+                            // ⚠️ 选择器口径：本仓 antd v6 的 Modal 渲染为
+                            // .ant-modal-wrap > .ant-modal[role=dialog] > .ant-modal-container，
+                            // 没有 .ant-modal-content 类（G12 靠 [role='dialog'] 兜底才没漏）。
+                            // 且矩阵行带 content-visibility:auto，视口外行内容被跳过——
+                            // 必须等 DOM 挂载 + 等屏序列加载完（details 拉完前 maxSlots=0，
+                            // 整表只有「商品」一列，量不到「屏 1」），不能用默认的 'visible'。
+                            await page.waitForSelector(".ant-modal-wrap .ant-table-tbody tr", { state: "attached", timeout: 30_000 });
+                            await page.waitForFunction(
+                                () => Array.from(document.querySelectorAll(".ant-modal-wrap .ant-table-tbody tr"))
+                                    .some((r) => r.querySelectorAll("td").length >= 2),
+                                { timeout: 30_000 },
+                            );
+                            await page.waitForTimeout(1200);
+                            // 逐行量「商品名」与「屏 1」的重叠：超长名可能在任意一行，
+                            // 取全表最大值判定（最强口径），并回报最宽那一行的明细。
+                            // content-visibility 跳过的行没有按钮/文本容器，记 skipped 不计入。
+                            const overlap = await page.evaluate(() => {
+                                const rows = Array.from(document.querySelectorAll(".ant-modal-wrap .ant-table-tbody tr"));
+                                if (!rows.length) return { ok: false, reason: "矩阵表格无数据行" };
+                                const perRow = [];
+                                let skipped = 0;
+                                for (const row of rows) {
+                                    const tds = Array.from(row.querySelectorAll("td"));
+                                    const nameTd = tds[0];
+                                    const shotTd = tds[1];
+                                    if (!nameTd || !shotTd) { skipped += 1; continue; }
+                                    const nameBtn = nameTd.querySelector("button");
+                                    const shotBox = shotTd.querySelector("div, span");
+                                    if (!nameBtn || !shotBox) { skipped += 1; continue; }
+                                    // 商品名「可见文本盒」：Range 文本 rect 与按钮盒取交——
+                                    // truncate 裁剪后用户真实能看到的部分；不取交会把裁剪前的
+                                    // 完整文本宽度算进来，修好了也误判成重叠。
+                                    const rg = document.createRange();
+                                    rg.selectNodeContents(nameBtn);
+                                    const textRects = Array.from(rg.getClientRects());
+                                    const br = nameBtn.getBoundingClientRect();
+                                    const vis = textRects.length
+                                        ? {
+                                              left: Math.max(br.left, ...textRects.map((r) => r.left)),
+                                              right: Math.min(br.right, ...textRects.map((r) => r.right)),
+                                              top: Math.max(br.top, ...textRects.map((r) => r.top)),
+                                              bottom: Math.min(br.bottom, ...textRects.map((r) => r.bottom)),
+                                          }
+                                        : { left: br.left, right: br.right, top: br.top, bottom: br.bottom };
+                                    const sr = shotBox.getBoundingClientRect();
+                                    const ox = Math.min(vis.right, sr.right) - Math.max(vis.left, sr.left);
+                                    const oy = Math.min(vis.bottom, sr.bottom) - Math.max(vis.top, sr.top);
+                                    const textOverlap = ox > 0 && oy > 0 ? ox * oy : 0;
+                                    const ntr = nameTd.getBoundingClientRect();
+                                    const cellOx = Math.min(ntr.right, sr.right) - Math.max(ntr.left, sr.left);
+                                    const cellOy = Math.min(ntr.bottom, sr.bottom) - Math.max(ntr.top, sr.top);
+                                    const cellOverlap = cellOx > 0 && cellOy > 0 ? cellOx * cellOy : 0;
+                                    perRow.push({
+                                        ok: true,
+                                        nameText: (nameBtn.textContent || "").trim().slice(0, 20),
+                                        nameBtnW: Math.round(br.width),
+                                        shotText: (shotBox.textContent || "").trim().slice(0, 16),
+                                        textOverlap: Math.round(textOverlap * 10) / 10,
+                                        cellOverlap: Math.round(cellOverlap * 10) / 10,
+                                    });
+                                }
+                                if (!perRow.length) return { ok: false, reason: `所有行都量不到单元格（${skipped} 行被 content-visibility 跳过或结构缺失）` };
+                                const widest = perRow.reduce((a, b) => (b.nameBtnW > a.nameBtnW ? b : a));
+                                return {
+                                    ok: true,
+                                    rowCount: rows.length,
+                                    measuredRows: perRow.length,
+                                    skippedRows: skipped,
+                                    maxTextOverlap: Math.max(...perRow.map((r) => r.textOverlap)),
+                                    maxCellOverlap: Math.max(...perRow.map((r) => r.cellOverlap)),
+                                    widestName: widest.nameText,
+                                    widestNameBtnW: widest.nameBtnW,
+                                    widestRowTextOverlap: widest.textOverlap,
+                                };
+                            });
+                            guard.matrix = overlap;
+                            if (!overlap.ok) guard.reasons.push(String(overlap.reason));
+                        } catch (e) {
+                            guard.reasons.push(`矩阵弹窗采集异常：${String(e).slice(0, 120)}`);
+                        }
+                        // ④ 收尾还原：关弹窗 → 取消勾选 → 点回第 1 个商品，把页面恢复到
+                        //    与基础 /ecommerce 记录一致的状态（默认选中 + 无勾选），
+                        //    后续静态采集（G10/G11）量的才是干净页面。
+                        try {
+                            await page.keyboard.press("Escape");
+                            await page.waitForTimeout(400);
+                            await page.evaluate(() => {
+                                const all = document.querySelector("input[aria-label='全选商品任务']");
+                                if (all && all.checked) all.click();
+                            });
+                            await clickProduct(activeIndex);
+                            await page.waitForTimeout(800);
+                            // 布局稳定复核（与基础 /ecommerce 同口径）：切回商品 1 后卡片异步
+                            // 重排，轮询到首排 y 连续两次不变再进静态采集，防 G10 采到中间态。
+                            let lastY = -1;
+                            for (let i = 0; i < 12; i += 1) {
+                                const y = await page.evaluate(() => {
+                                    const t = document.querySelector(".ecommerce-slot-card-title");
+                                    const card = t ? t.closest("article") || t.closest("[class*='yq-slot-card-virtual']") : null;
+                                    return card ? Math.round(card.getBoundingClientRect().top) : -1;
+                                });
+                                if (y >= 0 && y === lastY) break;
+                                lastY = y;
+                                await page.waitForTimeout(350);
+                            }
+                        } catch (e) {
+                            probeErrors.push(`矩阵 Guard 收尾还原异常（静态采集状态可能被污染）：${String(e).slice(0, 100)}`);
+                        }
+                    }
+                    guard.ok = guard.reasons.length === 0 && guard.isolated === true && Boolean(guard.matrix && guard.matrix.ok);
                 }
                 // 精修台开：点第一屏卡内的「分层精修」打开弹窗。
                 // ⚠️ 这不是 G11 禁止的"代点伪造选中态"——选中态由页面默认选中提供，
@@ -213,7 +444,9 @@ const collectFn = async (page, ctx) => {
                     const settle = (img) => (img.complete ? Promise.resolve() : img.decode().then(() => undefined, () => failed.push((img.currentSrc || img.src || "").slice(0, 80))));
                     await Promise.race([
                         Promise.all(imgs.map(settle)),
-                        new Promise((resolve) => setTimeout(resolve, 4000)),
+                        // 返工令 Round 6：4s 在多智能体并发编辑 + 双侧车 + 探针浏览器的高负载下
+                        // 会把「还在加载」的 500KB+ 商品图误报成破图（G8 假阳性），放宽到 6s。
+                        new Promise((resolve) => setTimeout(resolve, 6000)),
                     ]);
                     return failed;
                 }).catch((e) => [`图片预检本身异常：${String(e).slice(0, 80)}`]);
@@ -618,6 +851,9 @@ const collectFn = async (page, ctx) => {
                         count: slotTitles.length,
                         firstCardY: firstSlotCard ? Math.round(firstSlotCard.getBoundingClientRect().top) : null,
                         activeStatus: activeStatusMatch ? activeStatusMatch[0] : "",
+                        // 返工令 Round 6：默认选中商品名——两个视口间若不一致即「选中态漂移」
+                        // （后端列表排序随时间变化所致），在 G10 详情里点名，不静默放过。
+                        activeProduct: activeLi ? (activeLi.innerText || "").trim().split("\n")[0].slice(0, 24) : "",
                         // 首屏可见海报卡数：G4 画廊型用它衡量「视觉霸权」——3:4 竖版小卡占屏比有几何上限，
                         // 「用户一进来看见几张海报」才是画廊型页面的真实视觉霸权指标。
                         visibleSlotCards: slotCardEls.filter((el) => {
@@ -696,6 +932,9 @@ const collectFn = async (page, ctx) => {
                         exitButtons: document.querySelectorAll("[data-yq='ereverse-exits'] button").length,
                         stepsPresent: Boolean(document.querySelector("[data-yq='ereverse-steps']")),
                     };
+                    // G19：/ereverse 假死根治断言——页面不得出现 AbortController 超时的
+                    // 原生文案（signal is aborted without reason / AbortError）。
+                    const abortedErrorText = /signal\s*is\s*aborted|AbortError/i.test(bodyText);
 
                     // ⑰ G17 侧栏「上游原生 + 定制模块」门禁（夜间施工令阶段二）
                     const sidebarEl = document.querySelector("aside");
@@ -723,7 +962,7 @@ const collectFn = async (page, ctx) => {
                         perf,
                         buttons, brokenImages, overlaps, liveStage, slotCards,
                         tinyFonts, tinyFontTotal, modal, ereverseNav, emptyStateText,
-                        referenceSlot, canvasBubbleRemoved, ereverseStatus, sidebarG17,
+                        referenceSlot, canvasBubbleRemoved, ereverseStatus, sidebarG17, abortedErrorText,
                         area: {
                             visualPct: Math.round((visual / area) * 1000) / 10,
                             controlPct: Math.round((controls / area) * 1000) / 10,
@@ -733,9 +972,9 @@ const collectFn = async (page, ctx) => {
                 Object.assign(rec, data, { ok: true, ctaZones: data.ctaZones ?? 0, ctaZonesOk: data.ctaZonesOk ?? 0 });
                 // probeErrors 显式落账：等待超时 / 弹窗没打开 / 图片解码失败都不再被静默吞掉
                 rec.probeErrors = probeErrors;
-                // /ereverse 是免登录的本地侧车页（路由上不套工作台外壳），
-                // 不算"已认证工作台"——G0 的认证分母要把这 2 页剔掉，避免虚报。
-                if (route.path === "/ereverse") rec.authenticated = false;
+                // 返工令 Round 6：/ereverse 已移入 AuthenticatedWorkspaceLayout，与电商工坊、
+                // 直播装修台一样是已认证工作台页——G0 的认证分母不再把这 2 页剔掉。
+                // （旧代码在这里强制 rec.authenticated = false，理由正是"路由在布局外"。）
             } catch (e) {
                 rec.error = String(e).slice(0, 160);
                 // 整页采集异常也显式落账（不再只留一个 error 字符串）
@@ -744,6 +983,64 @@ const collectFn = async (page, ctx) => {
             out.pages.push(rec);
         }
     }
+
+    // 启动控制台体检（返工令 Round 6 · G18）：:17580 面板无明文密码、按钮栏单行不折行、
+    // 服务卡片 2×2 网格 + 隧道双列紧凑条、运行中服务只留 重启/停止/日志、整页零纵向滚动。
+    // 控制台没起时如实记失败（它是全栈的一部分，不静默跳过）。
+    const consoleRec = { ok: false, pages: [] };
+    for (const vp of [
+        { name: "1366x768", width: 1366, height: 768 },
+        { name: "1440x900", width: 1440, height: 900 },
+    ]) {
+        const crec = { viewport: vp.name, ok: false };
+        try {
+            await page.setViewportSize({ width: vp.width, height: vp.height });
+            await page.goto("http://127.0.0.1:17580/", { waitUntil: "domcontentloaded", timeout: 15000 });
+            await page.waitForSelector("#cards .card", { timeout: 12000 });
+            await page.waitForTimeout(2200); // 等一次 3s 心跳刷新把卡片渲染落定
+            const c = await page.evaluate(() => {
+                const tb = document.getElementById("toolbar");
+                const btns = tb ? Array.from(tb.querySelectorAll("button")) : [];
+                const tops = btns.map((b) => Math.round(b.getBoundingClientRect().top));
+                const cards = document.querySelectorAll("#cards .card");
+                const grid = document.getElementById("cards");
+                const tracks = grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : 0;
+                const compactBars = document.querySelectorAll("#cards .card.compact").length;
+                const svcCards = Array.from(cards).filter((el) => !el.classList.contains("compact"));
+                const svcInfo = svcCards.map((el) => ({
+                    on: el.classList.contains("on"),
+                    actions: Array.from(el.querySelectorAll(".card-actions button")).map((b) => (b.textContent || "").trim()),
+                }));
+                const runningCards = svcInfo.filter((s) => s.on);
+                const pwdPill = document.getElementById("pwdPill");
+                const labels = btns.map((b) => (b.textContent || "").trim());
+                return {
+                    plaintextPassword: /jinji666/.test(document.body.innerText || ""),
+                    pwdPillMasked: Boolean(pwdPill) && /•/.test((pwdPill || {}).textContent || ""),
+                    toolbarSingleRow: tops.length > 0 && new Set(tops).size <= 1,
+                    toolbarOverflow: tb ? tb.scrollWidth - tb.clientWidth : -1,
+                    labels,
+                    requiredLabelsOk: ["一键启动全栈", "进入源起工作台 (:3000)", "全栈健康自检", "刷新", "全部停止", "退出面板"].every((t) => labels.some((l) => l.includes(t))),
+                    legacyLabelsGone: !labels.some((l) => /打开源起创作画布|进入工作台首页|接入自检|E-Reverse 事实表/.test(l)),
+                    cardCount: cards.length,
+                    serviceCards: svcCards.length,
+                    compactBars,
+                    gridTracks: tracks,
+                    runningCards: runningCards.length,
+                    runningNoStart: runningCards.length > 0 && runningCards.every((s) => !s.actions.some((t) => /启动/.test(t)) && s.actions.some((t) => /重启/.test(t)) && s.actions.some((t) => /停止/.test(t))),
+                    vScroll: document.documentElement.scrollHeight > window.innerHeight + 2,
+                    scrollH: document.documentElement.scrollHeight,
+                    innerH: window.innerHeight,
+                };
+            });
+            Object.assign(crec, c, { ok: true });
+        } catch (e) {
+            crec.error = String(e).slice(0, 140);
+        }
+        consoleRec.pages.push(crec);
+    }
+    consoleRec.ok = consoleRec.pages.length > 0 && consoleRec.pages.every((p) => p.ok);
+    out.console = consoleRec;
     return out;
 };
 
@@ -824,7 +1121,9 @@ function run() {
     try {
         raw = execFileSync(
             `${CLI} run-code "${wrapper}"`,
-            { shell: true, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 600000 },
+            // 返工令 Round 6：新增 #matrix-guard 交互动线与启动控制台体检后共 16 页，
+            // 600s 曾把上一轮基线跑掐死在超时上（无报告产出）。放宽到 15 分钟。
+            { shell: true, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 900_000 },
         );
     } catch (e) {
         console.error("[probe] 采集失败：", String(e).slice(0, 300));
@@ -879,6 +1178,9 @@ function run() {
             ["G14", "爆款反推台不孤岛（/ereverse 有侧栏导航或返回按钮）"],
             ["G15", "直播间对标参考图模块（槽位/粘贴提示/双模式/三档强度/默认值/气泡已删）"],
             ["G16", "反推台状态收敛（单状态点+Tooltip）与实心主 CTA（≥1）"],
+            ["G17", "侧栏布局与定制模块门禁（原生项齐全+定制模块组+全站无旧词）"],
+            ["G18", "启动控制台体检（密码脱敏/按钮单行/2×2卡片网格/智能按钮/零滚动）"],
+            ["G19", "跨商品图片隔离 + 矩阵防重叠 + 反推台挂栏"],
         ]) gate(g[0], g[1], false, "未采集到任何页面，无法判定");
         const blocker = failed.map((f) => `${f.route}: ${(f.error || "").slice(0, 80)}`).join("；");
         gates.push({ id: "G0", name: "采集有效性（至少 1 页可测）", pass: false, detail: `16 组合全部失败。${blocker || "未知原因"}` });
@@ -989,7 +1291,7 @@ function run() {
             g10pages.length > 0 && g10items.every((i) => i.ok) && unstartedCovered,
             g10pages.length === 0
                 ? "未采集到电商工坊"
-                : `${g10items.map((i) => `${i.p.route}@${i.p.viewport} ${i.count} 卡·首排 y=${i.y ?? "未采到"}${i.yOk ? "✓" : "✗"}·选中态「${i.p.slotCards?.activeStatus || "未知"}」`).join("；")}；未开始态覆盖${unstartedCovered ? "✓" : "✗"}`);
+                : `${g10items.map((i) => `${i.p.route}@${i.p.viewport} ${i.count} 卡·首排 y=${i.y ?? "未采到"}${i.yOk ? "✓" : "✗"}·选中「${i.p.slotCards?.activeProduct || "未知"}」(${i.p.slotCards?.activeStatus || "?"})`).join("；")}；未开始态覆盖${unstartedCovered ? "✓" : "✗"}；选中态跨视口一致性${new Set(g10items.map((i) => `${i.p.route}|${i.p.slotCards?.activeProduct || ""}`)).size === g10items.length ? "✓ 无漂移" : "⚠️ 存在漂移（同一路由两个视口选中商品不同，见上方明细）"}`);
         // G11 禁止代点绕过（返工令 Round 4 重点）：探针已删除全部 `aside ul li` 代点击，
         // 选中态必须来自组件自身默认选中。slotCards 为 0 或页面含「还没有选择商品任务」→ FAIL。
         // 判定只看采集结果，不看探针怎么点的——探针这轮根本不点。
@@ -1032,7 +1334,8 @@ function run() {
             tinyFontTotal === 0 && tinyBtnItems.length === 0,
             `蚊子字 ${tinyFontTotal} 处（10px/11px）${tinyFontItems.length ? `：${tinyFontItems.slice(0, 8).map((f) => `${f.route}@${f.viewport} 「${f.text}」${f.size}<${f.tag}>`).join("；")}${tinyFontTotal > tinyFontItems.length ? ` 等 ${tinyFontTotal} 处` : ""}` : ""}；纳米按钮 ${tinyBtnItems.length} 个${tinyBtnItems.length ? `：${tinyBtnItems.slice(0, 8).map((b) => `${b.route} 「${b.text || "无文案"}」${b.w}×${b.h}`).join("；")}` : ""}`);
         // G14 爆款反推台不孤岛：/ereverse 必须接入左侧导航栏，或有醒目返回入口。
-        // （路由上 /ereverse 不套 AuthenticatedWorkspaceLayout，故页面内自带「← 返回模块大厅」。）
+        // （返工令 Round 6 起 /ereverse 已挂入 AuthenticatedWorkspaceLayout，侧栏常态在位；
+        //  真正的"挂栏"硬断言在 G19，这里保留"侧栏或返回入口"的宽松口径兜底。）
         const erevPages = scanned.filter((p) => p.route === "/ereverse");
         const g14items = erevPages.map((p) => {
             const nav = p.ereverseNav || {};
@@ -1087,8 +1390,8 @@ function run() {
         }
         // G17 侧栏布局与定制模块门禁（夜间施工令阶段二）：上游原生导航项齐全 + 「定制模块」
         // 分组与三大定制工作台直达入口在位 + 全站不再出现旧词「固定模块」。
-        // /ereverse 免登录页不套工作台外壳，无侧栏，不计入本门禁分母。
-        const g17pages = scanned.filter((p) => p.route !== "/ereverse" && p.sidebarG17 && p.sidebarG17.present);
+        // 返工令 Round 6：/ereverse 已挂栏，也是带侧栏的已认证页，计入本门禁分母。
+        const g17pages = scanned.filter((p) => p.sidebarG17 && p.sidebarG17.present);
         const g17items = g17pages.map((p) => {
             const s = p.sidebarG17;
             const missing = [];
@@ -1103,6 +1406,58 @@ function run() {
             g17pages.length === 0
                 ? "未采集到带侧栏的已认证页面"
                 : g17items.map((i) => `${i.p.route}@${i.p.viewport} 原生项${i.s.nativeItems ? "✓" : "✗"} · 定制分组${i.s.customGroup ? "✓" : "✗"} · 定制入口${i.s.customEntries ? "✓" : "✗"} · 旧词清除${i.s.legacyTextGone ? "✓" : "✗"}${i.missing.length ? `｜缺失：${i.missing.join("；")}` : ""}`).join("；"));
+        // G18 启动控制台体检（返工令 Round 6）：:17580 面板密码脱敏（无明文常驻）、
+        // 按钮栏单行不折行、服务卡片 2×2 网格 + 隧道紧凑条、运行中服务只留
+        // 重启/停止/日志（无「启动」）、整页零纵向滚动。双视口都要过。
+        const cp = (data.console && data.console.pages) || [];
+        const g18items = cp.map((p) => {
+            const missing = [];
+            if (p.plaintextPassword) missing.push("页面出现明文密码 jinji666");
+            if (!p.pwdPillMasked) missing.push("密码脱敏胶囊缺失或未掩码");
+            if (!p.toolbarSingleRow || (p.toolbarOverflow ?? 0) > 2) missing.push(`按钮栏非单行（tops 去重后 >1 或溢出 ${p.toolbarOverflow}px）`);
+            if (!p.requiredLabelsOk) missing.push(`按钮栏缺规定按钮：${(p.labels || []).join("/")}`);
+            if (!p.legacyLabelsGone) missing.push("仍残留旧按钮（打开源起创作画布/进入工作台首页/接入自检/E-Reverse 事实表）");
+            if (p.gridTracks !== 2) missing.push(`服务卡片网格列数 ${p.gridTracks} ≠ 2`);
+            if ((p.serviceCards || 0) < 4) missing.push(`服务卡片 ${p.serviceCards ?? 0} 张（<4）`);
+            if ((p.compactBars || 0) < 1) missing.push("隧道紧凑条缺失");
+            if (!p.runningNoStart) missing.push("运行中服务仍显示「启动」按钮（应只留 重启/停止/日志）");
+            if (p.vScroll) missing.push(`整页出现纵向滚动（scrollHeight ${p.scrollH} > innerHeight ${p.innerH}）`);
+            return { p, ok: missing.length === 0, missing };
+        });
+        gate("G18", "启动控制台体检（密码脱敏/按钮单行/2×2卡片网格/智能按钮/零滚动）",
+            cp.length > 0 && g18items.every((i) => i.ok),
+            cp.length === 0
+                ? "未采集到启动控制台（127.0.0.1:17580，控制台未运行或不可达）"
+                : g18items.map((i) => `@${i.p.viewport} 明文密码${i.p.plaintextPassword ? "有✗" : "无✓"} · 脱敏胶囊${i.p.pwdPillMasked ? "✓" : "✗"} · 按钮单行${i.p.toolbarSingleRow ? "✓" : "✗"} · 网格${i.p.gridTracks}列 · 服务卡${i.p.serviceCards}张 · 隧道条${i.p.compactBars} · 运行中服务${i.p.runningCards}个按钮${i.p.runningNoStart ? "仅重启/停止/日志✓" : "异常✗"} · 纵向滚动${i.p.vScroll ? `有✗(${i.p.scrollH}>${i.p.innerH})` : "无✓"}${i.missing.length ? `｜缺失：${i.missing.join("；")}` : ""}`).join("；"));
+        // G19 跨商品图片隔离 + 矩阵防重叠 + 反推台挂栏（返工令 Round 6，建筑师点名必做）。
+        // 三项断言：① 依次点开第 1、2 个商品，两者「透明主体」img src 绝不相同（禁串台）；
+        // ② 批量企划矩阵第 1 列商品名与第 2 列「屏 1」文本 BoundingClientRect 交集 ≤4px²；
+        // ③ /ereverse 左侧导航栏真实出现（hasSidebar）且无「signal is aborted」假死文案。
+        const g19pages = scanned.filter((p) => p.route === "/ecommerce#matrix-guard");
+        const g19erev = scanned.filter((p) => p.route === "/ereverse");
+        const g19items = g19pages.map((p) => {
+            const g = p.matrixGuard || {};
+            const m = g.matrix || {};
+            const missing = [];
+            if (g.isolated !== true) missing.push(`跨商品隔离未通过（${(g.reasons || []).join("；") || "未采集"}）`);
+            if (!m.ok) missing.push(`矩阵单元格未测到（${m.reason || "弹窗未打开/无屏列"}）`);
+            else {
+                if ((m.maxTextOverlap ?? 0) > 4) missing.push(`商品名文本与「屏 1」文本最大重叠 ${m.maxTextOverlap}px²（>4，最宽行「${m.widestName}」）`);
+                if ((m.maxCellOverlap ?? 0) > 4) missing.push(`商品名单元格与「屏 1」单元格最大重叠 ${m.maxCellOverlap}px²（>4）`);
+                if ((m.widestNameBtnW ?? 0) > 182) missing.push(`最宽商品名按钮 ${m.widestNameBtnW}px（>182，未收敛到 max-w-[180px]，行「${m.widestName}」）`);
+            }
+            return { p, ok: missing.length === 0, missing, g, m };
+        });
+        const erevHasSidebar = g19erev.length > 0 && g19erev.every((p) => (p.ereverseNav || {}).hasSidebar);
+        const erevNoAbort = g19erev.length > 0 && g19erev.every((p) => !p.abortedErrorText);
+        gate("G19", "跨商品图片隔离 + 矩阵防重叠 + 反推台挂栏",
+            g19pages.length > 0 && g19items.every((i) => i.ok) && erevHasSidebar && erevNoAbort,
+            [
+                g19pages.length === 0
+                    ? "未采集到 /ecommerce#matrix-guard"
+                    : g19items.map((i) => `@${i.p.viewport} 隔离${i.g.isolated ? "✓" : "✗"}(主体图 ${i.g.src1Len || 0}B vs ${i.g.src2Len || 0}B) · 矩阵${i.m.measuredRows ?? 0}行最大重叠 文本${i.m.maxTextOverlap ?? "未测"}px²/单元格${i.m.maxCellOverlap ?? "未测"}px² · 最宽按钮${i.m.widestNameBtnW ?? "?"}px「${i.m.widestName || ""}」${i.missing.length ? `｜缺失：${i.missing.join("；")}` : ""}`).join("；"),
+                `/ereverse@双视口 侧栏${erevHasSidebar ? "✓" : "✗"} · abort 假死文案${erevNoAbort ? "无✓" : "有✗"}`,
+            ].join("｜"));
     }
 
     // 5) 报告
@@ -1114,7 +1469,7 @@ function run() {
     lines.push("", "## 【总架构师体验门禁总表】", "");
     lines.push("| 门禁 | 指标 | 结果 | 实测 |", "|---|---|---|---|");
     for (const g of gates) lines.push(`| ${g.id} | ${g.name} | ${g.pass ? "✅ PASS" : "❌ FAIL"} | ${g.detail} |`);
-    lines.push("", `**总判定：${gates.every((g) => g.pass) ? "✅ 十六项全绿（G0~G16）" : "❌ 存在红线，需修复后重跑"}**`, "");
+    lines.push("", `**总判定：${gates.every((g) => g.pass) ? `✅ ${gates.length} 项全绿（G0~G${gates.length - 1}）` : "❌ 存在红线，需修复后重跑"}**`, "");
 
     // 采集期显式失败清单（返工令 Round 4：清零 .catch(()=>{}) 静默吞错）
     const allProbeErrors = scanned.flatMap((p) => (p.probeErrors || []).map((e) => `\`${p.route}\`@${p.viewport} ${e}`));
@@ -1200,11 +1555,19 @@ function run() {
     lines.push("", "### G10 电商首屏 SlotCard", "");
     for (const p of g10pages) {
         const s = p.slotCards || {};
-        lines.push(`- \`${p.route}\`@${p.viewport}：SlotCard ${s.count ?? 0} 张，第一排顶边 y=${s.firstCardY ?? "未采到"}，选中商品态「${s.activeStatus || "未知"}」`);
+        lines.push(`- \`${p.route}\`@${p.viewport}：SlotCard ${s.count ?? 0} 张，第一排顶边 y=${s.firstCardY ?? "未采到"}，默认选中商品「${s.activeProduct || "未知"}」（${s.activeStatus || "?"}）`);
     }
+    // 返工令 Round 6：选中态跨视口漂移显式化——同一路由在两个视口下默认选中的商品
+    // 应一致；不一致说明后端列表排序随时间变化（会话漂移），在此点名。
+    const driftPairs = [];
+    for (const route of Array.from(new Set(g10pages.map((p) => p.route)))) {
+        const names = Array.from(new Set(g10pages.filter((p) => p.route === route).map((p) => p.slotCards?.activeProduct || "")));
+        if (names.length > 1) driftPairs.push(`\`${route}\`：${names.join(" ↔ ")}`);
+    }
+    lines.push(...(driftPairs.length ? ["", "⚠️ 选中态跨视口漂移：", ...driftPairs.map((s) => `- ${s}`)] : ["", "- ✅ 选中态跨视口无漂移（同一路由两个视口默认选中商品一致）"]));
     lines.push("");
 
-    lines.push("## 八、反绕过加固明细（G11~G16）", "");
+    lines.push("## 八、反绕过加固明细（G11~G19）", "");
     lines.push("### G11 禁止代点绕过", "");
     lines.push("- 探针已删除全部 `document.querySelector(\"aside ul li\")` 主动点击（含 `#unstarted` 的 clickUnstarted 代点）；保留的只有 waitForSelector / waitForFunction 等待。");
     for (const p of g10pages) {
@@ -1238,9 +1601,23 @@ function run() {
         lines.push(`- \`${p.route}\`@${p.viewport}：状态点「${s.statusDotText || "未采到"}」 · 状态区直接铺开的技术 Tag ${s.statusTagsInZone ?? 0} 个 · 实心主 CTA ${p.solidCtas ?? 0} 个 · 复刻出口按钮 ${s.exitButtons ?? 0} 个 · 3 步引导条 ${s.stepsPresent ? "有" : "无"}`);
     }
     lines.push("", "### G17 侧栏布局与定制模块（夜间施工令阶段二）", "");
-    for (const p of scanned.filter((p) => p.route !== "/ereverse" && p.sidebarG17 && p.sidebarG17.present)) {
+    for (const p of scanned.filter((p) => p.sidebarG17 && p.sidebarG17.present)) {
         const s = p.sidebarG17;
         lines.push(`- \`${p.route}\`@${p.viewport}：原生项 ${s.nativeItems ? "✓" : "✗"} · 定制分组 ${s.customGroup ? "✓" : "✗"} · 定制入口 ${s.customEntries ? "✓" : "✗"} · 旧词「固定模块」已清 ${s.legacyTextGone ? "✓" : "✗"}`);
+    }
+    lines.push("", "### G18 启动控制台体检（返工令 Round 6）", "");
+    for (const p of (data.console && data.console.pages) || []) {
+        lines.push(`- @${p.viewport}：明文密码 ${p.plaintextPassword ? "有 ✗" : "无 ✓"} · 脱敏胶囊 ${p.pwdPillMasked ? "✓" : "✗"} · 按钮单行 ${p.toolbarSingleRow ? "✓" : "✗"}（溢出 ${p.toolbarOverflow}px） · 按钮 ${(p.labels || []).join(" / ")} · 服务卡片 ${p.serviceCards ?? 0} 张（网格 ${p.gridTracks} 列） · 隧道紧凑条 ${p.compactBars ?? 0} · 运行中服务 ${p.runningCards ?? 0} 个${p.runningNoStart ? "（仅 重启/停止/日志 ✓）" : "（按钮异常 ✗）"} · 纵向滚动 ${p.vScroll ? `有 ✗（${p.scrollH}>${p.innerH}）` : "无 ✓"}${p.error ? `｜采集失败：${p.error}` : ""}`);
+    }
+    lines.push("", "### G19 跨商品隔离 / 矩阵防重叠 / 反推台挂栏（返工令 Round 6）", "");
+    for (const p of scanned.filter((p) => p.route === "/ecommerce#matrix-guard")) {
+        const g = p.matrixGuard || {};
+        const m = g.matrix || {};
+        lines.push(`- \`${p.route}\`@${p.viewport}：跨商品隔离 ${g.isolated ? "✓" : "✗"}（商品「${(g.productNames || []).join("」「")}」主体图 ${g.src1Len || 0}B vs ${g.src2Len || 0}B） · 矩阵 ${m.measuredRows ?? 0} 行最大重叠 文本 ${m.maxTextOverlap ?? "未测"}px² / 单元格 ${m.maxCellOverlap ?? "未测"}px² · 最宽商品名 ${m.widestNameBtnW ?? "?"}px「${m.widestName || ""}」${(g.reasons || []).length ? `｜未过项：${g.reasons.join("；")}` : ""}`);
+    }
+    for (const p of scanned.filter((p) => p.route === "/ereverse")) {
+        const nav = p.ereverseNav || {};
+        lines.push(`- \`${p.route}\`@${p.viewport}：左侧导航栏 ${nav.hasSidebar ? "有 ✓" : "无 ✗"} · 「signal is aborted」假死文案 ${p.abortedErrorText ? "有 ✗" : "无 ✓"}`);
     }
     lines.push("");
 

@@ -79,6 +79,10 @@ def _node_path_prefix() -> str:
 EREVERSE_DIR = r"D:\AlcheMvision\工具\e-reverse"
 EREVERSE_PYTHON = os.path.join(EREVERSE_DIR, ".venv", "Scripts", "python.exe")
 
+# 返工令 Round 6：工作台登录凭据只从服务端按需下发（GET /api/credential），
+# 面板 HTML/JS 里不再常驻明文密码——顶栏只有 •••••• 脱敏胶囊，点击即复制。
+PANEL_LOGIN = {"username": "jinji", "password": "jinji666"}
+
 # Windows 进程标志：脱离父进程独立存活
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -481,19 +485,23 @@ PANEL_HTML = r"""<!DOCTYPE html>
   --bg-card: #162032;
   --bg-card-hover: #1c2940;
   --border: #24344d;
-  --border-glow: rgba(14, 165, 233, 0.4);
-  
-  --gold: #f59e0b;
-  --gold-light: #fbbf24;
+  --border-glow: rgba(129, 140, 248, 0.4);
+
+  /* 返工令 Round 6：消灭刺眼土橘金，统一靛蓝 / 极光紫体系 */
+  --indigo: #4f46e5;
+  --indigo-deep: #4338ca;
+  --indigo-light: #818cf8;
+  --violet: #8b5cf6;
+  --fuchsia: #d946ef;
   --cyan: #06b6d4;
   --emerald: #10b981;
   --rose: #f43f5e;
   --amber: #f59e0b;
-  
+
   --text-main: #f1f5f9;
   --text-muted: #94a3b8;
   --text-dim: #64748b;
-  
+
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 8px;
@@ -505,12 +513,13 @@ body {
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   line-height: 1.6;
-  padding: 36px 24px;
+  /* 返工令 Round 6：收紧外周留白，服务网格 + 隧道条 + 日志一屏尽览 */
+  padding: 18px 20px;
   min-height: 100vh;
 }
 
 .wrap {
-  max-width: 1040px;
+  max-width: 1080px;
   margin: 0 auto;
 }
 
@@ -519,14 +528,14 @@ header {
   background: linear-gradient(135deg, rgba(22,32,50,0.85) 0%, rgba(17,24,39,0.95) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 28px 32px;
-  margin-bottom: 24px;
+  padding: 16px 24px;
+  margin-bottom: 16px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.3);
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 16px;
   position: relative;
   overflow: hidden;
 }
@@ -534,7 +543,7 @@ header::before {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, #f59e0b, #06b6d4, #10b981);
+  background: linear-gradient(90deg, #4f46e5, #8b5cf6, #06b6d4);
 }
 
 .brand-info {
@@ -601,15 +610,15 @@ header::before {
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
-.pill.gold {
-  border-color: rgba(245,158,11,0.3);
-  color: #fde68a;
-  background: rgba(245,158,11,0.1);
-}
 .pill.cyan {
   border-color: rgba(6,182,212,0.3);
   color: #67e8f9;
   background: rgba(6,182,212,0.1);
+}
+.pill.violet {
+  border-color: rgba(139,92,246,0.35);
+  color: #c4b5fd;
+  background: rgba(139,92,246,0.12);
 }
 .meta-login {
   font-size: 12px;
@@ -618,20 +627,73 @@ header::before {
 .meta-login b {
   color: #e2e8f0;
 }
+/* 返工令 Round 6：密码脱敏胶囊——DOM 常驻只有 ••••••，
+   明文经 /api/credential 按需拉取，点击即复制进剪贴板，绝不常驻屏幕。 */
+.pwd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  margin: 0 2px;
+  border-radius: 20px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  background: rgba(79,70,229,0.14);
+  border: 1px solid rgba(129,140,248,0.4);
+  color: #c7d2fe;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  vertical-align: middle;
+}
+.pwd-pill:hover {
+  background: rgba(79,70,229,0.3);
+  border-color: var(--indigo-light);
+  color: #eef2ff;
+}
+.pwd-pill.copied {
+  background: rgba(16,185,129,0.18);
+  border-color: rgba(16,185,129,0.5);
+  color: #6ee7b7;
+  letter-spacing: normal;
+}
+.pwd-pill.revealed {
+  background: rgba(245,158,11,0.16);
+  border-color: rgba(245,158,11,0.5);
+  color: #fcd34d;
+  letter-spacing: normal;
+}
 
-/* 控制工具条 */
+/* 控制工具条（返工令 Round 6：单行收敛，严禁折行；窄窗横向滚动不换行） */
 .toolbar {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.toolbar > button,
+.toolbar > #busyTip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 2px;
+}
+#busyTip {
+  font-size: 12.5px;
+  color: var(--amber);
+  display: none;
 }
 button {
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 10px 20px;
+  padding: 9px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -640,7 +702,8 @@ button {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  white-space: nowrap;
 }
 button:hover {
   background: var(--bg-card-hover);
@@ -651,22 +714,22 @@ button:active {
   transform: translateY(0);
 }
 button.primary {
-  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-  border-color: #0284c7;
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  border-color: var(--indigo);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(2,132,199,0.3);
+  box-shadow: 0 4px 12px rgba(79,70,229,0.35);
 }
 button.primary:hover {
-  background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
 }
-button.gold {
-  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-  border-color: #f59e0b;
+button.aurora {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #d946ef 100%);
+  border-color: transparent;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(245,158,11,0.25);
+  box-shadow: 0 4px 14px rgba(168,85,247,0.35);
 }
-button.gold:hover {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+button.aurora:hover {
+  background: linear-gradient(135deg, #818cf8 0%, #c084fc 55%, #e879f9 100%);
 }
 button.danger {
   background: rgba(244,63,94,0.12);
@@ -678,29 +741,40 @@ button.danger:hover {
   border-color: var(--rose);
 }
 button.sm {
-  padding: 6px 14px;
+  padding: 5px 12px;
   font-size: 12px;
 }
+/* 已停止服务的「▶ 启动」：小尺寸靛蓝高亮，与次级线框按钮拉开层级 */
+.card-actions button.start-hot {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  border-color: var(--indigo);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(79,70,229,0.35);
+}
+.card-actions button.start-hot:hover {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+}
 
-/* 服务卡片容器 */
+/* 服务卡片容器（返工令 Round 6：2×2 紧凑网格 + 隧道双列紧凑条） */
 .cards-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-bottom: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 20px 24px;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
   transition: all 0.25s ease;
+  min-width: 0;
 }
 .card:hover {
-  border-color: rgba(14,165,233,0.35);
+  border-color: rgba(129,140,248,0.35);
   box-shadow: 0 6px 20px rgba(0,0,0,0.25);
 }
 .card.on {
@@ -708,10 +782,15 @@ button.sm {
 }
 .card.off {
   border-left: 4px solid var(--border);
-  opacity: 0.85;
+  opacity: 0.92;
 }
 .card.busy {
   border-left: 4px solid var(--amber);
+}
+/* 隧道紧凑条：跨双列，单行放下状态与地址 */
+.card.compact {
+  grid-column: 1 / -1;
+  padding: 10px 14px;
 }
 
 .status-indicator {
@@ -744,13 +823,17 @@ button.sm {
 .card-title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
+  gap: 8px;
+  margin-bottom: 2px;
+  min-width: 0;
 }
 .card-name {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-port {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -760,15 +843,20 @@ button.sm {
   padding: 1px 7px;
   border-radius: 4px;
   color: #38bdf8;
+  flex: 0 0 auto;
 }
 .card-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-status {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
-  margin-top: 6px;
+  margin-top: 3px;
+  flex: 0 0 auto;
 }
 .card.on .card-status { color: var(--emerald); }
 .card.off .card-status { color: var(--text-dim); }
@@ -776,28 +864,20 @@ button.sm {
 
 .card-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
-/* 隧道卡片 */
-.tunnel-box {
-  background: linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(17,24,39,0.7) 100%);
-  border: 1px solid rgba(6,182,212,0.3);
-  border-radius: var(--radius-md);
-  padding: 16px 20px;
-  margin-bottom: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
+/* 隧道条内的公网地址（紧凑单行 + 省略） */
 .tunnel-url {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13.5px;
+  font-size: 12.5px;
   color: #38bdf8;
   text-decoration: none;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 .tunnel-url:hover { text-decoration: underline; }
 
@@ -806,18 +886,18 @@ button.sm {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 20px 24px;
+  padding: 14px 20px;
 }
 .log-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 .log-header h3 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--gold-light);
+  color: var(--indigo-light);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -826,7 +906,7 @@ button.sm {
   font-size: 12px;
   line-height: 1.8;
   color: #cbd5e1;
-  max-height: 250px;
+  max-height: 150px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
@@ -859,7 +939,7 @@ button.sm {
   box-shadow: 0 20px 40px rgba(0,0,0,0.5);
 }
 .modal-content h4 {
-  color: var(--gold-light);
+  color: var(--indigo-light);
   font-size: 15px;
   margin-bottom: 14px;
 }
@@ -877,8 +957,8 @@ button.sm {
 }
 
 footer {
-  margin-top: 32px;
-  padding-top: 20px;
+  margin-top: 20px;
+  padding-top: 14px;
   border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-dim);
@@ -908,37 +988,26 @@ footer {
   <div class="meta-badges">
     <div class="badge-row">
       <span class="pill cyan">🤖 Agent 模型: <strong>gemini-3.8-Flash</strong></span>
-      <span class="pill gold">⚡ 架构: <strong>两段式 P4 运行时就绪</strong></span>
+      <span class="pill violet">⚡ 架构: <strong>两段式 P4 运行时就绪</strong></span>
     </div>
     <div class="meta-login">
-      工作台: <b>http://127.0.0.1:3000</b> &nbsp;|&nbsp; 账号 <b>jinji</b> / 密码 <b>jinji666</b>
+      工作台: <b>http://127.0.0.1:3000</b> &nbsp;|&nbsp; 账号 <b>jinji</b> / 密码 <button id="pwdPill" class="pwd-pill" type="button" title="点击复制工作台登录密码到剪贴板">••••••</button>
     </div>
   </div>
 </header>
 
-<div class="toolbar">
-  <button class="primary" id="btnStartAll">⚡ 一键启动全部</button>
-  <button class="danger" id="btnStopAll">⏹ 全部停止</button>
-  <button class="gold" id="btnOpenCanvas">🎨 打开源起创作画布</button>
-  <button class="gold" id="btnOpenEreverse">🧬 E-Reverse 事实表</button>
-  <button class="gold" id="btnOpen">🏠 进入工作台首页</button>
-  <button id="btnSelfCheck">🩺 接入自检</button>
+<div class="toolbar" id="toolbar">
+  <button class="primary" id="btnStartAll">⚡ 一键启动全栈</button>
+  <button class="aurora" id="btnOpenWorkbench">🚀 进入源起工作台 (:3000)</button>
+  <button id="btnSelfCheck">🩺 全栈健康自检</button>
   <button id="btnRefresh">🔄 刷新</button>
-  <button id="btnQuitPanel" title="仅退出控制面板，后台服务继续运行">🚪 退出面板</button>
-  <span id="busyTip" style="font-size:13px;color:var(--amber);display:none">
-    ⏳ 正在调度，请稍候…
-  </span>
+  <span class="toolbar-spacer"></span>
+  <button class="danger" id="btnStopAll">■ 全部停止</button>
+  <button id="btnQuitPanel" title="仅退出控制面板，后台服务继续运行">退出面板</button>
+  <span id="busyTip">⏳ 正在调度，请稍候…</span>
 </div>
 
 <div id="cards" class="cards-grid"></div>
-
-<div id="tunnelBox" class="tunnel-box" style="display:none">
-  <div>
-    <span style="font-size:12.5px;color:var(--text-muted);display:block;margin-bottom:2px">🌐 临时安全公网隧道 (用于多模态模型资产交互):</span>
-    <a id="tunnelLink" class="tunnel-url" href="#" target="_blank"></a>
-  </div>
-  <span style="font-size:11.5px;color:var(--text-dim)">每次启动自动安全同步</span>
-</div>
 
 <div class="logbox">
   <div class="log-header">
@@ -973,49 +1042,67 @@ function esc(s){
   });
 }
 
+/* 返工令 Round 6：按钮状态智能化——
+   正在运行：只留 重启 | 停止 | 日志（启动已无意义，隐藏而非置灰占位）；
+   已停止：高亮 ▶ 启动 + 日志；
+   调度中：全部禁用，只留处理态与日志。 */
+function actionBtns(s){
+  if(s.busy){
+    return '<button class="sm" disabled>⏳ 处理中…</button>'
+      + '<button class="sm" disabled>📄 日志</button>';
+  }
+  if(s.state === 'running'){
+    return '<button class="sm" onclick="act(\'restart\',\'' + s.key + '\')">↻ 重启</button>'
+      + '<button class="sm danger" onclick="act(\'stop\',\'' + s.key + '\')">■ 停止</button>'
+      + '<button class="sm" onclick="viewLog(\'' + s.key + '\')">📄 日志</button>';
+  }
+  return '<button class="sm start-hot" onclick="act(\'start\',\'' + s.key + '\')">▶ 启动</button>'
+    + '<button class="sm" onclick="viewLog(\'' + s.key + '\')">📄 日志</button>';
+}
+
 function render(data){
   var html = '';
   data.services.forEach(function(s){
-    var cls = s.state === 'running' ? 'on' : 'off';
-    if(s.busy) cls = 'busy';
-    if(s.state === 'dead') cls += ' dead';
-    
+    var compact = s.key === 'tunnel';
+    var cls = 'card' + (compact ? ' compact' : '');
+    if(s.busy) cls += ' busy';
+    else if(s.state === 'running') cls += ' on';
+    else cls += ' off';
+
     var stText = {
-      running: '● 正在运行中 · 端口 ' + s.port,
+      running: '● 正在运行中',
       stopped: '○ 未启动',
       starting: '◌ 正在拉起服务…',
       stopping: '◌ 正在停止服务…',
+      restarting: '↻ 正在重启服务…',
       dead: '⚠ 异常 · 端口已被占用'
     }[s.state] || s.state;
 
-    html += '<div class="card ' + cls + '">'
+    html += '<div class="' + cls + '">'
       + '<div class="status-indicator"><div class="status-dot"></div></div>'
       + '<div class="card-info">'
       +   '<div class="card-title-row">'
-      +     '<span class="card-name">' + esc(s.name) + '</span>'
+      +     '<span class="card-name" title="' + esc(s.name) + '">' + esc(s.name) + '</span>'
       +     '<span class="card-port">:' + esc(s.port) + '</span>'
+      +     (compact ? '<span class="card-status">' + esc(stText) + '</span>' : '')
       +   '</div>'
-      +   '<div class="card-desc">' + esc(s.desc) + '</div>'
-      +   '<div class="card-status">' + esc(stText) + '</div>'
+      +   (compact
+      ?     '<div class="card-desc" id="tunnelUrlLine"></div>'
+      :     '<div class="card-desc" title="' + esc(s.desc) + '">' + esc(s.desc) + '</div>')
+      +   (compact ? '' : '<div class="card-status">' + esc(stText) + '</div>')
       + '</div>'
-      + '<div class="card-actions">'
-      +   '<button class="sm" onclick="act(\'start\',\'' + s.key + '\')">启动</button>'
-      +   '<button class="sm danger" onclick="act(\'stop\',\'' + s.key + '\')">停止</button>'
-      +   '<button class="sm" onclick="viewLog(\'' + s.key + '\')">查看日志</button>'
-      + '</div>'
+      + '<div class="card-actions">' + actionBtns(s) + '</div>'
       + '</div>';
   });
   document.getElementById('cards').innerHTML = html;
 
+  // 隧道地址行（紧凑条内）：有地址给链接，没有给一句人话
   var t = data.tunnelUrl || '';
-  var tBox = document.getElementById('tunnelBox');
-  var tLink = document.getElementById('tunnelLink');
-  if(t){
-    tLink.href = t;
-    tLink.textContent = t;
-    tBox.style.display = 'flex';
-  } else {
-    tBox.style.display = 'none';
+  var line = document.getElementById('tunnelUrlLine');
+  if(line){
+    line.innerHTML = t
+      ? '<a class="tunnel-url" href="' + esc(t) + '" target="_blank" title="' + esc(t) + '">🌐 ' + esc(t) + '</a>'
+      : '<span style="color:var(--text-dim)">未启动 · 启动后自动同步公网地址</span>';
   }
 
   var lb = '';
@@ -1070,13 +1157,13 @@ async function selfCheck(){
     var r = await fetch('/api/selfcheck', {cache: 'no-store'});
     var d = await r.json();
     document.getElementById('modalTitle').textContent =
-      (d.ok ? '✅ [全线畅通] ' : '⚠ [存在断点] ') + '源起系统接入自检报告';
+      (d.ok ? '✅ [全线畅通] ' : '⚠ [存在断点] ') + '源起系统全栈健康自检报告';
     document.getElementById('modalBody').textContent = d.text;
     document.getElementById('modal').classList.add('show');
   }catch(e){
     alert('自检调用异常：' + e);
   }finally{
-    btn.disabled = false; btn.textContent = '🩺 接入自检';
+    btn.disabled = false; btn.textContent = '🩺 全栈健康自检';
   }
 }
 
@@ -1097,14 +1184,55 @@ function quitPanel(){
 }
 document.getElementById('btnQuitPanel').onclick = quitPanel;
 
-document.getElementById('btnOpenCanvas').onclick = function(){
-  window.open('http://127.0.0.1:3000/canvas?mode=new', '_blank');
-};
-document.getElementById('btnOpenEreverse').onclick = function(){
-  window.open('http://127.0.0.1:3000/ereverse', '_blank');
-};
-document.getElementById('btnOpen').onclick = function(){
+document.getElementById('btnOpenWorkbench').onclick = function(){
   window.open('http://127.0.0.1:3000', '_blank');
+};
+
+/* 返工令 Round 6：密码脱敏胶囊——DOM 常驻只有 ••••••。
+   点击后经 /api/credential 按需取回明文并复制进剪贴板；
+   剪贴板不可用时才临时显示 4 秒（兜底），任何路径都不让明文常驻屏幕。 */
+function legacyCopy(text){
+  try{
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }catch(e){ return false; }
+}
+function copyText(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return legacyCopy(text); });
+  }
+  return Promise.resolve(legacyCopy(text));
+}
+function flashPill(pill, text, cls){
+  var old = pill.textContent;
+  pill.textContent = text;
+  pill.classList.add(cls || 'copied');
+  setTimeout(function(){ pill.textContent = old; pill.classList.remove(cls || 'copied'); }, 1600);
+}
+document.getElementById('pwdPill').onclick = async function(){
+  var pill = this;
+  try{
+    var r = await fetch('/api/credential', {cache: 'no-store'});
+    var d = await r.json();
+    if(!d.ok){ flashPill(pill, '凭据缺失', 'revealed'); return; }
+    var ok = await copyText(d.password);
+    if(ok) flashPill(pill, '已复制 ✓');
+    else {
+      // 剪贴板被浏览器策略挡住：临时显示 4 秒，让用户手抄
+      pill.textContent = d.password;
+      pill.classList.add('revealed');
+      setTimeout(function(){ pill.textContent = '••••••'; pill.classList.remove('revealed'); }, 4000);
+    }
+  }catch(e){
+    flashPill(pill, '获取失败', 'revealed');
+  }
 };
 
 refresh();
@@ -1149,12 +1277,17 @@ class Handler(BaseHTTPRequestHandler):
                     st = "running" if port_alive(s["port"]) else "stopped"
                 svcs.append({
                     "key": s["key"], "name": s["name"], "desc": s["desc"],
-                    "port": s["port"], "state": st, "busy": st in ("starting", "stopping"),
+                    "port": s["port"], "state": st, "busy": st in ("starting", "stopping", "restarting"),
                 })
             with _log_lock:
                 logs = list(_event_log)
             tunnel_url = read_tunnel_url() if port_alive(SVC_BY_KEY["tunnel"]["port"]) else ""
             self._json({"services": svcs, "log": logs, "tunnelUrl": tunnel_url})
+            return
+
+        # 工作台登录凭据：按需下发，供顶栏脱敏胶囊「点击复制」使用
+        if p == "/api/credential":
+            self._json({"ok": True, "username": PANEL_LOGIN["username"], "password": PANEL_LOGIN["password"]})
             return
 
         # 接入自检：只读体检
@@ -1209,7 +1342,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         action, target = parts[1], parts[2]
 
-        if action not in ("start", "stop"):
+        if action not in ("start", "stop", "restart"):
             self._json({"error": "bad action"}, 400)
             return
 
@@ -1224,12 +1357,20 @@ class Handler(BaseHTTPRequestHandler):
                     s = SVC_BY_KEY.get(target)
                     items = [s] if s else []
                 for s in items:
-                    Handler.busy_state[s["key"]] = "starting" if action == "start" else "stopping"
+                    Handler.busy_state[s["key"]] = (
+                        "restarting" if action == "restart"
+                        else "starting" if action == "start"
+                        else "stopping"
+                    )
                     try:
                         if action == "start":
                             start_service(s)
-                        else:
+                        elif action == "stop":
                             stop_service(s)
+                        else:
+                            # 重启 = 先停后起；服务本就停止时退化为启动
+                            stop_service(s)
+                            start_service(s)
                     finally:
                         Handler.busy_state.pop(s["key"], None)
             except Exception as e:
@@ -1281,7 +1422,7 @@ def auto_start_if_idle():
 
     up = [s for s in auto_svcs if port_alive(s["port"], timeout=0.4)]
     if len(up) == len(auto_svcs):
-        log_event("全部 %d 个源起核心服务已全部就绪。点击「进入工作台首页」开启创作！" % len(up), "ok")
+        log_event("全部 %d 个源起核心服务已全部就绪。点击「进入源起工作台」开启创作！" % len(up), "ok")
     else:
         log_event("%d/%d 个核心服务已就绪。如有未启动项可点击「查看日志」排查。"
                   % (len(up), len(auto_svcs)), "warn")

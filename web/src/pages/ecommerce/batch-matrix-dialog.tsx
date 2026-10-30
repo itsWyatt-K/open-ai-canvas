@@ -86,10 +86,19 @@ export function EcommerceBatchMatrixDialog({
                 dataIndex: "name",
                 key: "name",
                 width: 200,
+                // 返工令 Round 6：超长商品名原来会横穿捅进「屏 1」单元格与分镜文字重叠。
+                // 根因：td 宽度 200 只是 auto 布局的建议值，按钮 max-w-full（相对宽）
+                // 在固有尺寸计算中被当作无限宽，td 被内容撑爆。修法三件套：
+                // ① 列 ellipsis（td  overflow-hidden + nowrap，容器层面裁切）；
+                // ② 按钮 max-w-[180px] 固定最大宽（不再相对父级，硬顶住）；
+                // ③ title 悬停显示全名（省略号不丢信息）。
+                ellipsis: true,
                 render: (name: string, record: EcommerceProductSummary) => (
-                    <button className="max-w-full truncate text-left text-xs font-medium hover:text-primary" onClick={() => onOpenProduct(record.id)} title={name}>
-                        {name}
-                    </button>
+                    <div className="max-w-[180px] overflow-hidden">
+                        <button className="block w-full max-w-[180px] truncate text-left text-xs font-medium hover:text-primary" onClick={() => onOpenProduct(record.id)} title={name}>
+                            {name}
+                        </button>
+                    </div>
                 ),
             },
         ];

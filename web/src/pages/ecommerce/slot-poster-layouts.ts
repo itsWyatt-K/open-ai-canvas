@@ -182,3 +182,17 @@ export function slotPosterLayout(slotIndex: number, spec: SlotPosterPlatformSpec
     const ratio = index < spec.heroCount ? spec.heroRatio : spec.detailRatio;
     return { ...template, aspect: ratioToAspect(ratio) };
 }
+
+/**
+ * 分组标题（返工令 Round 6-4）：消费方按「主图 / 详情长图」分组渲染时的标题文案。
+ * 与版式契约同源放在本文件（文案随数据走），避免组件里散落硬编码分组字符串。
+ * 例：🖼️ 主图区（3 张 · 1:1 方形）/ 📑 详情长图区（4 张 · 3:4 竖版）；
+ * 非常见比例时只输出比例本身，绝不臆造「方形/竖版」描述。
+ */
+export function slotGroupTitle(kind: "hero" | "detail", count: number, ratio: string): string {
+    const descriptor = ratio === "1:1" ? "方形" : ratio === "3:4" ? "竖版" : "";
+    const suffix = descriptor ? ` ${descriptor}` : "";
+    return kind === "hero"
+        ? `🖼️ 主图区（${count} 张 · ${ratio}${suffix}）`
+        : `📑 详情长图区（${count} 张 · ${ratio}${suffix}）`;
+}

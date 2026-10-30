@@ -9,6 +9,11 @@
  *
  * 导出：合成高清 PNG / 分层 PSD（复用 nxf /api/nxf/psd/export）。
  * 精修结果（四层清单）回写后端 layer_manifest（PUT /ecommerce/slots/:id/layers）。
+ *
+ * 返工令 Round 6-5：
+ *   - 画框右下角「海报草图（生成后替换为 AI 场景图）」黑膏药彻底删除；
+ *   - 四层树去掉灰色「未产出」死胡同：草图态文字层默认载入当前分镜 L1 主标题（可编辑、可拖拽），
+ *     阴影与光效层点击一键生成椭圆接触投影，场景背景层显示「当前：预设渐变底（点击可换色）」。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Input, Select } from "antd";
@@ -44,23 +49,45 @@ const LIGHT_OPTIONS = [
     { label: "右下光", value: "right-bottom" },
 ];
 
+/** 返工令 Round 6-5：草图态预设渐变底（场景背景层点击循环换色；第 1 条与原默认一致）。 */
+const SKETCH_BG_PRESETS = [
+    "linear-gradient(160deg,#f5f0e8_0%,#e8e0f0_55%,#dce8f5_100%)",
+    "linear-gradient(165deg,#edf7ec_0%,#dceef8_52%,#f7fae4_100%)",
+    "linear-gradient(160deg,#f7eceg_0%,#f3dfe6_50%,#e9e2f5_100%)",
+    "linear-gradient(200deg,#2b3247_0%,#1b2030_100%)",
+];
+
 export function EcommerceRetouchDialog({ slot, productSourceResourceId, productCutoutUrl, onGenerateFromSketch, onClose, onChanged }: Props) {
     const { message } = App.useApp();
-    const [manifest, setManifest] = useState<EcommerceLayerManifest>(() => ({
-        background_layer_url: slot.layerManifest?.background_layer_url ?? "",
-        shadow_layer_url: slot.layerManifest?.shadow_layer_url ?? "",
-        product_cutout_url: slot.layerManifest?.product_cutout_url ?? productCutoutUrl ?? "",
-        product_rect: slot.layerManifest?.product_rect ?? [0, 0, 0, 0],
-        text_layers: slot.layerManifest?.text_layers?.slice() ?? [],
-        composed_image_url: slot.layerManifest?.composed_image_url ?? "",
-    }));
+    const [manifest, setManifest] = useState<EcommerceLayerManifest>(() => {
+        const existingTextLayers = slot.layerManifest?.text_layers?.slice() ?? [];
+        // 返工令 Round 6-5：草图态（未出图）默认把当前分镜的 L1 主标题文案载入为第 1 条
+        // 可拖拽文字层——图层树不再出现灰色「未产出」死胡同。已出图 / 已有清单时不注入。
+        const sketchSeed = !slot.resourceId
+            && !slot.layerManifest?.composed_image_url
+            && existingTextLayers.length === 0
+            ? [{ text: slot.brief?.screen_title || slot.title || slot.slotKey, color: "#E02020", x: 0.5, y: 0.12, size: 64 }]
+            : existingTextLayers;
+        return {
+            background_layer_url: slot.layerManifest?.background_layer_url ?? "",
+            shadow_layer_url: slot.layerManifest?.shadow_layer_url ?? "",
+            product_cutout_url: slot.layerManifest?.product_cutout_url ?? productCutoutUrl ?? "",
+            product_rect: slot.layerManifest?.product_rect ?? [0, 0, 0, 0],
+            text_layers: sketchSeed,
+            composed_image_url: slot.layerManifest?.composed_image_url ?? "",
+        };
+    });
     const composedImage = manifest.composed_image_url || (slot.resourceId ? `/api/resources/${slot.resourceId}/file` : "");
     const [busy, setBusy] = useState<string>("");
     const [light, setLight] = useState("studio");
     const [selectedLayer, setSelectedLayer] = useState("text");
+    // 返工令 Round 6-5：草图态场景背景层——预设渐变底循环换色（点击图层行即切换）。
+    const [bgPresetIndex, setBgPresetIndex] = useState(0);
     // 框选蒙版（相对坐标 0-1）。
     const [rect, setRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
     const drawingRef = useRef<{ x: number; y: number } | null>(null);
+    // 返工令 Round 6-5：文字层预览拖拽（拖拽时禁用框选消除，两者不打架）。
+    const dragTextRef = useRef<{ index: number } | null>(null);
     const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
     const imgRef = useRef<HTMLImageElement | null>(null);
 
@@ -188,6 +215,40 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
         }));
     }, []);
 
+    // ---------------- ✨ 椭圆接触投影（阴影与光效层一键开启） ----------------
+    // 本地 canvas 生成「中间实、边缘虚」的椭圆接触投影 PNG（不依赖引擎、离线可用），
+    // 写入 shadow_layer_url：预览里垫在商品主体脚下，保存后随四层清单/PSD 落库。
+    const generateContactShadow = useCallback(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 512;
+        canvas.height = 160;
+        const context = canvas.getContext("2d");
+        if (!context) {
+            message.error("当前浏览器不支持 Canvas，无法生成投影");
+            return;
+        }
+        const gradient = context.createRadialGradient(256, 80, 6, 256, 80, 250);
+        gradient.addColorStop(0, "rgba(24,18,44,0.52)");
+        gradient.addColorStop(0.55, "rgba(24,18,44,0.3)");
+        gradient.addColorStop(1, "rgba(24,18,44,0)");
+        context.fillStyle = gradient;
+        context.save();
+        context.translate(256, 80);
+        context.scale(1, 0.32); // 纵向压扁成椭圆（接触投影）
+        context.beginPath();
+        context.arc(0, 0, 250, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+        patchManifest({ shadow_layer_url: canvas.toDataURL("image/png") });
+        message.success("已生成椭圆接触投影（垫在商品脚下；保存四层清单后随分层落库）");
+    }, [patchManifest, message]);
+
+    // ---------------- 🖼️ 场景背景层：预设渐变底循环换色 ----------------
+    const cycleSketchBackground = useCallback(() => {
+        setBgPresetIndex((index) => (index + 1) % SKETCH_BG_PRESETS.length);
+        message.info("已切换草图背景（预设渐变底；AI 场景生成即将上线）");
+    }, [message]);
+
     // ---------------- 保存与导出 ----------------
     const handleSave = useCallback(async () => {
         try {
@@ -284,18 +345,33 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
 
     const relativeHandlers = useMemo(() => ({
         onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => {
+            // 返工令 Round 6-5：拖拽文字层进行时，容器不启动框选消除（两种手势不打架）。
+            if (dragTextRef.current) return;
             const bounds = event.currentTarget.getBoundingClientRect();
             drawingRef.current = { x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height };
             setRect({ x0: drawingRef.current.x, y0: drawingRef.current.y, x1: drawingRef.current.x, y1: drawingRef.current.y });
         },
         onMouseMove: (event: React.MouseEvent<HTMLDivElement>) => {
-            if (!drawingRef.current) return;
             const bounds = event.currentTarget.getBoundingClientRect();
+            if (dragTextRef.current) {
+                // 文字层拖拽：实时把指针位置换算成 0-1 相对坐标写回该层。
+                const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+                const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height));
+                const index = dragTextRef.current.index;
+                setManifest((prev) => {
+                    const layers = prev.text_layers.slice();
+                    if (!layers[index]) return prev;
+                    layers[index] = { ...layers[index], x, y };
+                    return { ...prev, text_layers: layers };
+                });
+                return;
+            }
+            if (!drawingRef.current) return;
             const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
             const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height));
             setRect((prev) => (prev ? { ...prev, x1: x, y1: y } : prev));
         },
-        onMouseUp: () => { drawingRef.current = null; },
+        onMouseUp: () => { drawingRef.current = null; dragTextRef.current = null; },
     }), []);
 
     const rectStyle = rect ? {
@@ -341,27 +417,43 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                     {composedImage ? (
                         <img src={composedImage} alt={slot.title || slot.slotKey} className="block w-full" draggable={false} />
                     ) : (
-                        <div className="relative flex aspect-[3/4] max-h-[70vh] w-full items-center justify-center bg-[linear-gradient(160deg,#f5f0e8_0%,#e8e0f0_55%,#dce8f5_100%)]">
+                        <div className="relative flex aspect-[3/4] max-h-[70vh] w-full items-center justify-center" style={{ background: SKETCH_BG_PRESETS[bgPresetIndex] }}>
+                            {/* 返工令 Round 6-5：椭圆接触投影垫在商品主体脚下（阴影与光效层一键生成） */}
+                            {manifest.shadow_layer_url ? (
+                                <img
+                                    src={manifest.shadow_layer_url}
+                                    alt=""
+                                    aria-hidden
+                                    className="absolute bottom-[9%] left-1/2 w-[52%] -translate-x-1/2 object-contain"
+                                    draggable={false}
+                                />
+                            ) : null}
                             {manifest.product_cutout_url ? (
                                 <img
                                     src={manifest.product_cutout_url}
                                     alt="商品主体草图"
                                     // object-contain 非矩形阴影须跟随形状（box-shadow 只能跟矩形），
                                     // 返工令 Round 3 收敛模糊半径以降合成成本
-                                    className="max-h-[62%] max-w-[74%] object-contain drop-shadow-[0_10px_16px_rgba(40,30,60,0.3)]"
+                                    className="relative max-h-[62%] max-w-[74%] object-contain drop-shadow-[0_10px_16px_rgba(40,30,60,0.3)]"
                                     draggable={false}
                                 />
                             ) : (
                                 <span className="text-xs text-foreground/45">先「一键抠图」得到商品主体，即可在此预览海报草图</span>
                             )}
-                            <span className="absolute bottom-2 right-2 rounded bg-black/35 px-1.5 py-0.5 text-caption text-white">海报草图（生成后替换为 AI 场景图）</span>
+                            {/* 返工令 Round 6-5：右下角「海报草图（生成后替换为 AI 场景图）」黑膏药彻底删除。 */}
                         </div>
                     )}
                     {manifest.text_layers.map((layer, index) => (
                         <span
                             key={index}
-                            className="pointer-events-none absolute -translate-x-1/2 whitespace-pre"
+                            // 返工令 Round 6-5：文字层可拖拽（pointer-events-auto + cursor-move），
+                            // 拖拽与框选消除互斥（容器 onMouseDown 见到拖拽即让位）。
+                            className="pointer-events-auto absolute -translate-x-1/2 cursor-move whitespace-pre"
                             style={{ left: `${layer.x * 100}%`, top: `${layer.y * 100}%`, color: layer.color || "#E02020", fontSize: Math.max(12, (layer.size || 64) * ((imgRef.current?.clientWidth ?? 600) / (imageSize.width || 600))) }}
+                            onMouseDown={(event) => {
+                                event.stopPropagation();
+                                dragTextRef.current = { index };
+                            }}
                         >
                             {layer.text}
                         </span>
@@ -371,23 +463,52 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
 
                 {/* 右侧：图层树 + 工具 + 属性 */}
                 <div className="flex w-[340px] shrink-0 flex-col gap-3">
+                    {/* 返工令 Round 6-5：四层树撕掉 3 个灰色「未产出」死胡同——每层都有可执行动作：
+                        文字层默认载入 L1 主标题（可编辑/可拖拽）；商品主体层点击一键重抠；
+                        阴影与光效层点击一键生成椭圆接触投影；场景背景层显示当前预设渐变底（点击换色）。 */}
                     <div className="rounded-lg border border-border/50 p-2.5">
                         <p className="mb-1.5 text-xs font-semibold text-foreground/70">图层（自上而下）</p>
-                        {[
-                            { key: "text", label: `🔤 文字层（${manifest.text_layers.length}）`, has: manifest.text_layers.length > 0 },
-                            { key: "product", label: "📦 商品主体层", has: Boolean(manifest.product_cutout_url) },
-                            { key: "shadow", label: "✨ 阴影与光效层", has: Boolean(manifest.shadow_layer_url) },
-                            { key: "bg", label: "🖼️ 场景背景层", has: Boolean(manifest.background_layer_url) },
-                        ].map((layer) => (
-                            <button
-                                key={layer.key}
-                                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${selectedLayer === layer.key ? "bg-primary/10 text-primary" : "hover:bg-surface-active"} ${layer.has ? "" : "opacity-45"}`}
-                                onClick={() => setSelectedLayer(layer.key)}
-                            >
-                                <span>{layer.label}</span>
-                                <span className="text-caption text-foreground/40">{layer.has ? "✓" : "未产出"}</span>
-                            </button>
-                        ))}
+                        <div className="flex flex-col gap-0.5">
+                            {[
+                                {
+                                    key: "text",
+                                    label: `🔤 文字层 (${manifest.text_layers.length}) · ${manifest.text_layers.length > 0 ? "可编辑" : "待添加"}`,
+                                    status: manifest.text_layers.length > 0 ? "✓" : "＋",
+                                    onClick: () => setSelectedLayer("text"),
+                                },
+                                {
+                                    key: "product",
+                                    label: "📦 商品主体层",
+                                    status: manifest.product_cutout_url ? "✓ 已锁定" : "✂️ 一键抠图",
+                                    onClick: () => { if (!manifest.product_cutout_url) void handleMatting(); else setSelectedLayer("product"); },
+                                },
+                                {
+                                    key: "shadow",
+                                    label: "✨ 阴影与光效层",
+                                    status: manifest.shadow_layer_url ? "✓ 已开启" : "＋ 一键生成投影",
+                                    onClick: () => { if (!manifest.shadow_layer_url) generateContactShadow(); else setSelectedLayer("shadow"); },
+                                },
+                                {
+                                    key: "bg",
+                                    label: "🖼️ 场景背景层",
+                                    status: manifest.background_layer_url ? "✓ 已替换为擦除底图" : "当前：预设渐变底（点击换色）",
+                                    onClick: () => { if (!manifest.background_layer_url) cycleSketchBackground(); else setSelectedLayer("bg"); },
+                                },
+                            ].map((layer) => (
+                                <button
+                                    key={layer.key}
+                                    type="button"
+                                    className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs ${selectedLayer === layer.key ? "bg-primary/10 text-primary" : "hover:bg-surface-active"}`}
+                                    onClick={layer.onClick}
+                                >
+                                    <span className="min-w-0 truncate">{layer.label}</span>
+                                    <span className="shrink-0 whitespace-nowrap text-caption text-foreground/45">{layer.status}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <p className="mt-1.5 text-caption leading-4 text-foreground/40">
+                            场景背景层：当前：预设渐变底（点击可换色或生成 AI 场景）
+                        </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-1.5">
@@ -413,7 +534,7 @@ export function EcommerceRetouchDialog({ slot, productSourceResourceId, productC
                             <Button size="small" type="text" icon={<Type className="size-3.5" />} onClick={addTextLayer}>加一条</Button>
                         </div>
                         {manifest.text_layers.length === 0 ? (
-                            <p className="text-caption text-foreground/40">暂无文字层——比烧图文字更清晰，且随时可改。</p>
+                            <p className="text-caption text-foreground/40">暂无文字层——点右上角「加一条」；文字层比烧图文字更清晰，且随时可改、可在画布上拖拽。</p>
                         ) : (
                             <div className="flex flex-col gap-2">
                                 {manifest.text_layers.map((layer, index) => (

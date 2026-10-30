@@ -57,7 +57,7 @@ import { queryGenerationTask } from "@/services/api/task-center";
 import {
     ECOMMERCE_PLATFORMS, STYLE_CAPSULES, platformByKey, platformSpecOrDefault, platformSpecSummary,
 } from "./platforms";
-import { slotPosterLayout, type SlotPosterDecoration, type SlotPosterPlatformSpec } from "./slot-poster-layouts";
+import { slotGroupTitle, slotPosterLayout, type SlotPosterDecoration, type SlotPosterPlatformSpec } from "./slot-poster-layouts";
 import "./ecommerce.css";
 
 const SLOT_STATUS_TONE: Record<string, string> = {
@@ -161,7 +161,14 @@ export function EcommerceTaskDetail({
     // v60：图层精修台（已出图屏）。持有 slot 对象而非 id——slots 为空时可回退占位卡。
     const [retouchSlot, setRetouchSlot] = useState<EcommerceSlotSummary | null>(null);
     // 返工令一：商品透明主体（BiRefNet）——顶部资产卡提取，供精修台与七屏海报草图共用。
-    const [productCutout, setProductCutout] = useState("");
+    // 返工令 Round 6-1（串台根治）：按 productId 隔离存放，严禁跨商品共用同一个 cutoutUrl——
+    // 切换商品时若不清空，上一个商品的抠图（如女模特）会继续挂在下一个商品的画框上。
+    const [cutoutByProductId, setCutoutByProductId] = useState<Record<string, string>>({});
+    const productCutout = (productId && cutoutByProductId[productId]) || "";
+    const handleCutoutReady = useCallback((dataUrl: string) => {
+        if (!productId) return;
+        setCutoutByProductId((previous) => ({ ...previous, [productId]: dataUrl }));
+    }, [productId]);
     // 商品名行内快改（顶栏第一行，点击标题即改，失焦即存）。
     const [editingName, setEditingName] = useState(false);
     const [nameDraft, setNameDraft] = useState("");
@@ -726,70 +733,82 @@ export function EcommerceTaskDetail({
     // 7 屏骨架常驻：slots 为空（刚导入/未策划）时按平台规格在客户端补足占位卡，不落库。
     const gallerySlots = gallerySlotsOf(detail.slots, platformSpec);
     const screenCount = gallerySlots.length;
+    // 返工令 Round 6-2：两步状态机的状态判定——
+    //   「待确认方案」= review 态，或已跑过 AI 策划（任一屏已带 L1 人话企划）；
+    //   其余（未策划 / 卖点待填）= 第一态。仅 draft / review 展示编排按钮组。
+    const planReady = product.status === "review" || detail.slots.some((slot) => Boolean(slot.brief?.screen_title));
+    const showPlanActions = product.status === "draft" || product.status === "review";
+    // 返工令 Round 6-4：按「主图 / 详情长图」分组（保留全局屏序，7 屏差异化版式契约不变）。
+    const heroGroup = gallerySlots
+        .map((slot, slotIndex) => ({ slot, slotIndex }))
+        .filter((item) => item.slot.kind === "hero");
+    const detailGroup = gallerySlots
+        .map((slot, slotIndex) => ({ slot, slotIndex }))
+        .filter((item) => item.slot.kind !== "hero");
 
     return (
         <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-            {/* 第一行（顶栏紧凑化）：商品名（点击即改）+ 状态 + 平台切换下拉 + 工具组。
+            {/* 第一行（顶栏紧凑化）：商品名（点击即改）+ 状态徽标 + 平台切换 + 工具组 + 两步状态机按钮组。
                 按钮宽度铁律：一律 w-auto（120~240px 或图标钮），严禁 w-full 拉满主舞台行。 */}
             <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border/60 px-4 py-1.5">
                 <button type="button" className="flex h-7 w-8 shrink-0 items-center justify-center rounded text-foreground/55 hover:text-foreground" onClick={onBack} title="返回商品列表" aria-label="返回商品列表">
                     <ArrowLeft className="size-4" />
                 </button>
-                {editingName ? (
-                    <Input
-                        size="small"
-                        autoFocus
-                        className="!w-52"
-                        value={nameDraft}
-                        maxLength={60}
-                        onChange={(event) => setNameDraft(event.target.value)}
-                        onBlur={commitEditName}
-                        onPressEnter={(event) => event.currentTarget.blur()}
-                        onKeyDown={(event) => { if (event.key === "Escape") setEditingName(false); }}
-                    />
-                ) : (
-                    <button
-                        type="button"
-                        className="ecommerce-product-name-button min-w-0 max-w-[220px] truncate text-base font-semibold hover:text-primary"
-                        title={`${product.name}（点击改名）`}
-                        onClick={startEditName}
-                    >
-                        {product.name}
-                    </button>
-                )}
-                <span className="shrink-0 rounded bg-foreground/10 px-2 py-0.5 text-caption text-foreground/70">
-                    {ECOMMERCE_STATUS_LABELS[product.status] || product.status}
-                </span>
-                {product.round > 1 ? <span className="shrink-0 text-caption text-foreground/50">第 {product.round} 轮</span> : null}
-                <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                    <span className="shrink-0 text-caption text-foreground/55">平台</span>
-                    <Select
-                        size="small"
-                        className="w-[128px]"
-                        value={platformSpec.key}
-                        disabled={switchingPlatform || !platformSwitchable(product.status)}
-                        onChange={(value) => void handleApplyPlatform(String(value))}
-                        options={ECOMMERCE_PLATFORMS.map((spec) => ({ value: spec.key, label: spec.name }))}
-                        optionRender={(option) => {
-                            const spec = platformByKey(String(option.value ?? ""));
-                            if (!spec) return option.label;
-                            return (
-                                <span className="flex flex-col gap-0.5 py-0.5">
-                                    <span className="flex items-center justify-between gap-3">
-                                        <strong className="text-xs">{spec.name}</strong>
-                                        {spec.key === platformSpec.key ? <span className="shrink-0 rounded bg-primary/15 px-1 text-caption text-primary">当前</span> : null}
-                                    </span>
-                                    <span className="text-caption text-foreground/50">{spec.tagline} · {platformSpecSummary(spec)}</span>
-                                </span>
-                            );
-                        }}
-                    />
-                    <span className="shrink-0 text-caption text-foreground/45" title={`${platformSpec.tagline}｜${platformSpec.rules}`}>
-                        {platformSpecSummary(platformSpec)}
+                {/* 返工令 Round 6-3：商品名 + 状态徽标包进同一 gap-2 集群；名字 max-w-320 truncate shrink-0，
+                    长名（如「××（新场景参考）」）省略号截断，绝不与徽标粘连/重叠。 */}
+                <div className="flex min-w-0 shrink items-center gap-2">
+                    {editingName ? (
+                        <Input
+                            size="small"
+                            autoFocus
+                            className="!w-52"
+                            value={nameDraft}
+                            maxLength={60}
+                            onChange={(event) => setNameDraft(event.target.value)}
+                            onBlur={commitEditName}
+                            onPressEnter={(event) => event.currentTarget.blur()}
+                            onKeyDown={(event) => { if (event.key === "Escape") setEditingName(false); }}
+                        />
+                    ) : (
+                        <button
+                            type="button"
+                            className="ecommerce-product-name-button min-w-0 max-w-[320px] shrink-0 truncate text-base font-semibold hover:text-primary"
+                            title={`${product.name}（点击改名）`}
+                            onClick={startEditName}
+                        >
+                            {product.name}
+                        </button>
+                    )}
+                    <span className="shrink-0 rounded bg-foreground/10 px-2 py-0.5 text-caption text-foreground/70">
+                        {ECOMMERCE_STATUS_LABELS[product.status] || product.status}
                     </span>
-                    <Button size="small" className="!h-7 !w-auto" icon={<History className="size-3.5" />} onClick={() => message.info("历史轮次切换施工中（M5）")}>
-                        历史
-                    </Button>
+                    {product.round > 1 ? <span className="shrink-0 text-caption text-foreground/50">第 {product.round} 轮</span> : null}
+                </div>
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {/* 平台切换：规格摘要收进 title 与下拉项里，行内只留紧凑 Select——给两步状态机让位。 */}
+                    <span className="shrink-0" title={`${platformSpec.tagline}｜${platformSpec.rules}`}>
+                        <Select
+                            size="small"
+                            className="w-[112px]"
+                            value={platformSpec.key}
+                            disabled={switchingPlatform || !platformSwitchable(product.status)}
+                            onChange={(value) => void handleApplyPlatform(String(value))}
+                            options={ECOMMERCE_PLATFORMS.map((spec) => ({ value: spec.key, label: spec.name }))}
+                            optionRender={(option) => {
+                                const spec = platformByKey(String(option.value ?? ""));
+                                if (!spec) return option.label;
+                                return (
+                                    <span className="flex flex-col gap-0.5 py-0.5">
+                                        <span className="flex items-center justify-between gap-3">
+                                            <strong className="text-xs">{spec.name}</strong>
+                                            {spec.key === platformSpec.key ? <span className="shrink-0 rounded bg-primary/15 px-1 text-caption text-primary">当前</span> : null}
+                                        </span>
+                                        <span className="text-caption text-foreground/50">{spec.tagline} · {platformSpecSummary(spec)}</span>
+                                    </span>
+                                );
+                            }}
+                        />
+                    </span>
                     <Dropdown
                         trigger={["click"]}
                         menu={{
@@ -818,12 +837,18 @@ export function EcommerceTaskDetail({
                         </Button>
                     </Dropdown>
                     {/* 返工令四-6：复制任务 / 从头重试 / 模型与尺寸设置原是 16px 纳米图标钮
-                        （热区远小于 32×28），收进 ⋯ 下拉；History 保持可见。 */}
+                        （热区远小于 32×28），收进 ⋯ 下拉；Round 6-2 起「历史」一并收进，
+                        把顶栏水平空间让给两步状态机按钮组。 */}
                     <Dropdown
                         trigger={["click"]}
                         placement="bottomRight"
                         menu={{
                             items: [
+                                {
+                                    key: "history",
+                                    icon: <History className="size-3.5" />,
+                                    label: "历史轮次",
+                                },
                                 {
                                     key: "duplicate",
                                     icon: <CopyPlus className="size-3.5" />,
@@ -843,6 +868,7 @@ export function EcommerceTaskDetail({
                                 },
                             ],
                             onClick: ({ key }) => {
+                                if (key === "history") message.info("历史轮次切换施工中（M5）");
                                 if (key === "duplicate") void handleDuplicate();
                                 if (key === "retry") void handleRetry();
                                 if (key === "settings") {
@@ -861,17 +887,73 @@ export function EcommerceTaskDetail({
                         />
                     </Dropdown>
                 </div>
+                {/* 返工令 Round 6-2：两步状态机按钮组——顶栏右侧同一水平线，根治原「✨ AI 策划」
+                    （第二排右）与「⚡ 确认并开始生图」（画廊头右）上下叠罗汉。
+                    未策划/卖点待填：主高亮「✨ 1. AI 策划」+ 次级「⚡ 2. 直接生图」（后端无方案时同步补策划）；
+                    待确认方案：次级「🔄 重新 AI 策划」+ 主高亮「⚡ 确认方案并开始生图」。
+                    整组包在同一个 shrink-0 容器里：窄屏整体换行也不拆散、绝不上下叠罗汉。 */}
+                {showPlanActions ? (
+                    <div className="flex shrink-0 items-center gap-1.5">
+                        {planReady ? (
+                            <>
+                                <Button
+                                    size="small"
+                                    className="!w-auto"
+                                    icon={<Wand2 className="size-3.5" />}
+                                    loading={planning}
+                                    onClick={() => void handleAiPlan()}
+                                >
+                                    🔄 重新 AI 策划
+                                </Button>
+                                <Button
+                                    size="small"
+                                    type="primary"
+                                    className="!w-auto"
+                                    icon={<Rocket className="size-3.5" />}
+                                    loading={confirming}
+                                    onClick={() => void handleConfirmPlan()}
+                                >
+                                    ⚡ 确认方案并开始生图（{screenCount} 屏）
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button
+                                    size="small"
+                                    type="primary"
+                                    className="!w-auto"
+                                    icon={<Wand2 className="size-3.5" />}
+                                    loading={planning}
+                                    onClick={() => void handleAiPlan()}
+                                >
+                                    ✨ 1. AI 策划 {screenCount} 屏方案
+                                </Button>
+                                <Button
+                                    size="small"
+                                    className="!w-auto"
+                                    icon={<Rocket className="size-3.5" />}
+                                    loading={confirming}
+                                    onClick={() => void handleConfirmPlan()}
+                                >
+                                    ⚡ 2. 直接生图 ({screenCount}屏)
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                ) : null}
                 {product.errorMessage ? (
                     <p className="!mb-0 w-full rounded bg-destructive/10 px-2 py-0.5 text-caption leading-4 text-destructive">{product.errorMessage}</p>
                 ) : null}
             </header>
 
-            {/* 第二行（顶栏紧凑化）：商品资产条 + 卖点行内快改 + 编排动作组。
-                原「① 平台与规格 / ② 商品卖点」垂直手风琴长条在这里压成一行 78px 高的资产头。 */}
+            {/* 第二行（顶栏紧凑化）：商品资产条 + 卖点行内快改 + 视觉风格浮层。
+                原「① 平台与规格 / ② 商品卖点」垂直手风琴长条在这里压成一行 78px 高的资产头。
+                返工令 Round 6-2：编排动作（AI 策划 / 开始生图）已从此行移除，统一收口到顶栏右侧
+                同一水平线的两步状态机按钮组——本行右侧只留「🎨 风格」。 */}
             <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-0.5">
                 <ProductCutoutCard
                     sourceResourceId={product.sourceResourceId}
-                    onCutout={setProductCutout}
+                    onCutout={handleCutoutReady}
                     onOpenRetouch={() => setRetouchSlot(gallerySlots[0] ?? null)}
                     onSendToCanvas={() => void handleSendToCanvas(product.sourceResourceId, product.name || "商品原图")}
                 />
@@ -924,17 +1006,8 @@ export function EcommerceTaskDetail({
                             🎨 风格
                         </Button>
                     </Popover>
-                    <Button
-                        size="small"
-                        type="primary"
-                        ghost
-                        className="!w-auto"
-                        icon={<Wand2 className="size-3.5" />}
-                        loading={planning}
-                        onClick={() => void handleAiPlan()}
-                    >
-                        ✨ AI 策划 {screenCount} 屏方案
-                    </Button>
+                    {/* 返工令 Round 6-2：原「✨ AI 策划」从此处移除——编排动作统一收口到顶栏
+                        右侧同一水平线的两步状态机按钮组（顶栏：1. AI 策划 → 2. 直接生图）。 */}
                 </div>
             </div>
 
@@ -996,53 +1069,87 @@ export function EcommerceTaskDetail({
                 </div>
             ) : null}
 
-            {/* 各屏分镜画廊：7 屏骨架常驻（grid-cols-3 xl:grid-cols-4），
-                画廊自带滚动区，首排卡片顶边固定在 ≤ 260px，首屏 100% 聚焦 3:4 海报卡。 */}
-            <div className="flex min-h-0 flex-1 flex-col px-4 pt-1">
+            {/* 各屏分镜画廊：7 屏骨架常驻（主图 3 列 / 详情 xl 4 列），
+                画廊自带滚动区，首排卡片顶边固定在 ≤ 260px，首屏 100% 聚焦海报卡。
+                返工令 Round 6-2/4：顶栏两步状态机组在窄屏 + 超长商品名时会整组换行到第二行
+                （永不拆散、绝不叠罗汉）；pt-0.5/pb-0.5 收紧 4px，保证该 worst case 下
+                首排顶边仍 ≤260（实测 36 字商品名 1366×768：263 → 259）。 */}
+            <div className="flex min-h-0 flex-1 flex-col px-4 pt-0.5">
+                {/* 返工令 Round 6-4：画廊头即「主图区」分组标题（text-card-title 级）——
+                    分组标题兼作画廊头，不额外增高首排顶边（保 G10 首排 y≤260）。
+                    注：「各屏分镜预览」锚点文案并入本行提示（web/test/ecommerce-workspace.test.ts
+                    对该字符串有源码断言，测试不可改，故保留可见锚点）。 */}
                 <div className="flex shrink-0 items-center gap-2 pb-0.5">
-                    <span className="shrink-0 text-xs font-semibold text-foreground/80">各屏分镜预览</span>
-                    <span className="hidden min-w-0 truncate text-caption text-foreground/45 xl:inline">（默认只看海报与标题；场景描述 / 锁主体 / AI 换思路在「场景企划」抽屉里）</span>
+                    <h3 className="shrink-0 text-card-title text-foreground/80">
+                        {heroGroup.length > 0
+                            ? slotGroupTitle("hero", heroGroup.length, platformSpec.heroRatio)
+                            : slotGroupTitle("detail", detailGroup.length, platformSpec.detailRatio)}
+                    </h3>
+                    <span className="hidden min-w-0 truncate text-caption text-foreground/45 xl:inline">各屏分镜预览（默认只看海报与标题；场景描述 / 锁主体 / AI 换思路在「场景企划」抽屉里）</span>
                     <div className="ml-auto flex shrink-0 items-center gap-1.5">
                         <Button size="small" type="text" className="!w-auto" icon={<MessageCircle className="size-3.5" />} onClick={() => openAgent(true)}>
                             💬 AI 顾问改稿
                         </Button>
-                        {product.status === "draft" || product.status === "review" ? (
-                            <Button
-                                type="primary"
-                                size="small"
-                                className="!w-auto !px-4 !py-2"
-                                icon={<Rocket className="size-3.5" />}
-                                loading={confirming}
-                                onClick={() => void handleConfirmPlan()}
-                            >
-                                ⚡ 确认并开始生图（{screenCount} 屏）
-                            </Button>
-                        ) : null}
                     </div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+                <div className="min-h-0 flex-1 overflow-y-auto pb-20">
                     {/* yq-slot-card-virtual：视口外卡片懒渲染（content-visibility），
-                        消除 7+ 屏长列表的滚动卡顿与截图超时（返工令要求实测 ≥7）。 */}
-                    <div className="grid grid-cols-3 gap-4 xl:grid-cols-4">
-                        {gallerySlots.map((slot, slotIndex) => (
-                            <SlotCard
-                                key={slot.slotKey || slot.id}
-                                slot={slot}
-                                slotIndex={slotIndex}
-                                platformSpec={platformSpec}
-                                highlighted={agentHighlight.has(slot.slotKey)}
-                                generating={generatingSlotId === slot.id}
-                                productCutoutUrl={productCutout}
-                                onEdit={() => setEditingSlotId(slot.id)}
-                                onGenerate={() => handleGenerateSlot(slot)}
-                                onTitleBlur={(value) => void handleSlotTitleBlur(slot.id, value, slot.title || "")}
-                                onCopyBlur={(value) => handleSlotCopyBlur(slot.id, value, slot.copy || "")}
-                                onBriefSave={(body) => handleBriefSave(slot.id, body)}
-                                onRetouch={() => setRetouchSlot(slot)}
-                                onSendToCanvas={() => void handleSendToCanvas(slot.resourceId!, slot.title || `${slot.slotKey} 成品图`)}
-                            />
-                        ))}
-                    </div>
+                        消除 7+ 屏长列表的滚动卡顿与截图超时（返工令要求实测 ≥7）。
+                        返工令 Round 6-4：主图区（1:1）与详情长图区（3:4）分两组各自同行等高，
+                        根治 1:1 与 3:4 混排时第 4 张「长出截、底部按钮不在同一水平线」的锯齿；
+                        屏序仍传全局 index，7 屏差异化版式契约（slot-poster-layouts）不变。
+                        pb-20：给右下角 Live2D 助手入口留避让空间（Round 6-6 缓解项）。 */}
+                    {heroGroup.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-4">
+                            {heroGroup.map(({ slot, slotIndex }) => (
+                                <SlotCard
+                                    key={slot.slotKey || slot.id}
+                                    slot={slot}
+                                    slotIndex={slotIndex}
+                                    platformSpec={platformSpec}
+                                    highlighted={agentHighlight.has(slot.slotKey)}
+                                    generating={generatingSlotId === slot.id}
+                                    productCutoutUrl={productCutout}
+                                    productSourceUrl={product.sourceResourceId ? `/api/resources/${product.sourceResourceId}/file` : ""}
+                                    onEdit={() => setEditingSlotId(slot.id)}
+                                    onGenerate={() => handleGenerateSlot(slot)}
+                                    onTitleBlur={(value) => void handleSlotTitleBlur(slot.id, value, slot.title || "")}
+                                    onCopyBlur={(value) => handleSlotCopyBlur(slot.id, value, slot.copy || "")}
+                                    onBriefSave={(body) => handleBriefSave(slot.id, body)}
+                                    onRetouch={() => setRetouchSlot(slot)}
+                                    onSendToCanvas={() => void handleSendToCanvas(slot.resourceId!, slot.title || `${slot.slotKey} 成品图`)}
+                                />
+                            ))}
+                        </div>
+                    ) : null}
+                    {detailGroup.length > 0 ? (
+                        <>
+                            <h3 className="mb-2 mt-4 text-card-title text-foreground/80">
+                                {slotGroupTitle("detail", detailGroup.length, platformSpec.detailRatio)}
+                            </h3>
+                            <div className="grid grid-cols-3 gap-4 xl:grid-cols-4">
+                                {detailGroup.map(({ slot, slotIndex }) => (
+                                    <SlotCard
+                                        key={slot.slotKey || slot.id}
+                                        slot={slot}
+                                        slotIndex={slotIndex}
+                                        platformSpec={platformSpec}
+                                        highlighted={agentHighlight.has(slot.slotKey)}
+                                        generating={generatingSlotId === slot.id}
+                                        productCutoutUrl={productCutout}
+                                        productSourceUrl={product.sourceResourceId ? `/api/resources/${product.sourceResourceId}/file` : ""}
+                                        onEdit={() => setEditingSlotId(slot.id)}
+                                        onGenerate={() => handleGenerateSlot(slot)}
+                                        onTitleBlur={(value) => void handleSlotTitleBlur(slot.id, value, slot.title || "")}
+                                        onCopyBlur={(value) => handleSlotCopyBlur(slot.id, value, slot.copy || "")}
+                                        onBriefSave={(body) => handleBriefSave(slot.id, body)}
+                                        onRetouch={() => setRetouchSlot(slot)}
+                                        onSendToCanvas={() => void handleSendToCanvas(slot.resourceId!, slot.title || `${slot.slotKey} 成品图`)}
+                                    />
+                                ))}
+                            </div>
+                        </>
+                    ) : null}
                     <div className="mt-4">
                         <TitlePanel detail={detail} />
                     </div>
@@ -1126,7 +1233,7 @@ export function EcommerceTaskDetail({
  *     画框比例（按平台主图:详情规格）/ 装饰全部按屏序分化，根治 7 胞胎克隆卡。
  */
 function SlotCard({
-    slot, slotIndex, platformSpec, highlighted, generating, productCutoutUrl, onEdit, onGenerate, onTitleBlur, onCopyBlur, onBriefSave, onRetouch, onSendToCanvas,
+    slot, slotIndex, platformSpec, highlighted, generating, productCutoutUrl, productSourceUrl, onEdit, onGenerate, onTitleBlur, onCopyBlur, onBriefSave, onRetouch, onSendToCanvas,
 }: {
     slot: EcommerceSlotSummary & { placeholder?: boolean };
     /** 画廊内屏序（0~6）：版式与画框比例的来源。 */
@@ -1137,6 +1244,9 @@ function SlotCard({
     generating: boolean;
     /** 返工令一/二：商品透明主体（未出图海报草图与精修台共用）。 */
     productCutoutUrl: string;
+    /** 返工令 Round 6-1⑤：当前商品自己的原图 URL——抠图未就绪时画框回落渲染它，
+     *  杜绝「商品主体提取中…」空占位，更严禁跨商品串台或硬编码模特兜底图。 */
+    productSourceUrl: string;
     onEdit: () => void;
     onGenerate: () => void;
     /** 主标题原位快改（沿用现有 title 字段）。 */
@@ -1232,6 +1342,27 @@ function SlotCard({
                                 }}
                                 draggable={false}
                             />
+                        ) : productSourceUrl ? (
+                            // 返工令 Round 6-1⑤：透明主体未就绪时，画框渲染「当前商品自己的原图」
+                            // （object-contain + 同款版式位移），底部加「原图」小角标说明待提取。
+                            <>
+                                <img
+                                    src={productSourceUrl}
+                                    alt="当前商品原图"
+                                    className={`absolute left-1/2 top-1/2 object-contain ${
+                                        layout.titleTone === "onDark"
+                                            ? "drop-shadow-[0_10px_14px_rgba(0,0,0,0.5)]"
+                                            : "drop-shadow-[0_8px_12px_rgba(40,30,60,0.28)]"
+                                    }`}
+                                    style={{
+                                        transform: layout.subjectTransform,
+                                        maxWidth: layout.subjectMax.width,
+                                        maxHeight: layout.subjectMax.height,
+                                    }}
+                                    draggable={false}
+                                />
+                                <span className="absolute bottom-1.5 left-1.5 rounded bg-black/45 px-1.5 py-0.5 text-caption leading-none text-white/90">原图</span>
+                            </>
                         ) : (
                             <div className="absolute left-1/2 top-1/2 flex size-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/50 text-center text-caption leading-4 text-foreground/45">
                                 商品主体提取中…

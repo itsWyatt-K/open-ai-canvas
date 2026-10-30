@@ -124,8 +124,6 @@ export const router = createBrowserRouter([
         ],
     },
     { path: "/share/canvas/:token", element: fullScreenDeferred(<SharedCanvasPage />), errorElement: <RouteErrorPage /> },
-    // E-Reverse 本地工作台：仅连 127.0.0.1 侧车服务，不依赖登录后端
-    { path: "/ereverse", element: fullScreenDeferred(<EReversePage />), errorElement: <RouteErrorPage /> },
     ...(import.meta.env.DEV ? devRoutes() : []),
     {
         element: <AuthenticatedWorkspaceLayout />,
@@ -160,6 +158,10 @@ export const router = createBrowserRouter([
             { path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> },
             { path: "/modules", element: <RequireAuth>{deferred(<ModulesPage />)}</RequireAuth> },
             { path: "/modules/live-studio", element: <RequireAuth>{deferred(<LiveStudioPage />)}</RequireAuth> },
+            // 返工令 Round 6：/ereverse 从「布局外孤岛」移入工作台外壳，与电商工坊、
+            // 直播装修台共享左侧 200px 导航栏。侧车调用走 vite 代理 /ereverse-api
+            // （127.0.0.1:8790）与 /yuanqi-console（127.0.0.1:17580），与路由外壳无关。
+            { path: "/ereverse", element: <RequireAuth>{deferred(<EReversePage />)}</RequireAuth> },
             { path: "/ecommerce", element: <RequireAuth><RequireFeature feature="ecommerceEnabled">{deferred(<EcommercePage />)}</RequireFeature></RequireAuth> },
             { path: "/ecommerce/:view", element: <RequireAuth><RequireFeature feature="ecommerceEnabled">{deferred(<EcommercePage />)}</RequireFeature></RequireAuth> },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
