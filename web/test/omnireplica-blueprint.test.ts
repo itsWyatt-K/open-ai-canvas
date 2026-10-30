@@ -181,6 +181,27 @@ test("theme 引用解析：@theme.colors.X → 实际值；非引用原样返回
     assert.equal(resolveThemeValue(blueprint, "#ABCDEF"), "#ABCDEF");
 });
 
+test("空蓝图主题种子：覆盖预置模板五色引用（accent/mood 有解析基准，单一数据源）", () => {
+    const blueprint = emptyBlueprint();
+    for (const key of ["primary", "text", "stroke", "accent", "mood"]) assert.ok(blueprint.theme.colors[key], `缺主题色 ${key}`);
+    assert.equal(resolveThemeValue(blueprint, "@theme.colors.accent"), blueprint.theme.colors.accent);
+    assert.equal(resolveThemeValue(blueprint, "@theme.colors.mood"), blueprint.theme.colors.mood);
+});
+
+test("motion 装配：词表版本/产出方回填 provenance；枚举外动效文案带词表号", () => {
+    const blueprint = blueprintFromMotion(
+        {
+            wordlist_version: "motion-wordlist/v1",
+            generated_by: "ereverse-motion/0.2",
+            shots: [{ shot_id: "s1", start_ms: 0, end_ms: 3000, enter: { type: "wobble-in" }, elements: [{ element_id: "e1", type: "text", text: "x", position: { x: 0.5, y: 0.5 } }] }],
+        },
+        {},
+    );
+    assert.equal(blueprint.meta.provenance.wordlist_version, "motion-wordlist/v1");
+    assert.equal(blueprint.meta.provenance.generated_by, "ereverse-motion/0.2");
+    assert.ok(blueprint.shots[0].degraded?.some((item) => item.includes("词表 motion-wordlist/v1")));
+});
+
 // ---------------------------------------------------------------------------
 // 预置模板（degraded 三机制之二）
 // ---------------------------------------------------------------------------

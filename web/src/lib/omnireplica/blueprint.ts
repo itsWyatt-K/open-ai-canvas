@@ -10,7 +10,7 @@
  *   漏返字段不兜底猜动效（动效猜错比没有更糟），显式 degraded 登记。
  */
 
-import { MOTION_ENTER_TYPES, MOTION_EXIT_TYPES, MOTION_PRESETS, MOTION_TRANSITION_TYPES, type MotionPreset } from "@/lib/omnireplica/motion-presets";
+import { MOTION_ENTER_TYPES, MOTION_EXIT_TYPES, MOTION_PRESETS, MOTION_TRANSITION_TYPES, OMNIREPLICA_DEFAULT_THEME, type MotionPreset } from "@/lib/omnireplica/motion-presets";
 
 // ---------------------------------------------------------------------------
 // 类型（schema: motion-blueprint/v1）
@@ -61,7 +61,8 @@ export type MotionBlueprint = {
     meta: {
         title: string;
         source: { type: "manual" | "ereverse-motion"; ereverse_job_id?: string };
-        provenance: { generator: string; degraded: string[] };
+        /** 词表版本/产出方（e-reverse motion 块回填；驱动词表漂移定位）。 */
+        provenance: { generator: string; degraded: string[]; wordlist_version?: string; generated_by?: string };
     };
     canvas: {
         width: number;
@@ -126,7 +127,9 @@ export function emptyBlueprint(title = "未命名复刻工程"): MotionBlueprint
         blueprint_id: nextBlueprintId(),
         meta: { title, source: { type: "manual" }, provenance: { generator: "omnireplica-mvp/0.1", degraded: [] } },
         canvas: { width: 1080, height: 1920, fps: defaultFpsFor("480p"), duration_ms: 15_000, background: { type: "solid", solid: "#0B0B12", sequence: [] } },
-        theme: { colors: { primary: "#FF4D4F", text: "#FFFFFF", stroke: "#0B0B12" }, fonts: { title: "msyhbd.ttc" }, title_size_ratio: 0.075 },
+        // 主题种子取安智体交付的 OMNIREPLICA_DEFAULT_THEME（单一数据源）：
+        // 预置模板的 @theme.colors.{primary|text|stroke|accent|mood} 引用全部有解析基准。
+        theme: { colors: { ...OMNIREPLICA_DEFAULT_THEME.colors }, fonts: { ...OMNIREPLICA_DEFAULT_THEME.fonts }, title_size_ratio: OMNIREPLICA_DEFAULT_THEME.title_size_ratio },
         slots: {},
         shots: [],
         transitions: [],
@@ -166,6 +169,11 @@ export function blueprintFromMotion(motion: unknown, options: { title?: string; 
     }
     const raw = motion as Record<string, unknown>;
     const degraded: string[] = [];
+    // 词表版本/产出方回填（e-reverse motion 块形态：{wordlist_version, generated_by, shots[]}）——
+    // 枚举外动效的 degraded 文案带词表号，词表漂移可定位。
+    const wordlistVersion = typeof raw.wordlist_version === "string" ? raw.wordlist_version.trim() : "";
+    const generatedBy = typeof raw.generated_by === "string" ? raw.generated_by.trim() : "";
+    const wordlistLabel = wordlistVersion || "motion-wordlist/v1";
 
     // theme：VLM 只覆盖其产出的键
     const rawTheme = (raw.theme && typeof raw.theme === "object" ? raw.theme : {}) as Record<string, unknown>;
@@ -220,8 +228,8 @@ export function blueprintFromMotion(motion: unknown, options: { title?: string; 
         const shotDegraded: string[] = [];
         const enterType = str(shot.enter && typeof shot.enter === "object" ? (shot.enter as Record<string, unknown>).type : "");
         const exitType = str(shot.exit && typeof shot.exit === "object" ? (shot.exit as Record<string, unknown>).type : "");
-        if (enterType && !ENTER_TYPES.includes(enterType as (typeof ENTER_TYPES)[number])) shotDegraded.push(`enter 动效「${enterType}」不在受支持枚举内，已置 none`);
-        if (exitType && !EXIT_TYPES.includes(exitType as (typeof EXIT_TYPES)[number])) shotDegraded.push(`exit 动效「${exitType}」不在受支持枚举内，已置 none`);
+        if (enterType && !ENTER_TYPES.includes(enterType as (typeof ENTER_TYPES)[number])) shotDegraded.push(`enter 动效「${enterType}」不在受支持枚举内（词表 ${wordlistLabel}），已置 none`);
+        if (exitType && !EXIT_TYPES.includes(exitType as (typeof EXIT_TYPES)[number])) shotDegraded.push(`exit 动效「${exitType}」不在受支持枚举内（词表 ${wordlistLabel}），已置 none`);
         const rawElements = Array.isArray(shot.elements) ? shot.elements : [];
         const elements: MotionElement[] = rawElements.map((el, elIndex) => {
             const element = (el && typeof el === "object" ? el : {}) as Record<string, unknown>;
@@ -266,11 +274,11 @@ export function blueprintFromMotion(motion: unknown, options: { title?: string; 
         .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
         .map((item) => {
             const type = str(item.type);
-            if (type && !TRANSITION_TYPES.includes(type as (typeof TRANSITION_TYPES)[number])) degraded.push(`转场「${type}」不在受支持枚举内，已置 none`);
+            if (type && !TRANSITION_TYPES.includes(type as (typeof TRANSITION_TYPES)[number])) degraded.push(`转场「${type}」不在受支持枚举内（词表 ${wordlistLabel}），已置 none`);
             return { after_shot: str(item.after_shot), type: TRANSITION_TYPES.includes(type as (typeof TRANSITION_TYPES)[number]) ? type : "none", duration_ms: num(item.duration_ms, 200) };
         });
 
-    blueprint.meta.provenance.degraded = degraded;
+    blueprint.meta.provenance = { generator: generatedBy || "omnireplica-mvp/0.1", degraded, ...(wordlistVersion ? { wordlist_version: wordlistVersion } : {}), ...(generatedBy ? { generated_by: generatedBy } : {}) };
     return blueprint;
 }
 
