@@ -54,6 +54,7 @@ const CanvasPage = lazy(loadCanvasPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const EReversePage = lazy(() => import("@/pages/ereverse"));
+const OmnireplicaPage = lazy(() => import("@/pages/omnireplica"));
 const CreatePage = lazy(loadCreatePage);
 const ImageWorkbenchPage = lazy(() => import("@/pages/workbench/image-workbench-route"));
 const VideoWorkbenchPage = lazy(() => import("@/pages/workbench/video-workbench-page"));
@@ -162,6 +163,10 @@ export const router = createBrowserRouter([
             // 直播装修台共享左侧 200px 导航栏。侧车调用走 vite 代理 /ereverse-api
             // （127.0.0.1:8790）与 /yuanqi-console（127.0.0.1:17580），与路由外壳无关。
             { path: "/ereverse", element: <RequireAuth>{deferred(<EReversePage />)}</RequireAuth> },
+            // 全能复刻（OiiOii）：参考视频 → 动效蓝图 → 本地代码渲染 → 零成本改稿/裂变。
+            // 渲染/改稿/裂变路径 0 积分（不建 Go 计费任务）；侧车拆解走 /ereverse-api，
+            // 渲染直连 nxf :8823（CORS 已含 127.0.0.1:3000，无需代理）。
+            { path: "/omnireplica", element: <RequireAuth>{deferred(<OmnireplicaPage />)}</RequireAuth> },
             { path: "/ecommerce", element: <RequireAuth><RequireFeature feature="ecommerceEnabled">{deferred(<EcommercePage />)}</RequireFeature></RequireAuth> },
             { path: "/ecommerce/:view", element: <RequireAuth><RequireFeature feature="ecommerceEnabled">{deferred(<EcommercePage />)}</RequireFeature></RequireAuth> },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },

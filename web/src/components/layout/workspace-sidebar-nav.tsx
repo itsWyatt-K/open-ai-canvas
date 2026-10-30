@@ -1,5 +1,5 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, LayoutGrid as LayoutGridIcon, MonitorPlay as MonitorPlayIcon, PanelLeftClose, PanelLeftOpen, Plus, SearchCheck as SearchCheckIcon, ShoppingBag as ShoppingBagIcon, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, Crosshair, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, LayoutGrid as LayoutGridIcon, MonitorPlay as MonitorPlayIcon, PanelLeftClose, PanelLeftOpen, Plus, SearchCheck as SearchCheckIcon, ShoppingBag as ShoppingBagIcon, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -59,6 +59,7 @@ function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[];
                 ...(features.ecommerceEnabled ? [{ id: "custom-ecommerce", title: "🛍️ 电商详情工坊", icon: ShoppingBagIcon, to: "/ecommerce" }] : []),
                 { id: "custom-live-studio", title: "🎬 直播间装修台", icon: MonitorPlayIcon, to: "/modules/live-studio" },
                 { id: "custom-ereverse", title: "🔍 爆款视觉反推", icon: SearchCheckIcon, to: "/ereverse" },
+                { id: "custom-omnireplica", title: "🎯 全能复刻", icon: Crosshair, to: "/omnireplica" },
             ],
         },
         {
@@ -353,7 +354,7 @@ export function workspaceNavActiveId(pathname: string, section?: string | null) 
     if (segments[0] === "toolbox" && segments[1]) return segments[1] === "video" ? "toolbox-video" : "toolbox-image";
     const slug = segments[0] || "canvas";
     if (slug === "create" || slug === "canvas") return "canvas";
-    if (slug === "modules" || slug === "ecommerce" || slug === "ereverse") return "custom-modules";
+    if (slug === "modules" || slug === "ecommerce" || slug === "ereverse" || slug === "omnireplica") return "custom-modules";
     return slug === "settings" && section ? `settings:${section}` : slug;
 }
 

@@ -60,6 +60,8 @@ export type EreversePft = {
     scenes: EreverseScene[];
     words?: EreverseWord[];
     speech_spans?: Array<{ start_ms: number; end_ms: number; is_silence: boolean }>;
+    /** 全能复刻动效草案（宽松 JSON；extract_motion=true 且 VLM 产出时才有，不臆造）。 */
+    motion?: unknown;
     facts?: {
         scene_threshold?: number;
         scene_count?: number;
@@ -97,6 +99,9 @@ export type EreverseRunInput = {
     // 侧车仅对 [start_ms, end_ms) 执行切镜/抽帧/ASR，产出时间戳回正到原视频总轴。
     start_ms?: number;
     end_ms?: number;
+    // 全能复刻（/omnireplica）：提取 Motion Spec 动效草案（PFT.motion 宽松块）。
+    // 默认 false——既有反推动线零影响；VLM prompt 增动效维度由侧车纯增量实现。
+    extract_motion?: boolean;
 };
 
 const BASE = "/ereverse-api/api/ereverse";

@@ -10,13 +10,14 @@
  *
  * 采集 5 模块：① 空间布局 ASCII 透视与占屏比 ② 认知负荷与拥挤度 ③ 视觉层级阶梯
  *             ④ 小白动线摩擦度 ⑤ DOM 与渲染性能
- * 门禁 G0~G19：零折行 / 单卡减负 / 主次分明 / 视觉霸权 / 零脏字符 / 浅层直达 /
+ * 门禁 G0~G20：零折行 / 单卡减负 / 主次分明 / 视觉霸权 / 零脏字符 / 浅层直达 /
  *              拒绝香肠按钮 / 零破图零碰撞 / 直播台真画布 / 电商首屏高度 /
  *              禁止代点绕过(G11) / 精修台弹窗真打开(G12) / 清零蚊子字与纳米按钮(G13) /
  *              爆款反推台不孤岛(G14) / 直播台对标参考图模块(G15) /
  *              反推台状态收敛与实心CTA(G16) / 侧栏布局与定制模块(G17) /
  *              启动控制台体检(G18·Round6) /
- *              跨商品图片隔离+矩阵防重叠+反推台挂栏(G19·Round6)
+ *              跨商品图片隔离+矩阵防重叠+反推台挂栏(G19·Round6) /
+ *              全能复刻静态门禁(G20·omnireplica：0积分徽标/编辑器可达/CTA实心/mock标注)
  *
  * ⚠️ 返工令 Round 6 编号说明：G17 已被上一轮（夜间施工令阶段二）侧栏门禁占用，
  *    为避免同一报告出现双 G17，本轮新增的两条门禁顺延为 G18 / G19。
@@ -68,6 +69,7 @@ const ROUTES = [
     { path: "/ecommerce#matrix-guard", label: "电商工坊·矩阵防重叠与跨商品隔离" },
     { path: "/modules/live-studio", label: "直播装修台" },
     { path: "/ereverse", label: "爆款视觉反推" },
+    { path: "/omnireplica", label: "全能复刻" },
     { path: "/projects", label: "短剧制片台" },
 ];
 
@@ -99,6 +101,7 @@ const collectFn = async (page, ctx) => {
             "/src/pages/modules/index.tsx",
             "/src/pages/modules/live-studio.tsx",
             "/src/pages/ereverse/index.tsx",
+            "/src/pages/omnireplica/index.tsx",
             "/src/pages/projects/index.tsx",
         ]) {
             await page.evaluate((m) => import(m).then(() => undefined, () => undefined), mod);
@@ -936,6 +939,17 @@ const collectFn = async (page, ctx) => {
                     // 原生文案（signal is aborted without reason / AbortError）。
                     const abortedErrorText = /signal\s*is\s*aborted|AbortError/i.test(bodyText);
 
+                    // ⑱ G20 全能复刻（/omnireplica）静态门禁（交付方案 §9 探针加栏建议）：
+                    //    0 积分徽标常驻 / 蓝图编辑器可达（视图 tab）/ 试看入口实心 /
+                    //    契约 mock 标注可见（dev 联调日整旗清除）。需交互的深层断言
+                    //    （影响条三层 / 批量进度网格）由 mock=1 走查 + 单测覆盖。
+                    const omniZeroCredit = Boolean(document.querySelector("[data-yq='omni-zero-credit']"));
+                    const omniViewTabs = document.querySelectorAll("[data-yq^='omni-view-']").length;
+                    const omniExtractBtn = document.querySelector("[data-yq='omni-extract-button']");
+                    const omniExtractSolid = Boolean(omniExtractBtn && isSolidFilled(omniExtractBtn));
+                    const omniMockBanner = Boolean(document.querySelector("[data-yq='omni-mock-banner']"));
+                    const omniCockpit = Boolean(document.querySelector("[data-yq='omni-cockpit']"));
+
                     // ⑰ G17 侧栏「上游原生 + 定制模块」门禁（夜间施工令阶段二）
                     const sidebarEl = document.querySelector("aside");
                     const sidebarLinks = sidebarEl ? Array.from(sidebarEl.querySelectorAll("a")).map((a) => a.getAttribute("href") || "") : [];
@@ -963,6 +977,7 @@ const collectFn = async (page, ctx) => {
                         buttons, brokenImages, overlaps, liveStage, slotCards,
                         tinyFonts, tinyFontTotal, modal, ereverseNav, emptyStateText,
                         referenceSlot, canvasBubbleRemoved, ereverseStatus, sidebarG17, abortedErrorText,
+                        omni: { zeroCredit: omniZeroCredit, viewTabs: omniViewTabs, extractSolid: omniExtractSolid, mockBanner: omniMockBanner, cockpit: omniCockpit },
                         area: {
                             visualPct: Math.round((visual / area) * 1000) / 10,
                             controlPct: Math.round((controls / area) * 1000) / 10,
@@ -1181,6 +1196,7 @@ function run() {
             ["G17", "侧栏布局与定制模块门禁（原生项齐全+定制模块组+全站无旧词）"],
             ["G18", "启动控制台体检（密码脱敏/按钮单行/2×2卡片网格/智能按钮/零滚动）"],
             ["G19", "跨商品图片隔离 + 矩阵防重叠 + 反推台挂栏"],
+            ["G20", "全能复刻静态门禁（0 积分徽标 / 编辑器可达 / 拆解 CTA 实心 / mock 标注）"],
         ]) gate(g[0], g[1], false, "未采集到任何页面，无法判定");
         const blocker = failed.map((f) => `${f.route}: ${(f.error || "").slice(0, 80)}`).join("；");
         gates.push({ id: "G0", name: "采集有效性（至少 1 页可测）", pass: false, detail: `16 组合全部失败。${blocker || "未知原因"}` });
@@ -1458,6 +1474,21 @@ function run() {
                     : g19items.map((i) => `@${i.p.viewport} 隔离${i.g.isolated ? "✓" : "✗"}(主体图 ${i.g.src1Len || 0}B vs ${i.g.src2Len || 0}B) · 矩阵${i.m.measuredRows ?? 0}行最大重叠 文本${i.m.maxTextOverlap ?? "未测"}px²/单元格${i.m.maxCellOverlap ?? "未测"}px² · 最宽按钮${i.m.widestNameBtnW ?? "?"}px「${i.m.widestName || ""}」${i.missing.length ? `｜缺失：${i.missing.join("；")}` : ""}`).join("；"),
                 `/ereverse@双视口 侧栏${erevHasSidebar ? "✓" : "✗"} · abort 假死文案${erevNoAbort ? "无✓" : "有✗"}`,
             ].join("｜"));
+
+        // G20 全能复刻（/omnireplica）静态门禁：0 积分徽标 / 编辑器可达（三视图 tab）/
+        // 拆解主 CTA 实心 / 契约 mock 标注（dev）。页面未采集到（如路由未注册）→ FAIL。
+        const omniPages = scanned.filter((p) => p.route === "/omnireplica");
+        const omniItems = omniPages.map((p) => ({ p, o: p.omni || {} }));
+        gate(
+            "G20",
+            "全能复刻静态门禁（0 积分徽标 / 编辑器可达 / 拆解 CTA 实心 / mock 标注）",
+            omniPages.length > 0 && omniItems.every((i) => i.o.zeroCredit && i.o.viewTabs >= 3 && i.o.extractSolid && i.o.cockpit),
+            omniPages.length === 0
+                ? "未采集到 /omnireplica（路由未注册或页面 5xx）"
+                : omniItems
+                      .map((i) => `@${i.p.viewport} 0积分徽标${i.o.zeroCredit ? "✓" : "✗"} · 视图tab ${i.o.viewTabs ?? 0}(编辑器可达${(i.o.viewTabs ?? 0) >= 3 ? "✓" : "✗"}) · 拆解CTA实心${i.o.extractSolid ? "✓" : "✗"} · 输入舱${i.o.cockpit ? "✓" : "✗"}${i.o.mockBanner ? " · mock标注✓" : ""}`)
+                      .join("；"),
+        );
     }
 
     // 5) 报告
